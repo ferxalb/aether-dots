@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -28,7 +27,7 @@ func main() {
 func run(args []string) error {
 	root := flag.NewFlagSet("aether", flag.ContinueOnError)
 	root.SetOutput(os.Stderr)
-	dataDir := root.String("data-dir", "", "local task store folder (must appear before the command)")
+	dataDir := root.String("data-dir", "", "local Dot chat store folder (must appear before the command)")
 	if err := root.Parse(args); err != nil {
 		return err
 	}
@@ -51,47 +50,21 @@ func run(args []string) error {
 	switch args[0] {
 	case "spaces":
 		return spacesCommand(db, args[1:])
-	case "capture":
-		return captureCommand(db, args[1:])
+	case "create", "capture":
+		return createCommand(db, args[1:])
 	case "list":
 		return listCommand(db)
 	case "inspect":
 		return inspectCommand(db, args[1:])
-	case "mode":
-		if len(args) != 3 {
-			return errors.New("usage: aether mode <dot-id> local|model")
-		}
-		dot, err := findDot(db.Snapshot(), args[1])
-		if err != nil {
-			return err
-		}
-		return db.SetMode(dot.ID, args[2])
+	case "send":
+		return sendCommand(db, args[1:])
 	case "run", "resume":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: aether %s <dot-id>", args[0])
+			return fmt.Errorf("usage: aether %s <message-id>", args[0])
 		}
-		dot, err := findDot(db.Snapshot(), args[1])
-		if err != nil {
-			return err
-		}
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		generator := model.Generator{Config: model.FromEnvironment()}
-		err = engine.Run(ctx, db, dot.ID, &generator, func(delta string) { fmt.Print(delta) })
-		if errors.Is(err, context.Canceled) {
-			fmt.Println("\nRun paused and checkpointed.")
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		updated, _ := db.GetDot(dot.ID)
-		fmt.Printf("\nVerified output: %s\n", updated.Artifacts[len(updated.Artifacts)-1].Path)
-		return nil
+		return runMessage(db, args[1])
 	case "model":
 		return modelCommand(args[1:])
-	case "routine":
-		return routineCommand(db, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q (try `aether help`)", args[0])
 	}
@@ -124,45 +97,70 @@ func spacesCommand(db *store.Store, args []string) error {
 	}
 }
 
-func captureCommand(db *store.Store, args []string) error {
-	fs := flag.NewFlagSet("capture", flag.ContinueOnError)
+func createCommand(db *store.Store, args []string) error {
+	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	spaceName := fs.String("space", "Personal", "Space name")
-	name := fs.String("name", "", "short Dot name")
-	objective := fs.String("objective", "", "task outcome")
-	mode := fs.String("mode", "local", "local (no model) or model")
-	sourceDir := fs.String("source", "", "explicit local source folder")
-	outputDir := fs.String("output", "", "explicit local output folder")
+	name := fs.String("name", "New Dot", "Dot name")
+	objective := fs.String("objective", "", "Dot's long-term objective")
+	instructions := fs.String("instructions", "", "Dot's lasting working instructions")
+	icon := fs.String("icon", "✦", "Dot icon")
+	color := fs.String("color", "#7458D8", "Dot color")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 0 || strings.TrimSpace(*objective) == "" || *sourceDir == "" || *outputDir == "" {
-		return errors.New("usage: aether capture --objective <task> --source <folder> --output <folder> [--space Personal] [--mode local|model]")
+	if fs.NArg() != 0 {
+		return errors.New("usage: aether create [--name <name>] [--objective <text>] [--instructions <text>] [--space Personal]")
 	}
 	snapshot := db.Snapshot()
-	var selected *task.Space
-	for i := range snapshot.Spaces {
-		if strings.EqualFold(snapshot.Spaces[i].Name, *spaceName) {
-			selected = &snapshot.Spaces[i]
+	spaceID := ""
+	for _, space := range snapshot.Spaces {
+		if strings.EqualFold(space.Name, *spaceName) {
+			spaceID = space.ID
 			break
 		}
 	}
-	if selected == nil {
+	if spaceID == "" {
 		return fmt.Errorf("Space %q not found; use `aether spaces create`", *spaceName)
 	}
-	sourceAbs, err := existingFolder(*sourceDir)
-	if err != nil {
-		return fmt.Errorf("source: %w", err)
-	}
-	outputAbs, err := existingFolder(*outputDir)
-	if err != nil {
-		return fmt.Errorf("output: %w", err)
-	}
-	dot, err := db.CreateDot(task.CreateDot{SpaceID: selected.ID, Name: *name, Objective: *objective, Mode: *mode, SourceRoot: sourceAbs, OutputDir: outputAbs})
+	conversation, err := db.CreateConversation(task.CreateConversation{
+		SpaceID: spaceID, Name: *name, Icon: *icon, Color: *color,
+		Purpose: *objective, Instructions: *instructions,
+	})
 	if err == nil {
-		fmt.Printf("Captured %s (%s)\n", dot.Name, dot.ID)
-		fmt.Printf("Run with: aether run %s\n", dot.ID)
+		fmt.Printf("Created Dot %q (%s)\n", conversation.Name, conversation.ID)
 	}
 	return err
+}
+
+func sendCommand(db *store.Store, args []string) error {
+	fs := flag.NewFlagSet("send", flag.ContinueOnError)
+	message := fs.String("message", "", "message for the Dot")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(*message) == "" {
+		return errors.New("usage: aether send <dot-id> --message <text>")
+	}
+	dot, _, err := db.CreateConversationRun(fs.Arg(0), *message)
+	if err != nil {
+		return err
+	}
+	return runMessage(db, dot.ID)
+}
+
+func runMessage(db *store.Store, id string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	generator := model.Generator{Config: model.FromEnvironment()}
+	if err := engine.Run(ctx, db, id, &generator, func(delta string) { fmt.Print(delta) }); err != nil {
+		if errors.Is(err, context.Canceled) {
+			fmt.Println("\nReply paused. Retry the message when ready.")
+			return nil
+		}
+		return err
+	}
+	fmt.Println()
+	return nil
 }
 
 func listCommand(db *store.Store) error {
@@ -171,8 +169,12 @@ func listCommand(db *store.Store) error {
 	for _, space := range snapshot.Spaces {
 		spaces[space.ID] = space.Name
 	}
-	for _, dot := range snapshot.Dots {
-		fmt.Printf("%s\t%-18s\t%-10s\t%s\n", dot.ID, dot.Status, spaces[dot.SpaceID], dot.Name)
+	for _, conversation := range snapshot.Conversations {
+		preview := "Ready for a prompt"
+		if len(conversation.Messages) > 0 {
+			preview = strings.Join(strings.Fields(conversation.Messages[len(conversation.Messages)-1].Content), " ")
+		}
+		fmt.Printf("%s\t%-20s\t%-12s\t%s\n", conversation.ID, conversation.Name, spaces[conversation.SpaceID], preview)
 	}
 	return nil
 }
@@ -181,21 +183,22 @@ func inspectCommand(db *store.Store, args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: aether inspect <dot-id>")
 	}
-	dot, err := findDot(db.Snapshot(), args[0])
-	if err != nil {
-		return err
+	snapshot := db.Snapshot()
+	for _, conversation := range snapshot.Conversations {
+		if conversation.ID != args[0] {
+			continue
+		}
+		fmt.Printf("Dot %s — %s\nSpace: %s\nObjective: %s\n", conversation.ID, conversation.Name,
+			spaceName(snapshot, conversation.SpaceID), conversation.Purpose)
+		if conversation.Instructions != "" {
+			fmt.Printf("Working instructions: %s\n", conversation.Instructions)
+		}
+		for _, message := range conversation.Messages {
+			fmt.Printf("\n%s: %s\n", strings.Title(message.Role), message.Content)
+		}
+		return nil
 	}
-	fmt.Printf("Dot %s — %s\nStatus: %s | mode: %s | Space: %s\nObjective: %s\nSource: %s (local only)\nOutput folder: %s\nCheckpoint: %s\n",
-		dot.ID, dot.Name, dot.Status, dot.Mode, spaceName(db.Snapshot(), dot.SpaceID), dot.Objective, dot.SourceRoot, dot.OutputDir, dot.Checkpoint)
-	fmt.Println("\nEvent timeline:")
-	for _, event := range dot.Events {
-		fmt.Printf("%03d  %s  %s  %s\n", event.Sequence, event.Timestamp.Format(time.RFC3339), event.Type, event.Message)
-	}
-	fmt.Println("\nVerified artifacts:")
-	for _, artifact := range dot.Artifacts {
-		fmt.Printf("%s\n  SHA-256 %s  (%d bytes; verified %s)\n", artifact.Path, artifact.SHA256, artifact.Bytes, artifact.VerifiedAt.Format(time.RFC3339))
-	}
-	return nil
+	return errors.New("Dot not found")
 }
 
 func modelCommand(args []string) error {
@@ -213,121 +216,39 @@ func modelCommand(args []string) error {
 	return nil
 }
 
-func routineCommand(db *store.Store, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: aether routine [list|promote|edit|run]")
-	}
-	switch args[0] {
-	case "list":
-		for _, r := range db.Snapshot().Routines {
-			fmt.Printf("%s\tv%d\t%s\t(read %s; write %s)\n", r.ID, r.Version, r.Name, r.SourceRoot, r.OutputDir)
-		}
-		return nil
-	case "promote":
-		if len(args) < 2 || len(args) > 3 {
-			return errors.New("usage: aether routine promote <dot-id> [name]")
-		}
-		name := ""
-		if len(args) == 3 {
-			name = args[2]
-		}
-		r, err := db.PromoteRoutine(args[1], name)
-		if err == nil {
-			fmt.Printf("Routine saved: %s (%s), version %d\n", r.Name, r.ID, r.Version)
-		}
-		return err
-	case "edit":
-		fs := flag.NewFlagSet("routine edit", flag.ContinueOnError)
-		name := fs.String("name", "", "editable routine label")
-		objective := fs.String("objective", "", "editable task objective")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if fs.NArg() != 1 {
-			return errors.New("usage: aether routine edit --name <name> --objective <objective> <routine-id>")
-		}
-		return db.EditRoutine(fs.Arg(0), *name, *objective)
-	case "run":
-		if len(args) != 2 {
-			return errors.New("usage: aether routine run <routine-id>")
-		}
-		snapshot := db.Snapshot()
-		spaceID := ""
-		for _, space := range snapshot.Spaces {
-			if space.Name == "Personal" {
-				spaceID = space.ID
-				break
-			}
-		}
-		if spaceID == "" && len(snapshot.Spaces) > 0 {
-			spaceID = snapshot.Spaces[0].ID
-		}
-		dot, err := db.DotFromRoutine(args[1], spaceID)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Created Dot %s with the Routine's original local grants.\n", dot.ID)
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		generator := model.Generator{Config: model.FromEnvironment()}
-		return engine.Run(ctx, db, dot.ID, &generator, func(delta string) { fmt.Print(delta) })
-	default:
-		return errors.New("usage: aether routine [list|promote|edit|run]")
-	}
-}
-
-func existingFolder(path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(resolved)
-	if err != nil || !info.IsDir() {
-		return "", errors.New("path is not an available folder")
-	}
-	return resolved, nil
-}
-
-func findDot(db task.Database, prefix string) (task.Dot, error) {
-	for _, dot := range db.Dots {
-		if dot.ID == prefix || strings.HasPrefix(dot.ID, prefix) {
-			return dot, nil
-		}
-	}
-	return task.Dot{}, fmt.Errorf("Dot %q not found", prefix)
-}
-
 func spaceName(db task.Database, id string) string {
 	for _, space := range db.Spaces {
 		if space.ID == id {
 			return space.Name
 		}
 	}
-	return "(missing)"
+	return "None"
 }
 
 func printHelp() {
-	fmt.Print(`AETHER Dots local task runtime
+	fmt.Print(`AETHER Dots — focused local Dot profiles and chat
 
-Usage: aether [--data-dir <folder>] <command>
+Usage:
+  aether [--data-dir <path>] <command>
 
 Commands:
-  spaces [list|create|rename]  Manage persisted Spaces
-  capture --objective ... --source <folder> --output <folder> [--mode local|model]
-  list                        List durable Dots
-  inspect <dot-id>            Show status, evidence and event timeline
-  mode <dot-id> local|model   Change a Dot's execution mode
-  run <dot-id>                Run a captured Dot
-  resume <dot-id>             Resume/retry a paused or failed Dot
-  model test                  Test the OpenAI Responses API connection
-  routine [list|promote|edit|run]
+  create [profile options]     Create a Dot profile
+  send <dot-id> --message ...  Send a message and print its reply
+  list                         List Dot profiles
+  inspect <dot-id>             Show a Dot profile and chat history
+  run <message-id>              Retry a saved message
+  spaces [list|create|rename]  Manage Spaces
+  model test                   Test the OpenAI connection
 
-Model settings (optional): AETHER_MODEL_NAME and OPENAI_API_KEY. The desktop
-app also lets you save the model name locally and stores the API key in the
-system credential store. The CLI reads OPENAI_API_KEY from its environment.
+Profile options:
+  --name <name>
+  --objective <text>
+  --instructions <text>
+  --icon <symbol>
+  --color <hex>
+  --space <name>
+
+Dot replies use profile and chat context. The CLI does not read or write
+user-selected files or folders. Set OPENAI_API_KEY for CLI model access.
 `)
 }

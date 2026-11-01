@@ -2,15 +2,16 @@ package task
 
 import "time"
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 const (
-	MaxConversationNameBytes       = 128
-	MaxConversationPurposeBytes    = 4096
-	MaxConversationMessageBytes    = 8192
-	MaxConversationContextMessages = 6
-	MaxConversationContextBytes    = 16 * 1024
-	MaxConversationObjectiveBytes  = MaxConversationPurposeBytes + MaxConversationMessageBytes + MaxConversationContextBytes + 512
+	MaxConversationNameBytes         = 128
+	MaxConversationPurposeBytes      = 4096
+	MaxConversationMessageBytes      = 8192
+	MaxConversationInstructionsBytes = 4096
+	MaxConversationContextMessages   = 12
+	MaxConversationContextBytes      = 24 * 1024
+	MaxConversationObjectiveBytes    = MaxConversationPurposeBytes + MaxConversationInstructionsBytes + MaxConversationMessageBytes + MaxConversationContextBytes + 1024
 )
 
 type Status string
@@ -42,46 +43,32 @@ type Event struct {
 	Hash      string    `json:"hash"`
 }
 
-type Artifact struct {
-	Path       string    `json:"path"`
-	SHA256     string    `json:"sha256"`
-	Bytes      int64     `json:"bytes"`
-	VerifiedAt time.Time `json:"verified_at"`
-}
-
 type Dot struct {
-	ID             string     `json:"id"`
-	SpaceID        string     `json:"space_id"`
-	ConversationID string     `json:"conversation_id,omitempty"`
-	ParentDotID    string     `json:"parent_dot_id,omitempty"`
-	Name           string     `json:"name"`
-	Objective      string     `json:"objective"`
-	Status         Status     `json:"status"`
-	Mode           string     `json:"mode"`
-	SourceRoot     string     `json:"source_root"`
-	OutputDir      string     `json:"output_dir"`
-	Checkpoint     string     `json:"checkpoint,omitempty"`
-	RoutineID      string     `json:"routine_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	Events         []Event    `json:"events"`
-	Artifacts      []Artifact `json:"artifacts"`
+	ID             string    `json:"id"`
+	SpaceID        string    `json:"space_id"`
+	ConversationID string    `json:"conversation_id,omitempty"`
+	ParentDotID    string    `json:"parent_dot_id,omitempty"`
+	Name           string    `json:"name"`
+	Objective      string    `json:"objective"`
+	Status         Status    `json:"status"`
+	Checkpoint     string    `json:"checkpoint,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Events         []Event   `json:"events"`
 }
 
-// Conversation is the durable identity, purpose, and local permission grant
-// created by the user before starting any work. Each submitted message creates
-// a separate Dot run linked back to this conversation.
+// Conversation is a durable Dot identity with its own chat history and profile.
 type Conversation struct {
-	ID         string                `json:"id"`
-	SpaceID    string                `json:"space_id"`
-	Name       string                `json:"name"`
-	Purpose    string                `json:"purpose"`
-	Mode       string                `json:"mode"`
-	SourceRoot string                `json:"source_root"`
-	OutputDir  string                `json:"output_dir"`
-	CreatedAt  time.Time             `json:"created_at"`
-	UpdatedAt  time.Time             `json:"updated_at"`
-	Messages   []ConversationMessage `json:"messages"`
+	ID           string                `json:"id"`
+	SpaceID      string                `json:"space_id"`
+	Name         string                `json:"name"`
+	Icon         string                `json:"icon"`
+	Color        string                `json:"color"`
+	Purpose      string                `json:"purpose"`
+	Instructions string                `json:"instructions,omitempty"`
+	CreatedAt    time.Time             `json:"created_at"`
+	UpdatedAt    time.Time             `json:"updated_at"`
+	Messages     []ConversationMessage `json:"messages"`
 }
 
 // ConversationMessage is an append-only, persisted user request or verified
@@ -94,46 +81,18 @@ type ConversationMessage struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Routine stores a reusable task contract and the exact local grants that
-// were used by its verified source Dot. Edits never widen these paths.
-type Routine struct {
-	ID           string    `json:"id"`
-	Version      int       `json:"version"`
-	Name         string    `json:"name"`
-	Objective    string    `json:"objective"`
-	Mode         string    `json:"mode"`
-	SourceRoot   string    `json:"source_root"`
-	OutputDir    string    `json:"output_dir"`
-	Precondition string    `json:"precondition"`
-	Verification string    `json:"verification"`
-	SourceDotID  string    `json:"source_dot_id"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
 type Database struct {
 	SchemaVersion int            `json:"schema_version"`
 	Spaces        []Space        `json:"spaces"`
 	Dots          []Dot          `json:"dots"`
 	Conversations []Conversation `json:"conversations,omitempty"`
-	Routines      []Routine      `json:"routines"`
-}
-
-type CreateDot struct {
-	SpaceID    string
-	Name       string
-	Objective  string
-	Mode       string
-	SourceRoot string
-	OutputDir  string
-	RoutineID  string
 }
 
 type CreateConversation struct {
-	SpaceID    string
-	Name       string
-	Purpose    string
-	Mode       string
-	SourceRoot string
-	OutputDir  string
+	SpaceID      string
+	Name         string
+	Icon         string
+	Color        string
+	Purpose      string
+	Instructions string
 }

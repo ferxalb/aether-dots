@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"aether-dots/internal/source"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -30,8 +28,8 @@ func TestResponsesSDKStreamingAndNoStorage(t *testing.T) {
 		if err := json.Unmarshal(body, &payload); err != nil {
 			return nil, err
 		}
-		response := "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"# Decision brief\\n\"}\n\n" +
-			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Evidence: notes.md\\n\"}\n\n" +
+		response := "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"A clear reply\\n\"}\n\n" +
+			"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"with a useful next step.\\n\"}\n\n" +
 			"event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n"
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -41,11 +39,11 @@ func TestResponsesSDKStreamingAndNoStorage(t *testing.T) {
 	})}
 	g := Generator{Config: Config{Model: "gpt-6.1-sol", APIKey: "test-secret", HTTPClient: client}}
 	var streamed strings.Builder
-	got, err := g.Generate(context.Background(), "Make a brief", []source.Document{{Path: "notes.md", Text: "TODO: choose"}}, func(delta string) { streamed.WriteString(delta) })
+	got, err := g.Generate(context.Background(), "Dot objective:\nHelp me think through this.\n\nNewest user message:\nMake a brief", func(delta string) { streamed.WriteString(delta) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "# Decision brief\nEvidence: notes.md\n" || streamed.String() != got {
+	if got != "A clear reply\nwith a useful next step.\n" || streamed.String() != got {
 		t.Fatalf("got %q streamed %q", got, streamed.String())
 	}
 	if seenAuth != "Bearer test-secret" {
@@ -54,8 +52,11 @@ func TestResponsesSDKStreamingAndNoStorage(t *testing.T) {
 	if payload["model"] != "gpt-6.1-sol" || payload["stream"] != true || payload["store"] != false {
 		t.Fatalf("unexpected Responses request fields: %#v", payload)
 	}
-	if payload["instructions"] == nil || !strings.Contains(payload["input"].(string), "selected source documents") {
+	if payload["instructions"] == nil || !strings.Contains(payload["instructions"].(string), "no access") || !strings.Contains(payload["input"].(string), "Dot objective") {
 		t.Fatalf("missing task input/instructions: %#v", payload)
+	}
+	if strings.Contains(payload["input"].(string), "source documents") || strings.Contains(payload["input"].(string), "/Users/") {
+		t.Fatalf("model request included local file context: %#v", payload["input"])
 	}
 }
 

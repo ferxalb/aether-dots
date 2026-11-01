@@ -6,6 +6,16 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (06) — Chat-first Dot redesign and removal of folder access
+
+- Replaced the task-first workflow with persistent Dots that are created immediately from New Dot, then opened as conversations. Users can set a Dot's name, icon, color, objective, working instructions, and Space; a normal chat prompt starts its work and can refine the profile over time.
+- Redesigned the shell, searchable Dot list, empty state, chat transcript, composer, and profile editor around a clearer hierarchy and quieter surfaces. Added direct Space management inside the profile editor and a `⌘N` shortcut for creating a Dot.
+- Removed user-selected folder reads and writes from the desktop, CLI, task model, engine, model context, and execution UI. Model requests now contain the Dot profile and bounded conversation context only. The app retains its own local conversation store and does not expose that store as Dot file access.
+- Added schema migration for old task data: verify the existing event history, clear old grants and artifacts, replace old task text with generic legacy activity, then persist the new chat-only schema. Removed folder-based execution and Routine commands.
+- Used the durable teammate framing from [xAI's bot guide](https://docs.x.ai/grok-bot/bots) as a reference for creating a reusable Dot first and personalizing its role and identity afterward.
+- Verification passed: `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go test -race ./...`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check`.
+- Rendered and reviewed MyGo previews for Chat, Profile, and Welcome in dark and light appearance at 1120×760 and 760×560. The minimum-height profile uses a scrollable editor; no live native macOS window was captured during this pass.
+
 ## 2026-11-01 (05) — Persisted Dot conversations
 
 - Added an optional Conversation record for a named Dot's purpose, execution mode, Space, and exact selected source/output folders. Existing `dots.json` records remain readable at schema version 1; legacy Dots continue to appear in history.

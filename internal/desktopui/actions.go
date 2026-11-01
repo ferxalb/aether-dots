@@ -4,36 +4,7 @@ import (
 	"context"
 
 	"aether-dots/internal/engine"
-	"github.com/egoist/mygo"
 )
-
-func (a *app) pickFolder(sourceFolder bool) {
-	win := a.win
-	go func() {
-		title := "Choose output folder"
-		if sourceFolder {
-			title = "Choose source folder"
-		}
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: win, Title: title, Directory: true})
-		if err == nil && len(paths) == 0 {
-			return
-		}
-		if win != nil {
-			win.Update(func() {
-				if err != nil {
-					a.message = err.Error()
-					return
-				}
-				if sourceFolder {
-					a.sourceRoot = paths[0]
-				} else {
-					a.outputDir = paths[0]
-				}
-				a.message = "Folder selected. AETHER will use only the displayed local scope."
-			})
-		}
-	}()
-}
 
 func (a *app) startRun(id string) {
 	if a.cancelRun != nil {
@@ -41,7 +12,7 @@ func (a *app) startRun(id string) {
 	}
 	dot, ok := a.db.GetDot(id)
 	if !ok {
-		a.message = "Dot not found."
+		a.message = "Dot message not found."
 		return
 	}
 	conversationID := dot.ConversationID
@@ -49,8 +20,8 @@ func (a *app) startRun(id string) {
 	a.cancelRun = cancel
 	a.runningDotID = id
 	a.live = ""
-	a.message = "Run started; events are saved as work progresses."
-	if conversationID != "" && conversationID == a.selectedConversationID {
+	a.message = "Preparing a reply…"
+	if conversationID == a.selectedConversationID {
 		a.conversationError = ""
 	}
 	win := a.win
@@ -74,34 +45,26 @@ func (a *app) startRun(id string) {
 				})
 			}
 		})
-		resultErr := a.persistConversationResult(conversationID, id, err)
 		cancel()
 		finish := func() {
 			a.cancelRun = nil
 			a.runningDotID = ""
 			a.live = ""
 			a.refresh()
-			if err == nil && resultErr == nil {
-				a.message = "Run finished; the local artifact was byte-verified."
-			} else if resultErr != nil {
-				a.message = "Run completed, but its verified artifact could not be added to the conversation: " + resultErr.Error()
+			if err == nil {
+				a.message = "Reply saved to the Dot chat."
 			} else if errorsIsCanceled(err) {
-				a.message = "Run paused at a safe boundary. Resume to re-read the selected local source."
-			} else if err != nil {
+				a.message = "Reply paused. Retry it when you’re ready."
+			} else {
 				a.message = err.Error()
 			}
-			if win != nil && conversationID != "" && conversationID == a.selectedConversationID {
-				switch {
-				case err == nil && resultErr == nil:
+			if conversationID != "" && conversationID == a.selectedConversationID {
+				if errorsIsCanceled(err) {
 					a.conversationError = ""
-				case resultErr != nil:
-					a.conversationError = resultErr.Error()
-				case errorsIsCanceled(err):
-					a.conversationError = ""
-				case err != nil:
+				} else if err != nil {
 					a.conversationError = err.Error()
-				}
-				if err == nil && resultErr == nil {
+				} else {
+					a.conversationError = ""
 					a.followChatIfAtBottom()
 				}
 			}

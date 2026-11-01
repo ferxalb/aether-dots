@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,15 +17,15 @@ func TestStoreRoundTripAndRejectsChangedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := s.Snapshot()
-	dot, err := s.CreateDot(task.CreateDot{
-		SpaceID: db.Spaces[0].ID, Objective: "Read the notes", Mode: "local",
-		SourceRoot: filepath.Join(dir, "source"), OutputDir: filepath.Join(dir, "out"),
-	})
+	conversation, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: "Decision Dot"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AppendEvent(dot.ID, "source_read", "Read one note."); err != nil {
+	dot, _, err := s.CreateConversationRun(conversation.ID, "Summarize this discussion")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendEvent(dot.ID, "model_started", "Reply started."); err != nil {
 		t.Fatal(err)
 	}
 	opened, err := Open(dir)
@@ -60,39 +61,99 @@ func TestStoreRoundTripAndRejectsChangedEvent(t *testing.T) {
 	}
 }
 
-func TestRoutineKeepsExactGrantsAfterEditAndRun(t *testing.T) {
+func TestSchemaV1MigrationDropsLocalScopesArtifactsAndRoutines(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot := s.Snapshot()
-	readRoot, outputDir := filepath.Join(dir, "notes"), filepath.Join(dir, "briefs")
-	dot, err := s.CreateDot(task.CreateDot{SpaceID: snapshot.Spaces[0].ID, Objective: "Prepare decisions", Mode: "local", SourceRoot: readRoot, OutputDir: outputDir})
+	conversation, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: "Old Dot"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AddArtifact(dot.ID, task.Artifact{Path: filepath.Join(outputDir, "brief.md"), SHA256: "verified", Bytes: 12, VerifiedAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetStatus(dot.ID, task.Done, "verified"); err != nil {
-		t.Fatal(err)
-	}
-	routine, err := s.PromoteRoutine(dot.ID, "Decision brief")
+	dot, _, err := s.CreateConversationRun(conversation.ID, "Old task")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.EditRoutine(routine.ID, "Weekly brief", "Group open decisions"); err != nil {
+	if err := s.AppendEvent(dot.ID, "source_read", "Read /Users/private/notes/source.md"); err != nil {
 		t.Fatal(err)
 	}
-	newDot, err := s.DotFromRoutine(routine.ID, snapshot.Spaces[0].ID)
+	if err := s.AppendEvent(dot.ID, "artifact_verified", "Saved /Users/private/output/result.md"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "dots.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if newDot.SourceRoot != readRoot || newDot.OutputDir != outputDir {
-		t.Fatalf("routine grants changed: %#v", newDot)
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
 	}
-	if newDot.Objective != "Group open decisions" || newDot.Mode != "local" {
-		t.Fatalf("routine edit not applied: %#v", newDot)
+	raw["schema_version"] = float64(1)
+	dots := raw["dots"].([]any)
+	legacyDot := dots[0].(map[string]any)
+	legacyDot["source_root"] = "/Users/private/notes"
+	legacyDot["output_dir"] = "/Users/private/output"
+	legacyDot["artifacts"] = []any{map[string]any{"path": "/Users/private/output/result.md"}}
+	raw["routines"] = []any{map[string]any{"name": "Legacy routine", "source_root": "/Users/private/notes"}}
+	data, err = json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dots.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := reopened.Snapshot()
+	if snapshot.SchemaVersion != task.SchemaVersion {
+		t.Fatalf("schema version=%d, want %d", snapshot.SchemaVersion, task.SchemaVersion)
+	}
+	if len(snapshot.Dots) != 1 || len(snapshot.Dots[0].Events) != 3 {
+		t.Fatalf("legacy timeline was not retained in sanitized form: %#v", snapshot.Dots)
+	}
+	for _, event := range snapshot.Dots[0].Events {
+		if strings.Contains(event.Message, "/Users/private") || event.Type == "source_read" || event.Type == "artifact_verified" {
+			t.Fatalf("legacy local path survived migration: %#v", event)
+		}
+	}
+	serialized, err := os.ReadFile(filepath.Join(dir, "dots.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"/Users/private", "source_root", "output_dir", "artifacts", "routines"} {
+		if strings.Contains(string(serialized), forbidden) {
+			t.Fatalf("retired local field %q survived migration: %s", forbidden, serialized)
+		}
+	}
+}
+
+func TestRecoverInterruptedConversationRun(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "store"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Recovery"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dot, _, err := db.CreateConversationRun(conversation.ID, "A message")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetStatus(dot.ID, task.Running, "Started."); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := db.RecoverInterruptedRuns()
+	if err != nil || recovered != 1 {
+		t.Fatalf("recovered=%d err=%v", recovered, err)
+	}
+	got, ok := db.GetDot(dot.ID)
+	if !ok || got.Status != task.Paused || got.UpdatedAt.After(time.Now().Add(time.Second)) {
+		t.Fatalf("unexpected recovered state: %#v", got)
 	}
 }

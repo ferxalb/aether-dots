@@ -3,45 +3,46 @@ package desktopui
 import "strings"
 
 func (a *app) openSpaceCreate() {
-	a.creatorSpaceManagementOpen = true
+	a.spaceManagementOpen = true
 	a.renameSpaceID = ""
 	a.spaceDraft = ""
 }
 
 func (a *app) openSpaceRename(spaceID, name string) {
-	a.creatorSpaceManagementOpen = true
+	a.spaceManagementOpen = true
 	a.renameSpaceID = spaceID
 	a.spaceDraft = name
 }
 
 func (a *app) saveSpaceDraft() {
 	name := strings.TrimSpace(a.spaceDraft)
+	if name == "" {
+		a.conversationError = "Space name is required."
+		return
+	}
 	if a.renameSpaceID != "" {
 		if err := a.db.RenameSpace(a.renameSpaceID, name); err != nil {
-			a.message = err.Error()
+			a.conversationError = err.Error()
 			return
 		}
+		a.conversationError = ""
 		a.message = "Space renamed."
 	} else {
 		space, err := a.db.CreateSpace(name)
 		if err != nil {
-			a.message = err.Error()
+			a.conversationError = err.Error()
 			return
 		}
-		a.selectedSpaceID = space.ID
-		a.selectedConversationID = ""
-		a.selectedDotID = ""
-		a.selectedRoutineID = ""
-		a.creatorOpen = true
-		a.settingsOpen = false
+		a.profileSpaceID = space.ID
+		a.conversationError = ""
 		a.message = "Space created."
 	}
-	a.closeSpaceManagement()
 	a.refresh()
+	a.closeSpaceManagement()
 }
 
 func (a *app) closeSpaceManagement() {
-	a.creatorSpaceManagementOpen = false
+	a.spaceManagementOpen = false
 	a.renameSpaceID = ""
 	a.spaceDraft = ""
 }

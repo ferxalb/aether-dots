@@ -48,7 +48,7 @@ func (a *app) openAISettings(c *ui.Context, theme *ui.Theme) {
 			ui.Box(c).Size(7, 7).Shrink(0).Radius(4).Background(credentialColor(theme, a))
 			ui.Text(c, statusText).FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		})
-		ui.Text(c, "AETHER sends selected source text to OpenAI when you run a model task. Saved keys stay in the system credential store; response storage is disabled.").
+		ui.Text(c, "AETHER sends your messages, Dot profile, and recent chat context to OpenAI to generate replies. Dots cannot access files or folders. Saved keys stay in the system credential store; response storage is disabled.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		ui.Row(c).Gap(9).Children(func() {
 			test := ui.Button(c.Key("settings-test-openai"), "").Grow(1).Padding(10, 12).Gap(8).Radius(10).

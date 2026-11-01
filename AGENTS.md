@@ -4,7 +4,7 @@
 
 - `main.go` starts the native macOS desktop app; `cmd/aether/main.go` contains the CLI.
 - `internal/desktopui/` holds MyGo views, settings, actions, and appearance. Keep UI sections in focused files rather than growing `app.go`.
-- `internal/engine/` runs tasks; `internal/model/` integrates the OpenAI SDK; `internal/source/` reads approved local files; `internal/store/` persists task history; `internal/task/` defines task data.
+- `internal/engine/` runs chat turns; `internal/model/` integrates the OpenAI SDK; `internal/store/` persists Dot profiles and chat history; `internal/task/` defines task data.
 - Tests live beside their package in `*_test.go` files. App resources and third-party license notices are in `resources/`.
 
 ## Build, Test, and Development Commands
@@ -28,4 +28,4 @@ Recent commits use concise imperative summaries, with Conventional Commit prefix
 
 ## Security and Configuration
 
-Keep model keys out of task data and preferences files. Desktop credentials belong in MyGo's system credential store; `OPENAI_API_KEY` is the CLI fallback. Preserve the app's explicit local source and output scopes when changing task behavior. Append dated engineering notes to `HISTORY-TRACKER.md`; reserve `CHANGELOG.md` for release-ready changes.
+Keep model keys out of task data and preferences files. Desktop credentials belong in MyGo's system credential store; `OPENAI_API_KEY` is the CLI fallback. Dot execution must not request, read, or write user-selected local files or folders. Append dated engineering notes to `HISTORY-TRACKER.md`; reserve `CHANGELOG.md` for release-ready changes.

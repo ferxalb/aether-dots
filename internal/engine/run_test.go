@@ -3,185 +3,151 @@ package engine
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"aether-dots/internal/model"
-	"aether-dots/internal/source"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
 )
 
-func TestLocalRunWritesVerifiesAndPersistsDot(t *testing.T) {
-	dir := t.TempDir()
-	sourceDir, outputDir := filepath.Join(dir, "notes"), filepath.Join(dir, "output")
-	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(outputDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "flow.md"), []byte("# Checkout\nTODO: decide whether guests can save addresses\nThe total updates after payment."), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(filepath.Join(dir, "store"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dot, err := db.CreateDot(task.CreateDot{SpaceID: db.Snapshot().Spaces[0].ID, Objective: "Find open design decisions", Mode: "local", SourceRoot: sourceDir, OutputDir: outputDir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := Run(context.Background(), db, dot.ID, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := db.GetDot(dot.ID)
-	if got.Status != task.Done || len(got.Artifacts) != 1 {
-		t.Fatalf("status=%s artifacts=%d", got.Status, len(got.Artifacts))
-	}
-	b, err := os.ReadFile(got.Artifacts[0].Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !contains(string(b), "flow.md:2") || !contains(string(b), "TODO: decide") {
-		t.Fatalf("report lacks source evidence: %s", b)
-	}
-	if got.Artifacts[0].SHA256 == "" {
-		t.Fatal("artifact hash missing")
-	}
-	if err := Run(context.Background(), db, dot.ID, nil, nil); err == nil {
-		t.Fatal("completed Dot reran without explicit new capture")
-	}
-	if _, err := store.Open(filepath.Join(dir, "store")); err != nil {
-		t.Fatalf("persisted event chain did not reopen: %v", err)
-	}
+type testGenerator struct {
+	ready   bool
+	reason  string
+	reply   string
+	started chan struct{}
 }
 
-func TestMissingModelStopsAtWaitingInputAndCancellationPauses(t *testing.T) {
-	dir := t.TempDir()
-	sourceDir, outputDir := filepath.Join(dir, "notes"), filepath.Join(dir, "output")
-	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
-		t.Fatal(err)
+func (g *testGenerator) Generate(ctx context.Context, objective string, onDelta func(string)) (string, error) {
+	if g.started != nil {
+		close(g.started)
 	}
-	if err := os.MkdirAll(outputDir, 0o700); err != nil {
-		t.Fatal(err)
+	if g.reply == "wait" {
+		<-ctx.Done()
+		return "", ctx.Err()
 	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "note.txt"), []byte("Decision: choose a flow"), 0o600); err != nil {
-		t.Fatal(err)
+	if onDelta != nil {
+		onDelta(g.reply)
 	}
-	db, err := store.Open(filepath.Join(dir, "store"))
-	if err != nil {
-		t.Fatal(err)
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-	makeDot := func(mode string) task.Dot {
-		dot, err := db.CreateDot(task.CreateDot{SpaceID: db.Snapshot().Spaces[0].ID, Objective: "Prepare a brief", Mode: mode, SourceRoot: sourceDir, OutputDir: outputDir})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return dot
-	}
-	missing := makeDot("model")
-	generator := model.Generator{Config: model.Config{}}
-	if err := Run(context.Background(), db, missing.ID, &generator, nil); err == nil {
-		t.Fatal("missing model key did not stop the run")
-	}
-	got, _ := db.GetDot(missing.ID)
-	if got.Status != task.WaitingInput || len(got.Artifacts) != 0 {
-		t.Fatalf("unexpected missing-model state: %s", got.Status)
-	}
-
-	paused := makeDot("model")
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := Run(ctx, db, paused.ID, &generatorWithCancel{}, nil); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected cancellation, got %v", err)
-	}
-	got, _ = db.GetDot(paused.ID)
-	if got.Status != task.Paused {
-		t.Fatalf("status after cancellation = %s", got.Status)
-	}
+	return g.reply, nil
 }
 
-func TestOutputFolderCannotBeInsideSource(t *testing.T) {
-	dir := t.TempDir()
-	sourceDir, outputDir := filepath.Join(dir, "notes"), filepath.Join(dir, "notes", "output")
-	if err := os.MkdirAll(outputDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "note.md"), []byte("TODO: choose a default"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(filepath.Join(dir, "store"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dot, err := db.CreateDot(task.CreateDot{SpaceID: db.Snapshot().Spaces[0].ID, Objective: "Prepare a brief", Mode: "local", SourceRoot: sourceDir, OutputDir: outputDir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := Run(context.Background(), db, dot.ID, nil, nil); err == nil {
-		t.Fatal("output nested inside the source was accepted")
-	}
-	got, _ := db.GetDot(dot.ID)
-	if got.Status != task.Failed || len(got.Artifacts) != 0 {
-		t.Fatalf("unexpected state after scope failure: status=%s artifacts=%d", got.Status, len(got.Artifacts))
-	}
-}
+func (g *testGenerator) Readiness() (bool, string) { return g.ready, g.reason }
+func (*testGenerator) Description() string         { return "test provider" }
 
-func TestRunWithProgressPublishesPersistedRunPhases(t *testing.T) {
-	dir := t.TempDir()
-	sourceDir, outputDir := filepath.Join(dir, "notes"), filepath.Join(dir, "output")
-	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(outputDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sourceDir, "note.md"), []byte("TODO: confirm a decision"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(filepath.Join(dir, "store"))
+func TestRunStoresChatReplyWithoutUserSelectedFileAccess(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "store"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	dot, err := db.CreateDot(task.CreateDot{
-		SpaceID: db.Snapshot().Spaces[0].ID, Objective: "Find open decisions", Mode: "local",
-		SourceRoot: sourceDir, OutputDir: outputDir,
+	conversation, err := db.CreateConversation(task.CreateConversation{
+		SpaceID: db.Snapshot().Spaces[0].ID, Name: "Decision partner",
+		Purpose: "Help me prepare concise decision briefs.", Instructions: "Use direct language.",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var checkpoints []string
-	if err := RunWithProgress(context.Background(), db, dot.ID, nil, nil, func() {
-		current, ok := db.GetDot(dot.ID)
-		if !ok {
-			t.Fatal("progress callback could not read the current Dot")
-		}
-		if current.Status != task.Running {
-			t.Fatalf("progress callback ran before running status was persisted: %s", current.Status)
-		}
-		checkpoints = append(checkpoints, current.Checkpoint)
-	}); err != nil {
+	dot, _, err := db.CreateConversationRun(conversation.ID, "Summarize the open questions.")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(checkpoints) < 3 || checkpoints[0] != "" || checkpoints[1] != "reading selected text files" || checkpoints[len(checkpoints)-1] != "writing and verifying the local artifact" {
-		t.Fatalf("unexpected persisted phase notifications: %#v", checkpoints)
+	generator := &testGenerator{ready: true, reply: "There are two open questions."}
+	var streamed strings.Builder
+	if err := Run(context.Background(), db, dot.ID, generator, func(delta string) { streamed.WriteString(delta) }); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := db.GetDot(dot.ID)
+	if !ok || got.Status != task.Done {
+		t.Fatalf("Dot status=%s found=%t", got.Status, ok)
+	}
+	snapshot := db.Snapshot()
+	if len(snapshot.Conversations[0].Messages) != 2 || snapshot.Conversations[0].Messages[1].Content != generator.reply || streamed.String() != generator.reply {
+		t.Fatalf("reply was not streamed and persisted: %#v", snapshot.Conversations[0].Messages)
+	}
+	if len(got.Events) < 3 || got.Events[len(got.Events)-1].Type != "status" {
+		t.Fatalf("run event trail is incomplete: %#v", got.Events)
 	}
 }
 
-type generatorWithCancel struct{}
-
-func (*generatorWithCancel) Generate(ctx context.Context, _ string, _ []source.Document, _ func(string)) (string, error) {
-	<-ctx.Done()
-	return "", ctx.Err()
+func TestMissingModelWaitsForInput(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "store"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "No key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dot, _, err := db.CreateConversationRun(conversation.ID, "A request")
+	if err != nil {
+		t.Fatal(err)
+	}
+	generator := &testGenerator{ready: false, reason: "API key is missing"}
+	if err := Run(context.Background(), db, dot.ID, generator, nil); err == nil {
+		t.Fatal("missing model key did not stop the run")
+	}
+	got, _ := db.GetDot(dot.ID)
+	if got.Status != task.WaitingInput {
+		t.Fatalf("unexpected missing-model state: %s", got.Status)
+	}
 }
 
-func (*generatorWithCancel) Readiness() (bool, string) { return true, "" }
+func TestCancellationPausesAndCanBeRetried(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "store"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Cancelable"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dot, _, err := db.CreateConversationRun(conversation.ID, "Wait for cancellation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	generator := &testGenerator{ready: true, reply: "wait", started: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, db, dot.ID, generator, nil) }()
+	<-generator.started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", err)
+	}
+	got, _ := db.GetDot(dot.ID)
+	if got.Status != task.Paused {
+		t.Fatalf("status after cancellation=%s", got.Status)
+	}
+}
 
-func (*generatorWithCancel) Description() string { return "test provider" }
-
-func contains(s, part string) bool {
-	return len(s) >= len(part) && strings.Contains(s, part)
+func TestRunWithProgressPublishesModelPhases(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "store"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Progress"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dot, _, err := db.CreateConversationRun(conversation.ID, "One message")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkpoints []string
+	err = RunWithProgress(context.Background(), db, dot.ID, &testGenerator{ready: true, reply: "Reply"}, nil, func() {
+		current, ok := db.GetDot(dot.ID)
+		if !ok || current.Status != task.Running {
+			t.Fatalf("progress callback ran before running status was persisted: %#v", current)
+		}
+		checkpoints = append(checkpoints, current.Checkpoint)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checkpoints) != 3 || checkpoints[0] != "" || checkpoints[1] != "generating response" || checkpoints[2] != "" {
+		t.Fatalf("unexpected persisted phase notifications: %#v", checkpoints)
+	}
 }

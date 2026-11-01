@@ -1,10 +1,8 @@
 # AETHER Dots
 
-A Go-only macOS desktop alpha for durable, inspectable local work. The task engine and CLI share the same local store. The desktop window uses MyGo's Go-drawn native UI; it is not a WebView or a set of AppKit controls.
+AETHER Dots is a native macOS workspace for focused AI teammates. Each Dot has its own name, icon, objective, working instructions, and continuing chat. The desktop UI is drawn by MyGo in Go; it is not a WebView.
 
 ## Quick commands
-
-The Makefile provides short commands, similar to `npm run` scripts:
 
 ```sh
 make             # list commands
@@ -15,8 +13,6 @@ make package     # build the .app and disk image
 make cli-help    # show CLI commands
 ```
 
-Use `make dev` to see UI changes as you work. MyGo opens a separate **AETHER Dots Dev** app and reloads it when Go code changes.
-
 ## Run
 
 From this directory:
@@ -25,47 +21,45 @@ From this directory:
 CGO_ENABLED=0 go run .
 ```
 
-The app opens with an empty `Personal` Space. Use **Choose source folder**, **Choose destination**, enter an outcome, and create a Dot. `⌘⇧Space` opens AETHER from another app; the menu bar item can reopen it after the window closes.
+Choose **New Dot** or press `⌘N` to create a Dot and open its chat immediately. Start by sending a prompt. Use **Customize** to change its name, icon, color, objective, or lasting working instructions. `⌘⇧Space` opens AETHER from another app; the menu bar item can reopen it after the window closes.
 
-The default `local` mode reads bounded UTF-8 Markdown/text/CSV/JSON files and creates a deterministic list of lines containing open-decision markers. It uses no account or credential and clearly labels the limits of that extraction. `model` mode sends the selected text to the configured OpenAI model and streams the draft into the event view. Review model output before relying on its conclusions.
+Dots use only their saved profile and recent chat context. They cannot read or write user files or folders. Replies are saved to chat history in AETHER's local store; Dot tasks do not create output files.
 
-Model tasks use the official OpenAI Go SDK and OpenAI Responses API. The desktop Settings page stores the selected model in the local preferences file and the API key in the system credential store. The CLI reads its API key from the environment.
+## Model setup
+
+Model replies use the official OpenAI Go SDK and Responses API. The desktop Settings page stores the selected model in local preferences and the API key in the system credential store. The CLI reads its key from `OPENAI_API_KEY`.
 
 ```sh
 export AETHER_MODEL_NAME="gpt-6.1-sol"
 export OPENAI_API_KEY="..."
 ```
 
-The desktop Settings page includes model selection, a secure API-key field, appearance mode, seven color palettes, and a connection check. The API key is never written to the task store or preferences file. Requests use the OpenAI Responses API with response storage disabled. The **Test connection** button and `aether model test` check the configured model.
+The desktop Settings page includes model selection, a secure API-key field, appearance mode, seven color palettes, and a connection check. The API key is never written to the chat store or preferences file. Requests use the OpenAI Responses API with response storage disabled. Each reply includes the Dot profile, the newest user message, and up to 12 recent chat messages within a 24 KiB context budget; older messages may be omitted and long entries excerpted.
 
 ## CLI
 
 ```sh
 CGO_ENABLED=0 go run ./cmd/aether --help
 CGO_ENABLED=0 go run ./cmd/aether spaces list
-CGO_ENABLED=0 go run ./cmd/aether capture \
-  --objective "Find open decisions and prepare a brief with evidence" \
-  --source /path/to/selected-notes --output /path/to/output --mode local
+CGO_ENABLED=0 go run ./cmd/aether create --name "Decision partner" \
+  --objective "Help me prepare concise decision briefs" \
+  --instructions "Use plain language and state uncertainty"
 CGO_ENABLED=0 go run ./cmd/aether list
+CGO_ENABLED=0 go run ./cmd/aether send <dot-id> --message "Summarize this discussion"
 CGO_ENABLED=0 go run ./cmd/aether inspect <dot-id>
-CGO_ENABLED=0 go run ./cmd/aether run <dot-id>
-CGO_ENABLED=0 go run ./cmd/aether resume <dot-id>
-CGO_ENABLED=0 go run ./cmd/aether routine promote <dot-id> "Weekly decision brief"
-CGO_ENABLED=0 go run ./cmd/aether routine list
 ```
 
-Use `--data-dir <folder>` before the command to select an alternate local store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The default store is under the operating system's user config directory. The JSON file is versioned, written atomically with owner-only permissions, and includes a per-Dot hash chain over the append-only event history.
+Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants.
 
 ## Package and checks
 
 ```sh
-CGO_ENABLED=0 go build -o build/aether .
-CGO_ENABLED=0 go tool mygo build
+CGO_ENABLED=0 go build ./...
 CGO_ENABLED=0 go test ./...
 CGO_ENABLED=0 go tool mygo vet .
 ```
 
-The first slice has local-folder reach only. It has no MCP client, cloud worker, OS keychain storage, or arbitrary-app control. A model request sends selected local text to the configured endpoint; local extraction does not.
+The app's own Dot store and preferences are local. Dot task execution has no user-selected filesystem read or write access, no MCP client, cloud worker, or arbitrary-app control.
 
 ## Development history
 

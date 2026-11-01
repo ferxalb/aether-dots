@@ -27,9 +27,6 @@ func (a *app) selectConversation(id string) {
 		a.selectedSpaceID = conversation.SpaceID
 	}
 	a.selectedDotID = ""
-	a.selectedRoutineID = ""
-	a.creatorOpen = false
-	a.routinesOpen = false
 	a.conversationDetailsOpen = false
 	a.settingsOpen = false
 	a.conversationError = ""

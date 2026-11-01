@@ -1,42 +1,45 @@
 package store
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"aether-dots/internal/source"
 	"aether-dots/internal/task"
 )
 
 func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversation, error) {
 	in.SpaceID = strings.TrimSpace(in.SpaceID)
 	in.Name = strings.TrimSpace(in.Name)
+	in.Icon = strings.TrimSpace(in.Icon)
+	in.Color = strings.TrimSpace(in.Color)
 	in.Purpose = strings.TrimSpace(in.Purpose)
-	in.Mode = strings.TrimSpace(in.Mode)
-	if in.Name == "" || len(in.Name) > task.MaxConversationNameBytes {
+	in.Instructions = strings.TrimSpace(in.Instructions)
+	if in.Name == "" {
+		in.Name = "New Dot"
+	}
+	if len(in.Name) > task.MaxConversationNameBytes {
 		return task.Conversation{}, fmt.Errorf("conversation name must be 1–%d bytes", task.MaxConversationNameBytes)
 	}
-	if in.Purpose == "" || len(in.Purpose) > task.MaxConversationPurposeBytes {
-		return task.Conversation{}, fmt.Errorf("Dot purpose must be 1–%d bytes", task.MaxConversationPurposeBytes)
+	if len(in.Purpose) > task.MaxConversationPurposeBytes {
+		return task.Conversation{}, fmt.Errorf("Dot objective must be at most %d bytes", task.MaxConversationPurposeBytes)
 	}
-	if !utf8.ValidString(in.Name) || !utf8.ValidString(in.Purpose) {
-		return task.Conversation{}, errors.New("Dot name and purpose must be valid UTF-8 text")
+	if len(in.Instructions) > task.MaxConversationInstructionsBytes {
+		return task.Conversation{}, fmt.Errorf("working instructions must be at most %d bytes", task.MaxConversationInstructionsBytes)
 	}
-	if in.Mode != "local" && in.Mode != "model" {
-		return task.Conversation{}, errors.New("mode must be local or model")
+	if !utf8.ValidString(in.Name) || !utf8.ValidString(in.Purpose) || !utf8.ValidString(in.Instructions) {
+		return task.Conversation{}, errors.New("Dot profile must be valid UTF-8 text")
 	}
-	if strings.TrimSpace(in.SourceRoot) == "" || strings.TrimSpace(in.OutputDir) == "" {
-		return task.Conversation{}, errors.New("choose both a source folder and an output folder before creating a Dot")
+	if in.Icon == "" {
+		in.Icon = "✦"
 	}
-	if err := validateConversationScopes(in.SourceRoot, in.OutputDir); err != nil {
+	if in.Color == "" {
+		in.Color = "#7458D8"
+	}
+	if err := validateProfileStyle(in.Icon, in.Color); err != nil {
 		return task.Conversation{}, err
 	}
 	id, err := newID()
@@ -45,8 +48,8 @@ func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversatio
 	}
 	now := time.Now().UTC()
 	conversation := task.Conversation{
-		ID: id, SpaceID: in.SpaceID, Name: in.Name, Purpose: in.Purpose,
-		Mode: in.Mode, SourceRoot: in.SourceRoot, OutputDir: in.OutputDir,
+		ID: id, SpaceID: in.SpaceID, Name: in.Name, Icon: in.Icon, Color: in.Color,
+		Purpose: in.Purpose, Instructions: in.Instructions,
 		CreatedAt: now, UpdatedAt: now, Messages: []task.ConversationMessage{},
 	}
 	err = s.change(func(db *task.Database) error {
@@ -59,36 +62,62 @@ func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversatio
 	return conversation, err
 }
 
-func validateConversationScopes(sourceRoot, outputDir string) error {
-	sourcePath, err := filepath.EvalSymlinks(sourceRoot)
-	if err != nil {
-		return fmt.Errorf("resolve selected source folder: %w", err)
+func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string) error {
+	spaceID = strings.TrimSpace(spaceID)
+	name = strings.TrimSpace(name)
+	icon = strings.TrimSpace(icon)
+	color = strings.TrimSpace(color)
+	purpose = strings.TrimSpace(purpose)
+	instructions = strings.TrimSpace(instructions)
+	if name == "" || len(name) > task.MaxConversationNameBytes {
+		return fmt.Errorf("Dot name must be 1–%d bytes", task.MaxConversationNameBytes)
 	}
-	sourceInfo, err := os.Stat(sourcePath)
-	if err != nil || !sourceInfo.IsDir() {
-		return errors.New("source must be an existing folder selected by the user")
+	if len(purpose) > task.MaxConversationPurposeBytes || len(instructions) > task.MaxConversationInstructionsBytes {
+		return errors.New("Dot objective or working instructions exceed the allowed length")
 	}
-	outputPath, err := filepath.EvalSymlinks(outputDir)
-	if err != nil {
-		return fmt.Errorf("resolve selected output folder: %w", err)
+	if !utf8.ValidString(name) || !utf8.ValidString(purpose) || !utf8.ValidString(instructions) {
+		return errors.New("Dot profile is incomplete or invalid")
 	}
-	outputInfo, err := os.Stat(outputPath)
-	if err != nil || !outputInfo.IsDir() {
-		return errors.New("output must be an existing folder selected by the user")
+	if err := validateProfileStyle(icon, color); err != nil {
+		return err
 	}
-	relative, err := filepath.Rel(sourcePath, outputPath)
-	if err != nil {
-		return fmt.Errorf("compare source and output folders: %w", err)
+	return s.change(func(db *task.Database) error {
+		i := conversationIndex(db, id)
+		if i < 0 {
+			return errors.New("Dot not found")
+		}
+		if !hasSpace(db, spaceID) {
+			return errors.New("Space not found")
+		}
+		conversation := &db.Conversations[i]
+		conversation.SpaceID = spaceID
+		conversation.Name = name
+		conversation.Icon = icon
+		conversation.Color = color
+		conversation.Purpose = purpose
+		conversation.Instructions = instructions
+		conversation.UpdatedAt = time.Now().UTC()
+		return nil
+	})
+}
+
+func validateProfileStyle(icon, color string) error {
+	if icon == "" || len(icon) > 32 || !utf8.ValidString(icon) {
+		return errors.New("Dot icon must contain 1–32 bytes of valid UTF-8 text")
 	}
-	if relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))) {
-		return errors.New("choose an output folder outside the selected source folder")
+	if len(color) != 7 || color[0] != '#' {
+		return errors.New("Dot color must be a six-digit hex value such as #7458D8")
+	}
+	for _, digit := range color[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", digit) {
+			return errors.New("Dot color must be a six-digit hex value such as #7458D8")
+		}
 	}
 	return nil
 }
 
-// CreateConversationRun atomically records a user request and the real Dot run
-// that will execute it. The conversation's saved purpose, mode, and local path
-// grants remain fixed for every child run.
+// CreateConversationRun atomically records a user request and the Dot run that
+// will answer it using the saved profile and recent chat context.
 func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot, task.ConversationMessage, error) {
 	if strings.TrimSpace(content) == "" {
 		return task.Dot{}, task.ConversationMessage{}, errors.New("message is empty")
@@ -119,9 +148,6 @@ func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot,
 		if !hasSpace(db, conversation.SpaceID) {
 			return errors.New("conversation space not found")
 		}
-		if conversation.Mode != "local" && conversation.Mode != "model" {
-			return errors.New("conversation has an invalid execution mode")
-		}
 		for _, existing := range db.Dots {
 			if existing.ConversationID != "" && (existing.Status == task.Captured || existing.Status == task.Ready || existing.Status == task.Running) {
 				return errors.New("a Dot delegation is already queued or running")
@@ -133,8 +159,8 @@ func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot,
 			if parent.ConversationID != conversation.ID {
 				continue
 			}
-			if parent.SpaceID != conversation.SpaceID || parent.SourceRoot != conversation.SourceRoot || parent.OutputDir != conversation.OutputDir {
-				return errors.New("saved conversation grants no longer match its child Dot history")
+			if parent.SpaceID != conversation.SpaceID {
+				return errors.New("saved Dot space no longer matches its task history")
 			}
 			parentDotID = parent.ID
 			break
@@ -147,12 +173,11 @@ func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot,
 			ID: dotID, SpaceID: conversation.SpaceID,
 			ConversationID: conversation.ID, ParentDotID: parentDotID,
 			Name: shortName(content), Objective: objective,
-			Status: task.Ready, Mode: conversation.Mode,
-			SourceRoot: conversation.SourceRoot, OutputDir: conversation.OutputDir,
+			Status:    task.Ready,
 			CreatedAt: now, UpdatedAt: now,
-			Events: []task.Event{}, Artifacts: []task.Artifact{},
+			Events: []task.Event{},
 		}
-		appendEvent(&dot, "captured", "Chat delegation queued with this Dot's saved local source and output grants.")
+		appendEvent(&dot, "captured", "Chat message queued for this Dot.")
 		message = task.ConversationMessage{ID: messageID, Role: "user", Content: content, DotID: dot.ID, CreatedAt: now}
 		conversation.Messages = append(conversation.Messages, message)
 		conversation.UpdatedAt = now
@@ -162,11 +187,12 @@ func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot,
 	return dot, message, err
 }
 
-// AppendConversationResult stores only the exact bytes from a verified artifact
-// linked to a completed child Dot. Repeating the same completion is idempotent.
+// AppendConversationResult stores a generated assistant response. Repeating the
+// same completion is idempotent.
 func (s *Store) AppendConversationResult(conversationID, dotID, report string) error {
-	if len(report) == 0 || len(report) > source.MaxOutputBytes {
-		return fmt.Errorf("conversation result must be between 1 and %d bytes", source.MaxOutputBytes)
+	const maxResponseBytes = 2 * 1024 * 1024
+	if len(report) == 0 || len(report) > maxResponseBytes {
+		return fmt.Errorf("conversation response must be between 1 and %d bytes", maxResponseBytes)
 	}
 	if !utf8.ValidString(report) {
 		return errors.New("conversation result is not valid UTF-8 text")
@@ -188,8 +214,8 @@ func (s *Store) AppendConversationResult(conversationID, dotID, report string) e
 		if dot.ConversationID != conversationID {
 			return errors.New("Dot does not belong to this conversation")
 		}
-		if dot.Status != task.Done || len(dot.Artifacts) == 0 {
-			return errors.New("only a completed Dot with a verified artifact can be saved as a conversation result")
+		if dot.Status != task.Running && dot.Status != task.Done {
+			return errors.New("only an active or completed Dot can save a conversation response")
 		}
 		for _, existing := range conversation.Messages {
 			if existing.Role == "assistant" && existing.DotID == dotID {
@@ -198,18 +224,6 @@ func (s *Store) AppendConversationResult(conversationID, dotID, report string) e
 				}
 				return errors.New("a result for this Dot is already saved")
 			}
-		}
-		sum := sha256.Sum256([]byte(report))
-		hash := hex.EncodeToString(sum[:])
-		matched := false
-		for _, artifact := range dot.Artifacts {
-			if artifact.Bytes == int64(len(report)) && artifact.SHA256 == hash {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return errors.New("conversation result bytes do not match a verified Dot artifact")
 		}
 		conversation.Messages = append(conversation.Messages, task.ConversationMessage{
 			ID: messageID, Role: "assistant",
@@ -243,9 +257,9 @@ func (s *Store) RecoverInterruptedRuns() (int, error) {
 		dot.Status = task.Paused
 		dot.UpdatedAt = time.Now().UTC()
 		if dot.Checkpoint == "" {
-			dot.Checkpoint = "previous app session ended; resume to re-read the selected local source"
+			dot.Checkpoint = "previous app session ended; retry this message"
 		}
-		appendEvent(dot, "interrupted", "Previous app session ended; resume to re-read the selected local source.")
+		appendEvent(dot, "interrupted", "Previous app session ended before the response completed.")
 		count++
 	}
 	if count == 0 {
@@ -269,16 +283,24 @@ func conversationIndex(db *task.Database, id string) int {
 
 func conversationObjective(conversation task.Conversation, message string) string {
 	var b strings.Builder
-	b.WriteString("Dot purpose:\n")
-	b.WriteString(conversation.Purpose)
-	if conversation.Mode == "model" {
-		context := boundedConversationContext(conversation.Messages)
-		if context != "" {
-			b.WriteString("\n\nRecent conversation context (up to the latest 6 messages; older messages may be omitted and long entries excerpted):\n")
-			b.WriteString(context)
-		}
+	b.WriteString("Dot name:\n")
+	b.WriteString(conversation.Name)
+	b.WriteString("\n\nDot objective:\n")
+	if conversation.Purpose == "" {
+		b.WriteString("No long-term objective has been set yet. Use the current request to understand the work.")
+	} else {
+		b.WriteString(conversation.Purpose)
 	}
-	b.WriteString("\n\nNewest delegation:\n")
+	if conversation.Instructions != "" {
+		b.WriteString("\n\nDot working instructions:\n")
+		b.WriteString(conversation.Instructions)
+	}
+	context := boundedConversationContext(conversation.Messages)
+	if context != "" {
+		b.WriteString("\n\nRecent conversation context (up to the latest 12 messages; older messages may be omitted and long entries excerpted):\n")
+		b.WriteString(context)
+	}
+	b.WriteString("\n\nNewest user message:\n")
 	b.WriteString(message)
 	return b.String()
 }
@@ -307,7 +329,7 @@ func boundedConversationContext(messages []task.ConversationMessage) string {
 func conversationContextEntry(message task.ConversationMessage, maxBytes int) (string, bool) {
 	label := "User request"
 	if message.Role == "assistant" {
-		label = "Assistant result from a verified artifact"
+		label = "Assistant reply"
 	} else if message.Role != "user" {
 		return "", false
 	}

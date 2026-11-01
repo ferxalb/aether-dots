@@ -55,13 +55,22 @@ func Open(dir string) (*Store, error) {
 	if err := json.Unmarshal(b, &db); err != nil {
 		return nil, fmt.Errorf("decode task store: %w", err)
 	}
-	if db.SchemaVersion != task.SchemaVersion {
+	if db.SchemaVersion != 1 && db.SchemaVersion != task.SchemaVersion {
 		return nil, fmt.Errorf("unsupported task store schema %d (expected %d)", db.SchemaVersion, task.SchemaVersion)
 	}
 	if err := verifyEvents(db); err != nil {
 		return nil, fmt.Errorf("task event history failed integrity check: %w", err)
 	}
-	return &Store{path: path, db: db}, nil
+	store := &Store{path: path, db: db}
+	if db.SchemaVersion == 1 {
+		migrateLegacyFileAccess(&db)
+		db.SchemaVersion = task.SchemaVersion
+		if err := store.persist(db); err != nil {
+			return nil, fmt.Errorf("migrate task store: %w", err)
+		}
+		store.db = db
+	}
+	return store, nil
 }
 
 func (s *Store) Snapshot() task.Database {
@@ -116,40 +125,6 @@ func (s *Store) RenameSpace(id, name string) error {
 	})
 }
 
-func (s *Store) CreateDot(in task.CreateDot) (task.Dot, error) {
-	if strings.TrimSpace(in.Objective) == "" {
-		return task.Dot{}, errors.New("objective is empty")
-	}
-	if in.Mode != "local" && in.Mode != "model" {
-		return task.Dot{}, errors.New("mode must be local or model")
-	}
-	id, err := newID()
-	if err != nil {
-		return task.Dot{}, err
-	}
-	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		name = shortName(in.Objective)
-	}
-	now := time.Now().UTC()
-	dot := task.Dot{
-		ID: id, SpaceID: in.SpaceID, Name: name, Objective: strings.TrimSpace(in.Objective),
-		Status: task.Captured, Mode: in.Mode, SourceRoot: in.SourceRoot,
-		OutputDir: in.OutputDir, RoutineID: in.RoutineID, CreatedAt: now, UpdatedAt: now,
-		Events: []task.Event{}, Artifacts: []task.Artifact{},
-	}
-	err = s.change(func(db *task.Database) error {
-		if !hasSpace(db, in.SpaceID) {
-			return errors.New("space not found")
-		}
-		db.Dots = append(db.Dots, dot)
-		appendEvent(&dot, "captured", "Dot captured with a selected local source folder and an explicit output folder.")
-		db.Dots[len(db.Dots)-1] = dot
-		return nil
-	})
-	return dot, err
-}
-
 func (s *Store) GetDot(id string) (task.Dot, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -198,111 +173,6 @@ func (s *Store) SetCheckpoint(id, checkpoint string) error {
 		db.Dots[i].Checkpoint = checkpoint
 		db.Dots[i].UpdatedAt = time.Now().UTC()
 		return nil
-	})
-}
-
-func (s *Store) SetMode(id, mode string) error {
-	if mode != "local" && mode != "model" {
-		return errors.New("mode must be local or model")
-	}
-	return s.change(func(db *task.Database) error {
-		i := dotIndex(db, id)
-		if i < 0 {
-			return errors.New("Dot not found")
-		}
-		if db.Dots[i].Status == task.Running {
-			return errors.New("cannot change mode while a Dot is running")
-		}
-		db.Dots[i].Mode = mode
-		db.Dots[i].UpdatedAt = time.Now().UTC()
-		appendEvent(&db.Dots[i], "mode_changed", "Execution mode changed to "+mode+" by the user.")
-		return nil
-	})
-}
-
-func (s *Store) AddArtifact(id string, artifact task.Artifact) error {
-	return s.change(func(db *task.Database) error {
-		i := dotIndex(db, id)
-		if i < 0 {
-			return errors.New("Dot not found")
-		}
-		db.Dots[i].Artifacts = append(db.Dots[i].Artifacts, artifact)
-		db.Dots[i].Checkpoint = ""
-		db.Dots[i].UpdatedAt = time.Now().UTC()
-		appendEvent(&db.Dots[i], "artifact_verified", fmt.Sprintf("Verified local artifact %s (%s).", artifact.Path, artifact.SHA256))
-		return nil
-	})
-}
-
-func (s *Store) PromoteRoutine(dotID, name string) (task.Routine, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "Routine"
-	}
-	id, err := newID()
-	if err != nil {
-		return task.Routine{}, err
-	}
-	var routine task.Routine
-	err = s.change(func(db *task.Database) error {
-		i := dotIndex(db, dotID)
-		if i < 0 {
-			return errors.New("Dot not found")
-		}
-		dot := db.Dots[i]
-		if dot.Status != task.Done || len(dot.Artifacts) == 0 {
-			return errors.New("only a completed Dot with verified output can become a Routine")
-		}
-		now := time.Now().UTC()
-		routine = task.Routine{
-			ID: id, Version: 1, Name: name, Objective: dot.Objective, Mode: dot.Mode,
-			SourceRoot: dot.SourceRoot, OutputDir: dot.OutputDir,
-			Precondition: "The selected local source folder is available and contains the task inputs.",
-			Verification: "The new brief exists in the same output folder and its saved bytes match the recorded SHA-256.",
-			SourceDotID:  dot.ID, CreatedAt: now, UpdatedAt: now,
-		}
-		db.Routines = append(db.Routines, routine)
-		appendEvent(&db.Dots[i], "routine_promoted", "Saved an editable Routine with this Dot's exact source and output grants.")
-		return nil
-	})
-	return routine, err
-}
-
-func (s *Store) EditRoutine(id, name, objective string) error {
-	name, objective = strings.TrimSpace(name), strings.TrimSpace(objective)
-	if name == "" || objective == "" {
-		return errors.New("routine name and objective are required")
-	}
-	return s.change(func(db *task.Database) error {
-		for i := range db.Routines {
-			if db.Routines[i].ID == id {
-				db.Routines[i].Name = name
-				db.Routines[i].Objective = objective
-				db.Routines[i].Version++
-				db.Routines[i].UpdatedAt = time.Now().UTC()
-				return nil
-			}
-		}
-		return errors.New("Routine not found")
-	})
-}
-
-func (s *Store) DotFromRoutine(id, spaceID string) (task.Dot, error) {
-	db := s.Snapshot()
-	var routine *task.Routine
-	for i := range db.Routines {
-		if db.Routines[i].ID == id {
-			routine = &db.Routines[i]
-			break
-		}
-	}
-	if routine == nil {
-		return task.Dot{}, errors.New("Routine not found")
-	}
-	return s.CreateDot(task.CreateDot{
-		SpaceID: spaceID, Name: routine.Name, Objective: routine.Objective,
-		Mode: routine.Mode, SourceRoot: routine.SourceRoot, OutputDir: routine.OutputDir,
-		RoutineID: routine.ID,
 	})
 }
 
@@ -384,6 +254,25 @@ func verifyEvents(db task.Database) error {
 		}
 	}
 	return nil
+}
+
+// migrateLegacyFileAccess removes persisted fields and timeline details from
+// schema v1, whose tasks stored user-selected local folder grants.
+func migrateLegacyFileAccess(db *task.Database) {
+	for i := range db.Dots {
+		dot := &db.Dots[i]
+		dot.Checkpoint = ""
+		for j := range dot.Events {
+			dot.Events[j].Type = "legacy_activity"
+			dot.Events[j].Message = "Legacy task detail hidden after local folder access was removed."
+		}
+		previous := ""
+		for j := range dot.Events {
+			dot.Events[j].PrevHash = previous
+			dot.Events[j].Hash = eventHash(dot.Events[j])
+			previous = dot.Events[j].Hash
+		}
+	}
 }
 
 func hasSpace(db *task.Database, id string) bool {

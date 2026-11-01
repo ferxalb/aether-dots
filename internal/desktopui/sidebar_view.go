@@ -13,18 +13,23 @@ import (
 var iconSearch = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg>`))
 
 func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top float32, vibrant bool) {
-	panel := ui.Column(c).Width(280).FillHeight().Gap(11).
-		Padding(top, 10, 12, 10).Background(sidebarColor(theme, vibrant, a.prefs.Palette))
+	panel := ui.Column(c).Width(272).FillHeight().Gap(11).
+		Padding(top, 12, 12, 12).Background(sidebarColor(theme, vibrant, a.prefs.Palette))
 	panel.Children(func() {
-		createRow := ui.Row(c).FillWidth().Height(25).AlignItems(ui.Center)
+		createRow := ui.Row(c).FillWidth().Height(34).AlignItems(ui.Center).Gap(8)
 		createRow.Children(func() {
+			ui.Text(c, "AETHER").FontSize(12).Bold().TextColor(theme.Text)
 			ui.Spacer(c)
-			create := ui.Button(c.Key("sidebar-create-dot"), "").Size(28, 26).Padding(5).Radius(7).
-				Label("Create a Dot").Tooltip("Create a Dot")
+			create := ui.Button(c.Key("sidebar-create-dot"), "").Height(30).Padding(7, 10).Radius(9).
+				Label("Create a new Dot")
+			create.Background(theme.Accent).TextColor(theme.AccentText)
 			if create.Hovered() {
-				create.Background(theme.SurfaceHover)
+				create.Background(theme.AccentHover)
 			}
-			create.Children(func() { ui.Icon(c, iconPlus).Size(17, 17) })
+			create.Children(func() {
+				ui.Icon(c, iconPlus).Size(14, 14)
+				ui.Text(c, "New Dot").FontSize(11).Bold()
+			})
 			if create.Clicked() {
 				a.startCreator()
 			}
@@ -39,6 +44,7 @@ func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top float32, vibrant bool)
 			input.Background(ui.Transparent).Border(1, ui.Transparent).Padding(5, 0)
 		})
 
+		ui.Text(c, "YOUR DOTS").FontSize(9).Bold().TextColor(theme.TextMuted).Padding(1, 4)
 		ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).Children(func() {
 			ui.Column(c).FillWidth().MinWidth(0).Gap(4).Children(func() {
 				a.dotList(c, theme)
@@ -68,7 +74,7 @@ func (a *app) dotList(c *ui.Context, theme *ui.Theme) {
 		if len(conversations) > 0 {
 			ui.Divider(c)
 		}
-		ui.Text(c, "Older Dots").FontSize(10).Bold().TextColor(theme.TextMuted).Padding(4, 6)
+		ui.Text(c, "OLDER TASKS").FontSize(9).Bold().TextColor(theme.TextMuted).Padding(4, 6)
 		for _, dot := range legacyDots {
 			a.legacyDotRow(c, theme, dot)
 		}
@@ -124,12 +130,12 @@ func conversationExists(db task.Database, id string) bool {
 
 func (a *app) conversationRow(c *ui.Context, theme *ui.Theme, conversation task.Conversation) {
 	selected := conversation.ID == a.selectedConversationID
-	button := ui.Button(c.Key("conversation-"+conversation.ID), "").FillWidth().Height(56).
-		Padding(7, 8).Gap(9).Radius(10).Label(conversation.Name).
-		Tooltip(conversation.Name + " · " + selectedSpaceName(a.snapshot, conversation.SpaceID))
+	button := ui.Button(c.Key("conversation-"+conversation.ID), "").FillWidth().Height(60).
+		Padding(8, 9).Gap(10).Radius(11).Label(conversation.Name).
+		Tooltip(conversation.Name)
 	styleConversationRow(button, theme, selected)
 	button.Children(func() {
-		a.conversationAvatar(c, conversation.Name, conversation.ID, 34)
+		profileAvatarForConversation(c, conversation, 36)
 		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 				ui.Text(c, conversation.Name).SingleLine().FontSize(12).Bold().FillWidth().MinWidth(0)
@@ -182,9 +188,6 @@ func (a *app) legacyDotRow(c *ui.Context, theme *ui.Theme, dot task.Dot) {
 		a.selectedConversationID = ""
 		a.messageDraft = ""
 		a.chatScroll = ui.ScrollState{}
-		a.selectedRoutineID = ""
-		a.routinesOpen = false
-		a.creatorOpen = false
 		a.conversationDetailsOpen = false
 		a.selectedSpaceID = dot.SpaceID
 		a.settingsOpen = false
@@ -229,7 +232,10 @@ func conversationPreview(conversation task.Conversation) string {
 	if len(conversation.Messages) > 0 {
 		return boundedSidebarText(conversation.Messages[len(conversation.Messages)-1].Content)
 	}
-	return boundedSidebarText(conversation.Purpose)
+	if strings.TrimSpace(conversation.Purpose) != "" {
+		return boundedSidebarText(conversation.Purpose)
+	}
+	return "Ready for a prompt"
 }
 
 func legacyDotPreview(dot task.Dot) string {
@@ -302,23 +308,6 @@ func sidebarTime(at time.Time) string {
 func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme) {
 	footer := ui.Column(c).FillWidth().Gap(4)
 	footer.Children(func() {
-		routines := ui.Button(c.Key("open-routines"), "").FillWidth().Height(36).
-			Padding(8, 10).Gap(9).Radius(9).Label("Routines").Tooltip("Routines")
-		styleSidebarItem(routines, theme, a.routinesOpen || a.selectedRoutineID != "")
-		routines.Children(func() {
-			ui.Icon(c, iconRepeat).Size(16, 16).TextColor(theme.TextMuted)
-			ui.Text(c, "Routines").FontSize(12)
-		})
-		if routines.Clicked() {
-			a.routinesOpen = true
-			a.selectedRoutineID = ""
-			a.routineName = ""
-			a.routineObjective = ""
-			a.settingsOpen = false
-			a.creatorOpen = false
-			a.conversationDetailsOpen = false
-		}
-
 		settings := ui.Button(c.Key("open-settings"), "").FillWidth().Height(38).
 			Padding(8, 10).Gap(9).Radius(9).Label("Settings").Tooltip("Settings")
 		styleSidebarItem(settings, theme, a.settingsOpen)
@@ -328,10 +317,8 @@ func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme) {
 		})
 		if settings.Clicked() {
 			a.openSettings()
-			a.creatorOpen = false
-			a.routinesOpen = false
 			a.conversationDetailsOpen = false
 		}
-		ui.Text(c, "Local runtime · this device").FontSize(10).TextColor(theme.TextMuted).Padding(2, 4)
+		ui.Text(c, "Chat only · no file access").FontSize(10).TextColor(theme.TextMuted).Padding(2, 4)
 	})
 }

@@ -3,165 +3,129 @@ package desktopui
 import (
 	"testing"
 
+	"aether-dots/internal/store"
 	"aether-dots/internal/task"
 	"github.com/egoist/mygo/ui"
-
-	"aether-dots/internal/store"
 )
 
-func TestWorkspaceWelcomeOpensSeparateCreatorAndSettings(t *testing.T) {
+func TestWorkspaceCreatesDotImmediatelyAndOpensChat(t *testing.T) {
 	a := newMessengerTestApp(t)
 	tester := ui.NewTester(a.view, 1120, 760)
-	if !tester.HasText("Create a Dot to begin") || tester.HasText("Purpose") {
-		t.Fatalf("empty workspace should show the welcome route, not the creator form: %q", tester.Texts())
+	if !tester.HasText("A clear space for focused work") {
+		t.Fatalf("empty workspace welcome is missing: %q", tester.Texts())
 	}
-	if err := tester.Click("Create a Dot"); err != nil {
+	if tester.HasText("Local access") || tester.HasText("Choose a folder") || tester.HasText("Execution") {
+		t.Fatalf("welcome still exposes local folder setup: %q", tester.Texts())
+	}
+	if err := tester.Click("New Dot"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.creatorOpen || !tester.HasText("Dot name") || !tester.HasText("Purpose") {
-		t.Fatalf("Create a Dot did not open the separate creator route: creator=%v texts=%q", a.creatorOpen, tester.Texts())
+	snapshot := a.db.Snapshot()
+	if len(snapshot.Conversations) != 1 {
+		t.Fatalf("New Dot created %d profiles, want one", len(snapshot.Conversations))
 	}
-	for _, label := range []string{"Local access", "Read", "Write", "Choose a source folder", "Choose an output folder", "Execution"} {
-		if !tester.HasText(label) {
-			t.Fatalf("creator missing %q: %q", label, tester.Texts())
+	created := snapshot.Conversations[0]
+	if created.Name != "New Dot" || created.Purpose != "" || created.Icon == "" || created.Color == "" {
+		t.Fatalf("new Dot should be immediately created with editable defaults: %#v", created)
+	}
+	if a.selectedConversationID != created.ID || !a.hasConversationChat() || !tester.HasText("Start with a prompt") {
+		t.Fatalf("new Dot did not open its chat: selected=%q route=%v texts=%q", a.selectedConversationID, a.hasConversationChat(), tester.Texts())
+	}
+	for _, text := range tester.Texts() {
+		if text == "Read" || text == "Write" || text == "Choose a folder" {
+			t.Fatalf("new Dot chat exposes local folder access: %q", tester.Texts())
 		}
 	}
+}
 
-	conversation := createTestConversation(t, a, a.selectedSpaceID, "Persistent selection", "Keep this conversation selected.")
+func TestDotProfileCanBeCustomizedFromChat(t *testing.T) {
+	a := newMessengerTestApp(t)
+	conversation := createTestConversation(t, a, a.selectedSpaceID, "New Dot", "")
 	a.selectConversation(conversation.ID)
-	// Keep this UI test isolated from the host's system credential store.
+	tester := ui.NewTester(a.view, 960, 720)
+	if err := tester.Click("Customize"); err != nil {
+		t.Fatal(err)
+	}
+	if !tester.HasText("Customize your Dot") || !tester.HasText("Objective") || !tester.HasText("Working instructions") {
+		t.Fatalf("profile editor is missing core fields: %q", tester.Texts())
+	}
+	if err := tester.Click("Name"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Command("selectAll")
+	tester.Type("Decision partner")
+	if err := tester.Click("Objective"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Command("selectAll")
+	tester.Type("Prepare concise decision briefs")
+	if err := tester.Click("Working instructions"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Command("selectAll")
+	tester.Type("Use plain language. State uncertainty.")
+	if a.profileName != "Decision partner" || a.profilePurpose != "Prepare concise decision briefs" || a.profileInstructions != "Use plain language. State uncertainty." {
+		t.Fatalf("profile inputs did not retain edits: name=%q objective=%q instructions=%q", a.profileName, a.profilePurpose, a.profileInstructions)
+	}
+	clickUIControl(t, tester, "Save profile", 960, 720)
+	updated, ok := findConversation(a.db.Snapshot(), conversation.ID)
+	if !ok || updated.Name != "Decision partner" || updated.Purpose != "Prepare concise decision briefs" || updated.Instructions != "Use plain language. State uncertainty." {
+		t.Fatalf("profile did not persist: %#v", updated)
+	}
+}
+
+func TestSettingsCanReturnToSelectedDotChat(t *testing.T) {
+	a := newMessengerTestApp(t)
+	conversation := createTestConversation(t, a, a.selectedSpaceID, "Persistent selection", "Keep this Dot selected.")
+	a.selectConversation(conversation.ID)
 	a.credentialChecked = true
-	tester = ui.NewTester(a.view, 1120, 760)
+	tester := ui.NewTester(a.view, 1120, 760)
 	if err := tester.Click("Settings"); err != nil {
 		t.Fatal(err)
 	}
 	if !a.settingsOpen || a.selectedConversationID != conversation.ID {
-		t.Fatalf("opening Settings lost the selected conversation: settings=%v conversation=%q", a.settingsOpen, a.selectedConversationID)
+		t.Fatalf("opening Settings lost selection: settings=%v conversation=%q", a.settingsOpen, a.selectedConversationID)
 	}
 	settings := ui.NewTester(a.view, 1120, 760)
 	if !settings.HasText("Appearance") || !settings.HasText("Official OpenAI Go SDK · Responses API") {
-		t.Fatalf("settings page missing appearance or official OpenAI configuration: %q", settings.Texts())
+		t.Fatalf("settings page missing appearance or model configuration: %q", settings.Texts())
 	}
-	if err := settings.Click(conversation.Name); err != nil {
+	if err := settings.Click("Done"); err != nil {
 		t.Fatal(err)
 	}
-	if a.settingsOpen || a.selectedConversationID != conversation.ID || !a.hasConversationChat() {
-		t.Fatalf("returning from Settings did not reopen the selected chat: settings=%v conversation=%q route=%v", a.settingsOpen, a.selectedConversationID, a.hasConversationChat())
+	if a.settingsOpen || !a.hasConversationChat() || a.selectedConversationID != conversation.ID {
+		t.Fatalf("closing Settings did not return to chat: settings=%v conversation=%q", a.settingsOpen, a.selectedConversationID)
 	}
 }
 
-func TestRunRoutineUsesSelectedSpace(t *testing.T) {
+func newMessengerTestApp(t *testing.T) *app {
+	t.Helper()
 	db, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	spaces := db.Snapshot().Spaces
-	if len(spaces) == 0 {
-		t.Fatal("store has no initial space")
-	}
-	target, err := db.CreateSpace("Research")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dot, err := db.CreateDot(task.CreateDot{
-		SpaceID: spaces[0].ID, Objective: "Prepare a concise brief", Mode: "local",
-		SourceRoot: "/tmp/source", OutputDir: "/tmp/output",
+	a := &app{db: db, dataDir: t.TempDir(), prefs: defaultPreferences()}
+	a.refresh()
+	return a
+}
+
+func createTestConversation(t *testing.T, a *app, spaceID, name, purpose string) task.Conversation {
+	t.Helper()
+	conversation, err := a.db.CreateConversation(task.CreateConversation{
+		SpaceID: spaceID, Name: name, Purpose: purpose,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetStatus(dot.ID, task.Done, "Completed."); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AddArtifact(dot.ID, task.Artifact{Path: "/tmp/output/brief.md", SHA256: "abc", Bytes: 10}); err != nil {
-		t.Fatal(err)
-	}
-	routine, err := db.PromoteRoutine(dot.ID, "Research brief")
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := &app{
-		db: db, dataDir: t.TempDir(), prefs: defaultPreferences(), mode: "local",
-		selectedSpaceID: target.ID, selectedRoutineID: routine.ID,
-		routineName: routine.Name, routineObjective: routine.Objective,
-	}
-	a.refresh()
-	tester := ui.NewTester(a.view, 1120, 760)
-	if err := tester.Click("Run Routine"); err != nil {
-		t.Fatal(err)
-	}
-	dots := db.Snapshot().Dots
-	if len(dots) != 2 {
-		t.Fatalf("got %d Dots, want 2", len(dots))
-	}
-	created := dots[1]
-	if created.SpaceID != target.ID {
-		t.Fatalf("Run Routine created Dot in space %q, want selected space %q", created.SpaceID, target.ID)
-	}
-	if created.RoutineID != routine.ID {
-		t.Fatalf("Run Routine lost Routine link %q, want %q", created.RoutineID, routine.ID)
-	}
+	return conversation
 }
 
-func TestCreatorCreatesNamedConversationWithoutStartingTask(t *testing.T) {
-	a := newMessengerTestApp(t)
-	spaceID := a.selectedSpaceID
-	sourceRoot, outputDir := t.TempDir(), t.TempDir()
-	a.startCreator()
-	a.sourceRoot, a.outputDir = sourceRoot, outputDir
-	tester := ui.NewTester(a.view, 760, 560)
-
-	if err := tester.Click("Dot name"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Type("Design review")
-	if a.dotName != "Design review" {
-		t.Fatalf("typed Dot name %q", a.dotName)
-	}
-	if err := tester.Click("Purpose"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Type("Prepare a concise decision brief.")
-	if a.objective != "Prepare a concise decision brief." {
-		t.Fatalf("typed Dot purpose %q", a.objective)
-	}
-	clickCreatorControl(t, tester, "Local extraction", 760, 560)
-	if err := tester.Click("OpenAI model"); err != nil {
-		t.Fatal(err)
-	}
-	if a.mode != "model" {
-		t.Fatalf("selected mode %q, want model", a.mode)
-	}
-	if !tester.HasText(creatorExecutionDisclosureFor(a.mode)) {
-		t.Fatalf("model disclosure missing after changing execution mode: %q", tester.Texts())
-	}
-
-	clickCreatorControl(t, tester, "Create Dot", 760, 560)
-	db := a.db.Snapshot()
-	if len(db.Conversations) != 1 {
-		t.Fatalf("got %d conversations, want 1", len(db.Conversations))
-	}
-	if len(db.Dots) != 0 {
-		t.Fatalf("creating a Dot unexpectedly started %d task(s)", len(db.Dots))
-	}
-	created := db.Conversations[0]
-	if created.Name != "Design review" || created.Purpose != "Prepare a concise decision brief." || created.Mode != "model" {
-		t.Fatalf("created conversation did not retain name, purpose, and mode: %+v", created)
-	}
-	if created.SpaceID != spaceID || created.SourceRoot != sourceRoot || created.OutputDir != outputDir {
-		t.Fatalf("created conversation did not retain selected space and local scopes: %+v", created)
-	}
-	if a.creatorOpen || a.selectedConversationID != created.ID || !a.hasConversationChat() {
-		t.Fatalf("created Dot did not open its empty chat: creator=%v selected=%q route=%v", a.creatorOpen, a.selectedConversationID, a.hasConversationChat())
-	}
-}
-
-func clickCreatorControl(t *testing.T, tester *ui.Tester, label string, width, height int) {
+func clickUIControl(t *testing.T, tester *ui.Tester, label string, width, height int) {
 	t.Helper()
-	for attempt := 0; attempt < 8; attempt++ {
+	for attempt := 0; attempt < 10; attempt++ {
 		bounds, ok := tester.Find(label)
 		if !ok {
-			t.Fatalf("creator control %q is not present; visible text: %q", label, tester.Texts())
+			t.Fatalf("control %q is not present: %q", label, tester.Texts())
 		}
 		if bounds.Y >= 0 && bounds.Y+bounds.H <= float32(height) {
 			if err := tester.Click(label); err != nil {
@@ -173,8 +137,8 @@ func clickCreatorControl(t *testing.T, tester *ui.Tester, label string, width, h
 		if bounds.Y+bounds.H <= 0 {
 			dy = -120
 		}
-		tester.Scroll(float32(width)-48, float32(height)-24, 0, dy)
+		tester.Scroll(float32(width)-40, float32(height)-36, 0, dy)
 		tester.Frame()
 	}
-	t.Fatalf("creator control %q did not scroll into the %dx%d viewport", label, width, height)
+	t.Fatalf("control %q did not scroll into the %dx%d viewport", label, width, height)
 }
