@@ -6,6 +6,40 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (02) — Native workspace refresh and command shortcuts
+
+### Session objective
+
+Refresh the native desktop workspace using the supplied design references, remove the visible title strip while retaining window movement, add a collapsible sidebar, and make common run/build commands easy to invoke.
+
+### UI work
+
+- Replaced the standard visible title bar with MyGo's hidden inset title bar. Native window controls remain, and a clear `DragWindow` region at the top preserves title-bar window movement; normal resize behavior remains enabled.
+- Restyled the workspace with a system-aware light/dark palette, violet and teal accents, larger corner radii, rounded source/output cards, clearer model credential status, and macOS sidebar vibrancy over translucent surfaces.
+- Added vector icons for the brand, Spaces, recent Dots, Routines, task statuses, folder actions, and primary actions.
+- Added a 248 px expanded sidebar and a 72 px icon rail. Spaces, new-Dot capture, recent Dots, Routines, and runtime status remain available when collapsed, with labels and tooltips for icon-only controls.
+- Updated the task capture and model configuration sections with rounded cards and icon-led actions. Kept the space name field neutral because it is also used by the existing rename action.
+- Added a high-contrast preference adjustment to retain stronger borders, secondary text, focus rings, and scrollbars under the desktop accessibility setting.
+
+### Developer commands
+
+- Added a root `Makefile` with `make dev` (MyGo live-reload app), `make run`, `make bundle`, `make package`, `make cli-help`, and `make help`.
+- Documented these commands in the README. MyGo's `dev` target launches a distinct **AETHER Dots Dev** bundle, avoiding confusion with an already-running production app.
+
+### Verification completed
+
+- `gofmt` completed for `internal/desktopui/app.go`.
+- `CGO_ENABLED=0 go build -o /tmp/aether-dots-ui-check .` passed after the UI and theme changes.
+- An isolated MyGo development bundle was built from a temporary project copy. The native preview showed the refreshed layout; the sidebar collapsed and expanded correctly, with accessible labels present.
+- `make help` printed the documented targets, and `make -n dev run bundle package cli-help` resolved each command as intended.
+- `git diff --check` passed.
+
+### Not verified or not included in this session
+
+- No automated Go test suite was run.
+- The top drag region uses MyGo's documented native `DragWindow` behavior. A drag gesture was issued in the preview, but window position was not separately measured afterward.
+- `make bundle` and `make package` were inspected in dry-run mode, not run from the project root. The isolated MyGo bundle build completed successfully before the final small contrast and label refinements; the final source state was verified with the Go build.
+
 ## 2026-11-01 (01) — Local desktop slice and root consolidation
 
 ### Session objective
