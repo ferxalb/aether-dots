@@ -2,6 +2,21 @@
 
 A Go-only macOS desktop alpha for durable, inspectable local work. The task engine and CLI share the same local store. The desktop window uses MyGo's Go-drawn native UI; it is not a WebView or a set of AppKit controls.
 
+## Quick commands
+
+The Makefile provides short commands, similar to `npm run` scripts:
+
+```sh
+make             # list commands
+make dev         # open the live-reload development app
+make run         # open the app directly
+make bundle      # build the macOS .app
+make package     # build the .app and disk image
+make cli-help    # show CLI commands
+```
+
+Use `make dev` to see UI changes as you work. MyGo opens a separate **AETHER Dots Dev** app and reloads it when Go code changes.
+
 ## Run
 
 From this directory:
