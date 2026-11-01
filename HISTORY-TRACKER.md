@@ -6,6 +6,27 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (04) — Calm native shell and task workflow refresh
+
+### Workspace shell and navigation
+
+- Removed the inset card frame and moved the toolbar out of the content scroll. The fixed toolbar starts below the native title-bar drag strip, while the task body scrolls independently.
+- Rebuilt the expanded and collapsed sidebar around a clear New Dot action, active Space, recent Dot history, Routines, and a pinned Settings footer. History is filtered to the active Space, ordered by most recent update, and shows each Dot's status and selected state.
+- Moved Space creation and renaming into a compact sidebar disclosure. Selecting a newly created Space clears stale task selection; running a Routine keeps the active Space context.
+- Made Obsidian the new-install and invalid-palette fallback while preserving every valid saved appearance and palette preference.
+
+### Capture and result surfaces
+
+- Reworked capture into a compact outcome composer with explicit Read and Write rows, a concise execution disclosure, and a visible Create Dot action at the 760×560 minimum window size.
+- Grouped detail views into Result, Local permissions, and bounded Progress sections. Results appear before the audit trail, which shows the full event history in its own scroll area.
+- Preserved the explicit local source and output folders and the existing local/model behavior.
+
+### Verification
+
+- Corrected a stale engine test config literal to use the current empty `model.Config` for its missing-key scenario; production engine and model behavior did not change.
+- `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go test ./...`, and `CGO_ENABLED=0 go tool mygo vet .` passed.
+- Reviewed the live AETHER Dots Dev native window, dark capture/detail Tester previews at 1120×760 and 760×560, and light collapsed-model capture previews at both sizes. PNGs are in `/tmp/aether-ui-review/` (`capture-1120x760.png`, `capture-760x560.png`, `detail-1120x760.png`, `detail-760x560.png`, `capture-light-collapsed-model-1120x760.png`, `capture-light-collapsed-model-760x560.png`).
+
 ## 2026-11-01 (03) — Settings page, themes, and official OpenAI SDK
 
 ### Session objective

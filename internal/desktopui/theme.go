@@ -64,7 +64,7 @@ func paletteByID(id string) themePalette {
 			return palette
 		}
 	}
-	return paletteOptions()[4]
+	return paletteOptions()[0]
 }
 
 func (a *app) theme(c *ui.Context) *ui.Theme {
@@ -104,7 +104,7 @@ func (a *app) theme(c *ui.Context) *ui.Theme {
 		theme.Focus.A = 255
 		theme.Scrollbar = theme.Scrollbar.Alpha(1.6)
 	}
-	theme.Radius = 11
+	theme.Radius = 10
 	theme.Spacing = 4
 	c.SetTheme(theme)
 	return c.Theme()
@@ -117,22 +117,15 @@ func sidebarColor(theme *ui.Theme, vibrant bool) ui.Color {
 	return theme.Surface
 }
 
-func paneColor(theme *ui.Theme, vibrant bool) ui.Color {
-	if vibrant {
-		return theme.Background.Alpha(0.94)
-	}
-	return theme.Background
-}
-
 func sidebarSection(c *ui.Context, theme *ui.Theme, icon *ui.SVG, label string) {
-	ui.Icon(c, icon).Size(14, 14).TextColor(theme.TextMuted)
-	ui.Text(c, label).FontSize(10).Bold().TextColor(theme.TextMuted)
+	ui.Icon(c, icon).Size(13, 13).TextColor(theme.TextMuted)
+	ui.Text(c, label).FontSize(11).Bold().TextColor(theme.TextMuted)
 }
 
 func styleSidebarItem(button ui.Element, theme *ui.Theme, selected bool) {
 	button.Background(ui.Transparent).Border(1, ui.Transparent).TextColor(theme.Text)
 	if selected {
-		button.Background(theme.Accent.Alpha(0.13)).Border(1, theme.Accent.Alpha(0.20)).TextColor(theme.Accent)
+		button.Background(theme.Accent.Alpha(0.12)).Border(1, theme.Accent.Alpha(0.17)).TextColor(theme.Text)
 	} else if button.Hovered() {
 		button.Background(theme.SurfaceHover)
 	}

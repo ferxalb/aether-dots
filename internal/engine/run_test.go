@@ -83,7 +83,7 @@ func TestMissingModelStopsAtWaitingInputAndCancellationPauses(t *testing.T) {
 		return dot
 	}
 	missing := makeDot("model")
-	generator := model.Generator{Config: model.Config{KeyEnv: "OPENAI_API_KEY"}}
+	generator := model.Generator{Config: model.Config{}}
 	if err := Run(context.Background(), db, missing.ID, &generator, nil); err == nil {
 		t.Fatal("missing model key did not stop the run")
 	}

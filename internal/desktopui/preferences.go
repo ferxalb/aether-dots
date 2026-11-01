@@ -27,7 +27,7 @@ func defaultPreferences() preferences {
 	return preferences{
 		Model:      model.FromEnvironment().Model,
 		Appearance: "System",
-		Palette:    "violet",
+		Palette:    "obsidian",
 	}
 }
 
@@ -50,7 +50,7 @@ func loadPreferences(dataDir string) (preferences, error) {
 		current.Appearance = "System"
 	}
 	if !validPalette(current.Palette) {
-		current.Palette = "violet"
+		current.Palette = "obsidian"
 	}
 	return current, nil
 }

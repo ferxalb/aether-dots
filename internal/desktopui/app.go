@@ -33,11 +33,13 @@ type app struct {
 	prefs    preferences
 	snapshot task.Database
 
-	selectedSpaceID   string
-	selectedDotID     string
-	selectedRoutineID string
-	sidebarCollapsed  bool
-	settingsOpen      bool
+	selectedSpaceID     string
+	selectedDotID       string
+	selectedRoutineID   string
+	sidebarCollapsed    bool
+	spaceManagementOpen bool
+	renameSpaceID       string
+	settingsOpen        bool
 
 	objective        string
 	mode             string
