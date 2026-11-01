@@ -5,3 +5,4 @@ mygo_windows_*.syso
 *.md
 !/README.md
 !/HISTORY-TRACKER.md
+!/AGENTS.md
