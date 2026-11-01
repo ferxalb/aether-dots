@@ -1,0 +1,13 @@
+AETHER Dots desktop distribution includes software from the following projects.
+License texts are copied beside this notice. Each project remains under its own
+license; this notice does not change those terms.
+
+- AETHER Dots: Apache-2.0
+- github.com/egoist/mygo v0.7.3: MIT
+- github.com/ebitengine/purego v0.11.1: Apache-2.0
+- github.com/go-text/typesetting v0.3.5: Unlicense OR BSD-3-Clause
+- golang.org/x/image v0.46.0: BSD-3-Clause
+- golang.org/x/text v0.43.0: BSD-3-Clause
+- Go toolchain v1.27.3 runtime and standard library: BSD-3-Clause
+
+The complete dependency graph and versions are recorded in go.mod and go.sum.
