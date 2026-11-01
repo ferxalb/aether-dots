@@ -26,6 +26,18 @@ type Generator interface {
 }
 
 func Run(ctx context.Context, db *store.Store, dotID string, generator Generator, onDelta func(string)) error {
+	return RunWithProgress(ctx, db, dotID, generator, onDelta, nil)
+}
+
+// RunWithProgress is Run with a callback for persisted status and checkpoint
+// transitions. It is intended for UI refreshes; model token callbacks remain
+// separate so a caller does not need to reload the task store for every token.
+func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generator Generator, onDelta func(string), onProgress func()) error {
+	progress := func() {
+		if onProgress != nil {
+			onProgress()
+		}
+	}
 	dot, ok := db.GetDot(dotID)
 	if !ok {
 		return errors.New("Dot not found")
@@ -39,12 +51,14 @@ func Run(ctx context.Context, db *store.Store, dotID string, generator Generator
 	if dot.SourceRoot == "" || dot.OutputDir == "" {
 		return setWaiting(db, dotID, "Choose a local source folder and an output folder before running this Dot.")
 	}
-	if err := db.SetStatus(dotID, task.Running, "Run started on this device. The selected source and output are local-only."); err != nil {
+	if err := db.SetStatus(dotID, task.Running, "Run started on this device using the saved local source and output grants."); err != nil {
 		return err
 	}
+	progress()
 	if err := db.SetCheckpoint(dotID, "reading selected text files"); err != nil {
 		return fail(db, dotID, err)
 	}
+	progress()
 	root, err := filepath.EvalSymlinks(dot.SourceRoot)
 	if err != nil {
 		return fail(db, dotID, err)
@@ -74,6 +88,7 @@ func Run(ctx context.Context, db *store.Store, dotID string, generator Generator
 	if err := db.SetCheckpoint(dotID, fmt.Sprintf("read %d text files; composing %s brief", len(docs), dot.Mode)); err != nil {
 		return fail(db, dotID, err)
 	}
+	progress()
 	var report string
 	if dot.Mode == "model" {
 		ready, reason := false, "model provider is not configured"
@@ -83,6 +98,7 @@ func Run(ctx context.Context, db *store.Store, dotID string, generator Generator
 		if !ready {
 			message := "Model mode needs configuration: " + reason + ". Set it and resume, or switch this Dot to local extraction."
 			_ = db.SetStatus(dotID, task.WaitingInput, message)
+			progress()
 			return errors.New(message)
 		}
 		if err := db.AppendEvent(dotID, "model_started", fmt.Sprintf("Sending the selected text files to %s for a bounded draft.", generator.Description())); err != nil {
@@ -124,6 +140,7 @@ func Run(ctx context.Context, db *store.Store, dotID string, generator Generator
 	if err := db.SetCheckpoint(dotID, "writing and verifying the local artifact"); err != nil {
 		return fail(db, dotID, err)
 	}
+	progress()
 	outputPath := filepath.Join(outputDir, "decision-brief-"+dot.ID+".md")
 	data := []byte(report)
 	if err := writeAtomic(outputPath, data); err != nil {

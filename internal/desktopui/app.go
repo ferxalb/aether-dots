@@ -3,6 +3,7 @@ package desktopui
 import (
 	"context"
 	"log"
+	"math"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -33,26 +34,35 @@ type app struct {
 	prefs    preferences
 	snapshot task.Database
 
-	selectedSpaceID     string
-	selectedDotID       string
-	selectedRoutineID   string
-	sidebarCollapsed    bool
-	spaceManagementOpen bool
-	renameSpaceID       string
-	settingsOpen        bool
+	selectedSpaceID            string
+	selectedDotID              string
+	selectedRoutineID          string
+	selectedConversationID     string
+	creatorOpen                bool
+	routinesOpen               bool
+	conversationDetailsOpen    bool
+	searchQuery                string
+	creatorSpaceManagementOpen bool
+	renameSpaceID              string
+	settingsOpen               bool
 
-	objective        string
-	mode             string
-	sourceRoot       string
-	outputDir        string
-	spaceDraft       string
-	routineName      string
-	routineObjective string
-	apiKeyDraft      string
-	message          string
-	live             string
-	runningDotID     string
-	cancelRun        context.CancelFunc
+	objective         string
+	dotName           string
+	mode              string
+	sourceRoot        string
+	outputDir         string
+	spaceDraft        string
+	messageDraft      string
+	messageDrafts     map[string]string
+	chatScroll        ui.ScrollState
+	conversationError string
+	routineName       string
+	routineObjective  string
+	apiKeyDraft       string
+	message           string
+	live              string
+	runningDotID      string
+	cancelRun         context.CancelFunc
 
 	credentialChecked bool
 	credentialLoading bool
@@ -65,6 +75,9 @@ type app struct {
 func Run(dataDir string) error {
 	db, err := store.Open(dataDir)
 	if err != nil {
+		return err
+	}
+	if _, err := db.RecoverInterruptedRuns(); err != nil {
 		return err
 	}
 	prefs, err := loadPreferences(dataDir)
@@ -82,19 +95,19 @@ func Run(dataDir string) error {
 					StateKey: "workspace", Content: ui.View(a.view),
 					TitleBarStyle: mygo.TitleBarHiddenInset, TitleBarHeight: 44,
 					Transparent: true, Vibrancy: mygo.VibrancySidebar,
-					BackgroundColor: "light-dark(#f6f7fc, #10131b)",
+					BackgroundColor: "light-dark(#f3f4f6, #222222)",
 				})
 			}
 			a.win.Show()
 			a.win.Focus()
 		}
 		capture := func() {
-			a.beginCapture(true)
+			a.startCreator()
 			show()
 		}
 		menu := mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "Show AETHER Dots", Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
-			{Label: "Capture a Dot", Click: func(*mygo.MenuItem, *mygo.Window) { capture() }},
+			{Label: "Create a Dot", Click: func(*mygo.MenuItem, *mygo.Window) { capture() }},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		})
@@ -119,6 +132,21 @@ func (a *app) refresh() {
 	if a.selectedDotID != "" {
 		if _, ok := findDot(a.snapshot, a.selectedDotID); !ok {
 			a.selectedDotID = ""
+		}
+	}
+	if a.selectedConversationID != "" {
+		if _, ok := findConversation(a.snapshot, a.selectedConversationID); !ok {
+			a.selectedConversationID = ""
+			a.conversationDetailsOpen = false
+		}
+	}
+	if a.selectedConversationID == "" && !a.creatorOpen && !a.settingsOpen &&
+		a.selectedDotID == "" && a.selectedRoutineID == "" {
+		conversations := recentConversations(a.snapshot, "")
+		if len(conversations) > 0 {
+			a.selectedConversationID = conversations[0].ID
+			a.selectedSpaceID = conversations[0].SpaceID
+			a.chatScroll = ui.ScrollState{Y: math.MaxFloat32}
 		}
 	}
 }

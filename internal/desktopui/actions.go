@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"aether-dots/internal/engine"
-	"aether-dots/internal/task"
 	"github.com/egoist/mygo"
 )
 
@@ -36,61 +35,81 @@ func (a *app) pickFolder(sourceFolder bool) {
 	}()
 }
 
-func (a *app) createDot() {
-	dot, err := a.db.CreateDot(task.CreateDot{
-		SpaceID: a.selectedSpaceID, Name: "", Objective: a.objective,
-		Mode: a.mode, SourceRoot: a.sourceRoot, OutputDir: a.outputDir,
-	})
-	if err != nil {
-		a.message = err.Error()
-		return
-	}
-	a.selectedDotID = dot.ID
-	a.selectedRoutineID = ""
-	a.settingsOpen = false
-	a.message = "Dot captured and durably saved."
-	a.refresh()
-}
-
-func (a *app) beginCapture(preserveScope bool) {
-	a.selectedDotID, a.selectedRoutineID = "", ""
-	a.settingsOpen = false
-	a.objective = ""
-	a.mode = "local"
-	if !preserveScope {
-		a.sourceRoot, a.outputDir = "", ""
-	}
-}
-
 func (a *app) startRun(id string) {
 	if a.cancelRun != nil {
 		return
 	}
+	dot, ok := a.db.GetDot(id)
+	if !ok {
+		a.message = "Dot not found."
+		return
+	}
+	conversationID := dot.ConversationID
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelRun = cancel
 	a.runningDotID = id
 	a.live = ""
 	a.message = "Run started; events are saved as work progresses."
+	if conversationID != "" && conversationID == a.selectedConversationID {
+		a.conversationError = ""
+	}
 	win := a.win
 	modelName := a.prefs.Model
 	go func() {
 		generator := openAIGenerator(modelName)
-		err := engine.Run(ctx, a.db, id, &generator, func(delta string) {
+		err := engine.RunWithProgress(ctx, a.db, id, &generator, func(delta string) {
 			if win != nil {
-				win.Update(func() { a.live = tail(a.live+delta, 6000) })
+				win.Update(func() {
+					if a.runningDotID == id {
+						a.live = tail(a.live+delta, 6000)
+					}
+				})
+			}
+		}, func() {
+			if win != nil {
+				win.Update(func() {
+					if a.runningDotID == id {
+						a.refresh()
+					}
+				})
 			}
 		})
-		if win != nil {
-			win.Update(func() {
-				a.cancelRun = nil
-				a.runningDotID = ""
-				a.refresh()
-				if err != nil && !errorsIsCanceled(err) {
-					a.message = err.Error()
-				} else if err == nil {
-					a.message = "Run finished; the local artifact was byte-verified."
+		resultErr := a.persistConversationResult(conversationID, id, err)
+		cancel()
+		finish := func() {
+			a.cancelRun = nil
+			a.runningDotID = ""
+			a.live = ""
+			a.refresh()
+			if err == nil && resultErr == nil {
+				a.message = "Run finished; the local artifact was byte-verified."
+			} else if resultErr != nil {
+				a.message = "Run completed, but its verified artifact could not be added to the conversation: " + resultErr.Error()
+			} else if errorsIsCanceled(err) {
+				a.message = "Run paused at a safe boundary. Resume to re-read the selected local source."
+			} else if err != nil {
+				a.message = err.Error()
+			}
+			if win != nil && conversationID != "" && conversationID == a.selectedConversationID {
+				switch {
+				case err == nil && resultErr == nil:
+					a.conversationError = ""
+				case resultErr != nil:
+					a.conversationError = resultErr.Error()
+				case errorsIsCanceled(err):
+					a.conversationError = ""
+				case err != nil:
+					a.conversationError = err.Error()
 				}
-			})
+				if err == nil && resultErr == nil {
+					a.followChatIfAtBottom()
+				}
+			}
 		}
+		if win == nil {
+			finish()
+			return
+		}
+		win.Update(finish)
 	}()
 }

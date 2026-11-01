@@ -130,6 +130,47 @@ func TestOutputFolderCannotBeInsideSource(t *testing.T) {
 	}
 }
 
+func TestRunWithProgressPublishesPersistedRunPhases(t *testing.T) {
+	dir := t.TempDir()
+	sourceDir, outputDir := filepath.Join(dir, "notes"), filepath.Join(dir, "output")
+	if err := os.MkdirAll(sourceDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outputDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "note.md"), []byte("TODO: confirm a decision"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(filepath.Join(dir, "store"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dot, err := db.CreateDot(task.CreateDot{
+		SpaceID: db.Snapshot().Spaces[0].ID, Objective: "Find open decisions", Mode: "local",
+		SourceRoot: sourceDir, OutputDir: outputDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkpoints []string
+	if err := RunWithProgress(context.Background(), db, dot.ID, nil, nil, func() {
+		current, ok := db.GetDot(dot.ID)
+		if !ok {
+			t.Fatal("progress callback could not read the current Dot")
+		}
+		if current.Status != task.Running {
+			t.Fatalf("progress callback ran before running status was persisted: %s", current.Status)
+		}
+		checkpoints = append(checkpoints, current.Checkpoint)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(checkpoints) < 3 || checkpoints[0] != "" || checkpoints[1] != "reading selected text files" || checkpoints[len(checkpoints)-1] != "writing and verifying the local artifact" {
+		t.Fatalf("unexpected persisted phase notifications: %#v", checkpoints)
+	}
+}
+
 type generatorWithCancel struct{}
 
 func (*generatorWithCancel) Generate(ctx context.Context, _ string, _ []source.Document, _ func(string)) (string, error) {

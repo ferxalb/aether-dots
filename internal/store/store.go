@@ -12,9 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
-	"aether-dots/internal/source"
 	"aether-dots/internal/task"
 )
 
@@ -145,193 +143,11 @@ func (s *Store) CreateDot(in task.CreateDot) (task.Dot, error) {
 			return errors.New("space not found")
 		}
 		db.Dots = append(db.Dots, dot)
-		appendEvent(&dot, "captured", "Dot captured with a local-only source and an explicit output folder.")
+		appendEvent(&dot, "captured", "Dot captured with a selected local source folder and an explicit output folder.")
 		db.Dots[len(db.Dots)-1] = dot
 		return nil
 	})
 	return dot, err
-}
-
-func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversation, error) {
-	in.SpaceID = strings.TrimSpace(in.SpaceID)
-	in.Name = strings.TrimSpace(in.Name)
-	in.Purpose = strings.TrimSpace(in.Purpose)
-	in.Mode = strings.TrimSpace(in.Mode)
-	in.SourceRoot = strings.TrimSpace(in.SourceRoot)
-	in.OutputDir = strings.TrimSpace(in.OutputDir)
-	if in.Name == "" || len(in.Name) > task.MaxConversationNameBytes {
-		return task.Conversation{}, fmt.Errorf("conversation name must be 1–%d bytes", task.MaxConversationNameBytes)
-	}
-	if in.Purpose == "" || len(in.Purpose) > task.MaxConversationPurposeBytes {
-		return task.Conversation{}, fmt.Errorf("Dot purpose must be 1–%d bytes", task.MaxConversationPurposeBytes)
-	}
-	if in.Mode != "local" && in.Mode != "model" {
-		return task.Conversation{}, errors.New("mode must be local or model")
-	}
-	if in.SourceRoot == "" || in.OutputDir == "" {
-		return task.Conversation{}, errors.New("choose both a source folder and an output folder before creating a Dot")
-	}
-	id, err := newID()
-	if err != nil {
-		return task.Conversation{}, err
-	}
-	now := time.Now().UTC()
-	conversation := task.Conversation{
-		ID: id, SpaceID: in.SpaceID, Name: in.Name, Purpose: in.Purpose,
-		Mode: in.Mode, SourceRoot: in.SourceRoot, OutputDir: in.OutputDir,
-		CreatedAt: now, UpdatedAt: now, Messages: []task.ConversationMessage{},
-	}
-	err = s.change(func(db *task.Database) error {
-		if !hasSpace(db, in.SpaceID) {
-			return errors.New("space not found")
-		}
-		db.Conversations = append(db.Conversations, conversation)
-		return nil
-	})
-	return conversation, err
-}
-
-// CreateConversationRun atomically records a user request and the real Dot run
-// that will execute it. The conversation's saved purpose, mode, and local path
-// grants remain fixed for every child run.
-func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot, task.ConversationMessage, error) {
-	if strings.TrimSpace(content) == "" {
-		return task.Dot{}, task.ConversationMessage{}, errors.New("message is empty")
-	}
-	if len(content) > task.MaxConversationMessageBytes {
-		return task.Dot{}, task.ConversationMessage{}, fmt.Errorf("message exceeds the %d-byte limit", task.MaxConversationMessageBytes)
-	}
-	if !utf8.ValidString(content) {
-		return task.Dot{}, task.ConversationMessage{}, errors.New("message must be valid UTF-8 text")
-	}
-	dotID, err := newID()
-	if err != nil {
-		return task.Dot{}, task.ConversationMessage{}, err
-	}
-	messageID, err := newID()
-	if err != nil {
-		return task.Dot{}, task.ConversationMessage{}, err
-	}
-	now := time.Now().UTC()
-	var dot task.Dot
-	var message task.ConversationMessage
-	err = s.change(func(db *task.Database) error {
-		conversationIndex := conversationIndex(db, conversationID)
-		if conversationIndex < 0 {
-			return errors.New("conversation not found")
-		}
-		conversation := &db.Conversations[conversationIndex]
-		if !hasSpace(db, conversation.SpaceID) {
-			return errors.New("conversation space not found")
-		}
-
-		parentDotID := ""
-		for i := len(db.Dots) - 1; i >= 0; i-- {
-			if db.Dots[i].ConversationID == conversation.ID {
-				parentDotID = db.Dots[i].ID
-				break
-			}
-		}
-		objective := conversationObjective(conversation.Purpose, content)
-		if len(objective) > task.MaxConversationObjectiveBytes {
-			return errors.New("combined Dot purpose and message exceed the objective limit")
-		}
-		dot = task.Dot{
-			ID: dotID, SpaceID: conversation.SpaceID,
-			ConversationID: conversation.ID, ParentDotID: parentDotID,
-			Name: shortName(content), Objective: objective,
-			Status: task.Captured, Mode: conversation.Mode,
-			SourceRoot: conversation.SourceRoot, OutputDir: conversation.OutputDir,
-			CreatedAt: now, UpdatedAt: now,
-			Events: []task.Event{}, Artifacts: []task.Artifact{},
-		}
-		appendEvent(&dot, "captured", "Chat delegation captured with this Dot's saved local source and output grants.")
-		message = task.ConversationMessage{ID: messageID, Role: "user", Content: content, DotID: dot.ID, CreatedAt: now}
-		conversation.Messages = append(conversation.Messages, message)
-		conversation.UpdatedAt = now
-		db.Dots = append(db.Dots, dot)
-		return nil
-	})
-	return dot, message, err
-}
-
-// AppendConversationResult stores only the exact bytes from a verified artifact
-// linked to a completed child Dot. Repeating the same completion is idempotent.
-func (s *Store) AppendConversationResult(conversationID, dotID, report string) error {
-	if len(report) == 0 || len(report) > source.MaxOutputBytes {
-		return fmt.Errorf("conversation result must be between 1 and %d bytes", source.MaxOutputBytes)
-	}
-	if !utf8.ValidString(report) {
-		return errors.New("conversation result is not valid UTF-8 text")
-	}
-	messageID, err := newID()
-	if err != nil {
-		return err
-	}
-	return s.change(func(db *task.Database) error {
-		ci := conversationIndex(db, conversationID)
-		if ci < 0 {
-			return errors.New("conversation not found")
-		}
-		di := dotIndex(db, dotID)
-		if di < 0 {
-			return errors.New("Dot not found")
-		}
-		conversation, dot := &db.Conversations[ci], &db.Dots[di]
-		if dot.ConversationID != conversationID {
-			return errors.New("Dot does not belong to this conversation")
-		}
-		if dot.Status != task.Done || len(dot.Artifacts) == 0 {
-			return errors.New("only a completed Dot with a verified artifact can be saved as a conversation result")
-		}
-		for _, existing := range conversation.Messages {
-			if existing.Role == "assistant" && existing.DotID == dotID {
-				if existing.Content == report {
-					return nil
-				}
-				return errors.New("a result for this Dot is already saved")
-			}
-		}
-		sum := sha256.Sum256([]byte(report))
-		hash := hex.EncodeToString(sum[:])
-		matched := false
-		for _, artifact := range dot.Artifacts {
-			if artifact.Bytes == int64(len(report)) && artifact.SHA256 == hash {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return errors.New("conversation result bytes do not match a verified Dot artifact")
-		}
-		conversation.Messages = append(conversation.Messages, task.ConversationMessage{
-			ID: messageID, Role: "assistant",
-			Content: report, DotID: dotID, CreatedAt: time.Now().UTC(),
-		})
-		conversation.UpdatedAt = time.Now().UTC()
-		return nil
-	})
-}
-
-// RecoverInterruptedRuns marks only conversation child Dots that were still
-// running when the desktop app last exited. CLI reads do not call this method.
-func (s *Store) RecoverInterruptedRuns() (int, error) {
-	count := 0
-	err := s.change(func(db *task.Database) error {
-		for i := range db.Dots {
-			dot := &db.Dots[i]
-			if dot.ConversationID == "" || dot.Status != task.Running {
-				continue
-			}
-			dot.Status = task.Paused
-			dot.UpdatedAt = time.Now().UTC()
-			dot.Checkpoint = "previous app session ended; resume to re-read the selected local source"
-			appendEvent(dot, "interrupted", "Previous app session ended; resume to re-read the selected local source.")
-			count++
-		}
-		return nil
-	})
-	return count, err
 }
 
 func (s *Store) GetDot(id string) (task.Dot, bool) {
@@ -603,17 +419,4 @@ func shortName(s string) string {
 		s = string(runes[:51]) + "..."
 	}
 	return s
-}
-
-func conversationIndex(db *task.Database, id string) int {
-	for i := range db.Conversations {
-		if db.Conversations[i].ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
-func conversationObjective(purpose, message string) string {
-	return "Dot purpose:\n" + purpose + "\n\nDelegation:\n" + message
 }

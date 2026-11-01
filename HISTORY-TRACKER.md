@@ -6,6 +6,29 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (05) — Persisted Dot conversations
+
+- Added an optional Conversation record for a named Dot's purpose, execution mode, Space, and exact selected source/output folders. Existing `dots.json` records remain readable at schema version 1; legacy Dots continue to appear in history.
+- Each chat submission is atomically saved with one linked child Dot in `Ready` state. The child inherits the Conversation grants, records its prior run link, and runs through the existing engine. The store reserves one queued/running conversation delegation at a time.
+- Model-mode runs receive the saved purpose, newest request, and up to six recent user/verified-result messages within a 16 KiB context budget; older messages may be omitted and long entries are excerpted. Local mode retains fixed marker extraction and receives only the saved purpose and current request.
+- Successful assistant messages contain the exact persisted artifact bytes only after the desktop rereads the artifact under its approved output folder and verifies its size and SHA-256. Interrupted linked runs are marked Paused at desktop startup with a persisted event; CLI store reads do not perform this recovery.
+- `CGO_ENABLED=0 go test -race ./internal/store ./internal/engine` and `CGO_ENABLED=0 go test -race ./internal/desktopui` passed during the conversation-state work.
+
+### Desktop messenger UI
+
+- Split the workflow into a compact Dot Creator and a dedicated conversation page. Creating a named Dot saves its purpose, Space, execution mode, and fixed folder grants, then opens an empty chat; a task starts only after the user sends a message.
+- Replaced the icon-only rail and form-first home with a persistent 280 px Dots sidebar. It has global Search, a compact create button, readable named Conversation rows with latest message/status and time, retained legacy task history under Older Dots, and Settings and Routines footer links.
+- The chat uses a quiet fixed toolbar, selected Dot identity/status, a scrollable message and verified-result transcript, and a pinned composer. The editor draft is restored per Conversation; startup selection and new chats follow the transcript end.
+- Added a Details route for saved grants, linked task runs, and Routines. The sidebar Routines route preserves access for users with legacy Dots and no Conversations. Creator space management is an explicit disclosure with add and rename controls.
+- Tuned Obsidian dark mode to neutral charcoal: #222222 main canvas, #141414 sidebar, #2C2C2C surfaces, and #3B3B3B borders. System appearance remains the default; saved preferences and the other palettes are preserved.
+- Kept the existing source/output scope model and run engine. Sidebar previews are bounded, long session names truncate within fixed-width rows, and timestamps retain enough width to remain readable.
+
+### Final verification
+
+- `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go test -race ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed.
+- The opt-in `TestWriteUIPreviews` render passed for dark/light Chat and Creator routes at 1120×760 and 760×560. Reviewed previews include `/tmp/aether-ui-review/chat-dark-Dark-minimum-760x560.png`, `/tmp/aether-ui-review/chat-dark-Dark-normal-1120x760.png`, `/tmp/aether-ui-review/creator-dark-Dark-minimum-760x560.png`, and `/tmp/aether-ui-review/creator-dark-Light-minimum-760x560.png`.
+- No live macOS window launch or native screenshot was captured during this pass; visual review used MyGo's headless `ui.Render` previews. The min-size Creator and chat layouts were checked in those rendered previews.
+
 ## 2026-11-01 (04) — Calm native shell and task workflow refresh
 
 ### Workspace shell and navigation
@@ -139,3 +162,4 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - No live model endpoint request was made because `OPENAI_API_KEY` was unavailable in the environment. Model transport was exercised with local test servers only.
 - The app remains local-first. MCP configuration, cloud sync, device handoff, OS keychain storage, and arbitrary-app control were not implemented.
 - No production signing, notarization, DMG, or non-macOS build was verified.
+
