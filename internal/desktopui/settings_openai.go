@@ -18,7 +18,7 @@ func (a *app) openAISettings(c *ui.Context, theme *ui.Theme) {
 			})
 			ui.Column(c).Gap(3).Children(func() {
 				ui.Text(c, "OpenAI").FontSize(15).Bold()
-				ui.Text(c, "Official OpenAI Go SDK · Responses API").FontSize(12).TextColor(theme.TextMuted)
+				ui.Text(c, "Powers replies and scheduled runs for your Dots.").FontSize(12).TextColor(theme.TextMuted)
 			})
 			ui.Spacer(c)
 			state, color := connectionBadge(theme, a.modelConnection)
@@ -48,8 +48,14 @@ func (a *app) openAISettings(c *ui.Context, theme *ui.Theme) {
 			ui.Box(c).Size(7, 7).Shrink(0).Radius(4).Background(credentialColor(theme, a))
 			ui.Text(c, statusText).FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		})
-		ui.Text(c, "AETHER sends your messages, Dot profile, recent chat context, and a skill you explicitly select to OpenAI. Local routines use the same model connection. Dots cannot access files, folders, apps, or accounts. Saved keys stay in the system credential store; API response storage is disabled.").
-			FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		ui.Column(c).FillWidth().Gap(5).Padding(12, 14).Radius(11).
+			Background(theme.Background).Border(1, theme.Border).Children(func() {
+			ui.Text(c, "Your data and privacy").FontSize(11).Bold()
+			ui.Text(c, "To create a reply, AETHER sends your message, the Dot's profile, recent conversation context, and any skill you name to OpenAI. Dots can't access files, folders, or other apps.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			ui.Text(c, "AETHER keeps replies in your conversation history. We don't ask OpenAI to store a separate copy of each response.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		})
 		ui.Row(c).Gap(9).Children(func() {
 			test := ui.Button(c.Key("settings-test-openai"), "").Grow(1).Padding(10, 12).Gap(8).Radius(10).
 				Label("Test connection").Disabled(a.settingsSaving || a.modelConnection == "Checking…" || strings.TrimSpace(a.prefs.Model) == "")

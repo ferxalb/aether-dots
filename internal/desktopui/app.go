@@ -37,6 +37,9 @@ type app struct {
 	conversationDetailsOpen bool
 	searchQuery             string
 	settingsOpen            bool
+	settingsTab             int
+	settingsAdvancedOpen    bool
+	settingsScroll          [4]ui.ScrollState
 
 	profileName         string
 	profilePurpose      string
@@ -48,15 +51,19 @@ type app struct {
 	renameSpaceID       string
 	spaceManagementOpen bool
 	skillEditingID      string
+	skillEditorOpen     bool
+	skillAdvancedOpen   bool
 	skillDeleteID       string
 	skillDraft          task.Skill
 	skillMessage        string
 	routineEditingID    string
+	routineEditorOpen   bool
 	routineDeleteID     string
 	routineNameDraft    string
 	routinePromptDraft  string
 	routineDotDraft     string
 	routineEveryDraft   string
+	routineCustomDraft  string
 	routineMessage      string
 	messageDraft        string
 	messageDrafts       map[string]string

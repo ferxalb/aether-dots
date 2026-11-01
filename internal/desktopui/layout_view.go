@@ -31,6 +31,8 @@ func (a *app) view(c *ui.Context) {
 			ui.Box(c).FillWidth().Height(1).Background(theme.Border.Alpha(0.34))
 
 			switch {
+			case a.settingsOpen:
+				a.settingsView(c, theme)
 			case a.hasConversationChat():
 				a.chatView(c, theme)
 			case a.hasWelcomePage():

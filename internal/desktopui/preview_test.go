@@ -25,6 +25,14 @@ func TestWriteUIPreviews(t *testing.T) {
 	}
 
 	chatApp, profileApp, welcomeApp := newUIPreviewApps(t)
+	settingsApp := newSettingsPreviewApp(t, chatApp)
+	aiSettings := *settingsApp
+	aiSettings.settingsTab = 1
+	aiSettings.settingsAdvancedOpen = true
+	skillSettings := *settingsApp
+	skillSettings.settingsTab = 2
+	routineSettings := *settingsApp
+	routineSettings.settingsTab = 3
 	views := []struct {
 		name string
 		app  *app
@@ -32,7 +40,10 @@ func TestWriteUIPreviews(t *testing.T) {
 		{name: "chat", app: chatApp},
 		{name: "profile", app: profileApp},
 		{name: "welcome", app: welcomeApp},
-		{name: "settings", app: newSettingsPreviewApp(t, chatApp)},
+		{name: "settings-general", app: settingsApp},
+		{name: "settings-ai", app: &aiSettings},
+		{name: "settings-skills", app: &skillSettings},
+		{name: "settings-routines", app: &routineSettings},
 	}
 	for _, view := range views {
 		for _, appearance := range []string{"Dark", "Light"} {
@@ -59,23 +70,6 @@ func TestWriteUIPreviews(t *testing.T) {
 				}
 			}
 		}
-	}
-	settingsTester := ui.NewTester(views[3].app.view, 1120, 760)
-	for page := 0; page < 5; page++ {
-		file := filepath.Join(dir, "settings-scroll-"+strconv.Itoa(page)+".png")
-		out, err := os.Create(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := png.Encode(out, settingsTester.Image()); err != nil {
-			out.Close()
-			t.Fatal(err)
-		}
-		if err := out.Close(); err != nil {
-			t.Fatal(err)
-		}
-		settingsTester.Scroll(1080, 720, 0, 620)
-		settingsTester.Frame()
 	}
 }
 

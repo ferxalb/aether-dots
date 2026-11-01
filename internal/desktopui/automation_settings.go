@@ -3,6 +3,7 @@ package desktopui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -16,13 +17,25 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 	card := ui.Column(c).FillWidth().Gap(13).Padding(18).Radius(16).
 		Background(theme.Surface).Border(1, theme.Border)
 	card.Children(func() {
-		ui.Column(c).Gap(3).Children(func() {
-			ui.Text(c, "Skill library").FontSize(15).Bold()
-			ui.Text(c, "Save repeatable playbooks. Skills are shared across Dots and only run when a message names them.").
-				FontSize(12).TextColor(theme.TextMuted).FillWidth()
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+				ui.Text(c, "Skills").FontSize(15).Bold()
+				ui.Text(c, "Save reusable instructions and choose when a Dot should use them.").
+					FontSize(12).TextColor(theme.TextMuted).FillWidth()
+			})
+			if !a.skillEditorOpen {
+				if ui.PrimaryButton(c.Key("skill-new"), "New skill").Padding(8, 12).Clicked() {
+					a.startSkillEditor()
+				}
+			}
 		})
-		if len(a.snapshot.Skills) == 0 {
-			ui.Text(c, "No saved skills yet.").FontSize(12).TextColor(theme.TextMuted)
+		if len(a.snapshot.Skills) == 0 && !a.skillEditorOpen {
+			ui.Column(c).FillWidth().Gap(5).Padding(15, 14).Radius(11).
+				Background(theme.Background).Children(func() {
+				ui.Text(c, "Nothing saved yet").FontSize(12).Bold()
+				ui.Text(c, "Create a skill for a task you repeat. It will be available to all your Dots.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			})
 		}
 		for _, skill := range a.snapshot.Skills {
 			ui.Row(c.Key("skill-row-"+skill.ID)).FillWidth().AlignItems(ui.Center).Gap(9).
@@ -41,6 +54,8 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 						} else {
 							a.skillMessage = "Skill deleted. Saved chat history keeps its original instructions."
 							a.skillEditingID, a.skillDeleteID = "", ""
+							a.skillEditorOpen = false
+							a.skillAdvancedOpen = false
 							a.skillDraft = task.Skill{}
 							a.refresh()
 						}
@@ -50,57 +65,93 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 				}
 			})
 		}
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, "@skill[Name]").FontSize(11).Bold().TextColor(theme.Accent)
-			ui.Text(c, "in a message selects one skill for that turn.").FontSize(11).TextColor(theme.TextMuted)
-			ui.Spacer(c)
-			if ui.Button(c.Key("skill-new"), "New skill").Padding(7, 10).Clicked() {
-				a.skillEditingID, a.skillDeleteID = "", ""
-				a.skillDraft = task.Skill{}
-				a.skillMessage = ""
-			}
-		})
-		ui.Divider(c)
-		ui.Text(c, "Skill details").FontSize(12).Bold()
-		ui.Field(c, "Name", func() {
-			ui.TextInputBase(c.Key("skill-name"), &a.skillDraft.Name).Placeholder("Weekly account health").FillWidth()
-		})
-		ui.Field(c, "Description", func() {
-			ui.TextInputBase(c.Key("skill-description"), &a.skillDraft.Description).Placeholder("Short summary of the result this playbook produces").FillWidth()
-		})
-		skillTextArea(c, "skill-when", "When to use", &a.skillDraft.WhenToUse, "Describe the task or conditions that should select this skill.")
-		skillTextArea(c, "skill-inputs", "Required inputs", &a.skillDraft.Inputs, "Name the source context and required information. State when data may be unavailable.")
-		skillTextArea(c, "skill-steps", "Steps and decision rules", &a.skillDraft.Steps, "Write the workflow in order, including key decision rules.")
-		skillTextArea(c, "skill-validation", "Validation", &a.skillDraft.Validation, "Explain how to check the result and its sources.")
-		skillTextArea(c, "skill-output", "Expected output", &a.skillDraft.Output, "Describe the format and what the answer should contain.")
-		skillTextArea(c, "skill-approval", "Approval boundary", &a.skillDraft.Approval, "State which actions require approval and what the Dot must stop before doing.")
-		if a.skillMessage != "" {
-			ui.Text(c, a.skillMessage).FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		if len(a.snapshot.Skills) > 0 {
+			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Text(c, "@skill[Name]").FontSize(11).Bold().TextColor(theme.Accent)
+				ui.Text(c, "in a message uses a skill for that reply.").FontSize(11).TextColor(theme.TextMuted)
+			})
 		}
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.PrimaryButton(c.Key("skill-save"), "Save skill").Padding(9, 13).Clicked() {
-				a.saveSkill()
+		if a.skillEditorOpen {
+			ui.Divider(c)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				title := "New skill"
+				if a.skillEditingID != "" {
+					title = "Edit skill"
+				}
+				ui.Text(c, title).FontSize(13).Bold()
+				ui.Spacer(c)
+				if ui.Button(c.Key("skill-cancel-edit"), "Cancel").Padding(7, 10).Clicked() {
+					a.skillEditingID, a.skillDeleteID = "", ""
+					a.skillEditorOpen = false
+					a.skillAdvancedOpen = false
+					a.skillDraft = task.Skill{}
+					a.skillMessage = ""
+				}
+			})
+			ui.Field(c, "Name", func() {
+				ui.TextInput(c.Key("skill-name"), &a.skillDraft.Name).Placeholder("Weekly account health").FillWidth()
+			})
+			ui.Field(c, "Description", func() {
+				ui.TextInput(c.Key("skill-description"), &a.skillDraft.Description).Placeholder("What result does this skill help create?").FillWidth()
+			})
+			skillTextArea(c, "skill-when", "When to use", &a.skillDraft.WhenToUse, "Describe when a Dot should use this skill.")
+			skillTextArea(c, "skill-steps", "Steps and decision rules", &a.skillDraft.Steps, "Write the workflow in order and explain important decisions.")
+			skillTextArea(c, "skill-output", "What the answer should include", &a.skillDraft.Output, "Describe the format and key information to include.")
+			a.skillAdvancedOptions(c, theme)
+			if a.skillAdvancedOpen {
+				skillTextArea(c, "skill-inputs", "Required information", &a.skillDraft.Inputs, "List the context or details the Dot needs. Say what to do if something is missing.")
+				skillTextArea(c, "skill-validation", "How to check the result", &a.skillDraft.Validation, "Explain how to check the answer and its sources.")
+				skillTextArea(c, "skill-approval", "When to ask first", &a.skillDraft.Approval, "Describe actions that need your approval and when the Dot should stop.")
 			}
-			if a.skillEditingID != "" && ui.Button(c.Key("skill-cancel-edit"), "Cancel edit").Padding(9, 13).Clicked() {
-				a.skillEditingID, a.skillDeleteID = "", ""
-				a.skillDraft = task.Skill{}
-				a.skillMessage = ""
-			}
-		})
+		}
 	})
 }
 
 func skillTextArea(c *ui.Context, key, label string, value *string, placeholder string) {
 	ui.Field(c, label, func() {
-		ui.TextAreaBase(c.Key(key), value).MinHeight(52).MaxHeight(140).FillWidth().
+		ui.TextArea(c.Key(key), value).MinHeight(52).MaxHeight(140).FillWidth().
 			Placeholder(placeholder)
 	})
 }
 
+func (a *app) skillAdvancedOptions(c *ui.Context, theme *ui.Theme) {
+	label := "Show more guidance"
+	if a.skillAdvancedOpen {
+		label = "Hide extra guidance"
+	}
+	button := ui.Button(c.Key("skill-advanced-toggle"), "").FillWidth().Padding(10, 12).
+		Gap(10).Radius(9).Background(theme.Background).Border(1, theme.Border).
+		Label(label)
+	if button.Hovered() {
+		button.Background(theme.SurfaceHover)
+	}
+	button.Children(func() {
+		ui.Text(c, label).FontSize(11).FillWidth()
+		chevron := "⌄"
+		if a.skillAdvancedOpen {
+			chevron = "⌃"
+		}
+		ui.Text(c, chevron).FontSize(13).TextColor(theme.TextMuted)
+	})
+	if button.Clicked() {
+		a.skillAdvancedOpen = !a.skillAdvancedOpen
+	}
+}
+
 func (a *app) editSkill(skill task.Skill) {
 	a.skillEditingID = skill.ID
+	a.skillEditorOpen = true
+	a.skillAdvancedOpen = skill.Inputs != "" || skill.Validation != "" || skill.Approval != ""
 	a.skillDeleteID = ""
 	a.skillDraft = skill
+	a.skillMessage = ""
+}
+
+func (a *app) startSkillEditor() {
+	a.skillEditingID, a.skillDeleteID = "", ""
+	a.skillEditorOpen = true
+	a.skillAdvancedOpen = false
+	a.skillDraft = task.Skill{}
 	a.skillMessage = ""
 }
 
@@ -133,13 +184,25 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 	card := ui.Column(c).FillWidth().Gap(13).Padding(18).Radius(16).
 		Background(theme.Surface).Border(1, theme.Border)
 	card.Children(func() {
-		ui.Column(c).Gap(3).Children(func() {
-			ui.Text(c, "Routines").FontSize(15).Bold()
-			ui.Text(c, "Run a saved prompt on an interval. Runs use the Dot profile and chat history and appear as normal conversation messages.").
-				FontSize(12).TextColor(theme.TextMuted).FillWidth()
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+				ui.Text(c, "Routines").FontSize(15).Bold()
+				ui.Text(c, "Have a Dot repeat a prompt on a schedule. Results appear in its conversation.").
+					FontSize(12).TextColor(theme.TextMuted).FillWidth()
+			})
+			if !a.routineEditorOpen {
+				if ui.PrimaryButton(c.Key("routine-new"), "New routine").Padding(8, 12).Clicked() {
+					a.startRoutineEditor()
+				}
+			}
 		})
-		if len(a.snapshot.Routines) == 0 {
-			ui.Text(c, "No routines yet.").FontSize(12).TextColor(theme.TextMuted)
+		if len(a.snapshot.Routines) == 0 && !a.routineEditorOpen {
+			ui.Column(c).FillWidth().Gap(5).Padding(15, 14).Radius(11).
+				Background(theme.Background).Children(func() {
+				ui.Text(c, "Nothing scheduled yet").FontSize(12).Bold()
+				ui.Text(c, "Create a routine to run a prompt for one of your Dots while AETHER is open.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			})
 		}
 		for _, routine := range a.snapshot.Routines {
 			conversationName := "Missing Dot"
@@ -155,7 +218,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 							state = "Active"
 						}
 						ui.Text(c, routine.Name+" · "+state).FontSize(12).Bold().SingleLine()
-						ui.Text(c, conversationName+" · every "+task.FormatRoutineInterval(routine.IntervalSeconds)).
+						ui.Text(c, conversationName+" · "+routineIntervalSummary(routine.IntervalSeconds)).
 							FontSize(10).TextColor(theme.TextMuted).SingleLine()
 					})
 					if ui.Button(c.Key("routine-edit-"+routine.ID), "Edit").Padding(6, 9).Clicked() {
@@ -183,7 +246,9 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 						status += " · last " + routine.LastStatus
 					}
 					ui.Text(c, status).FontSize(10).TextColor(theme.TextMuted).FillWidth()
-					if ui.Button(c.Key("routine-test-"+routine.ID), "Test now").Padding(6, 9).Disabled(a.cancelRun != nil).Clicked() {
+					if ui.Button(c.Key("routine-test-"+routine.ID), "Run now").Padding(6, 9).
+						Tooltip("Run once now. This sends a request to OpenAI and may use your plan.").
+						Disabled(a.cancelRun != nil).Clicked() {
 						a.testRoutine(routine.ID)
 					}
 					if a.routineDeleteID == routine.ID {
@@ -193,6 +258,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 							} else {
 								a.routineMessage = "Routine deleted."
 								a.routineEditingID, a.routineDeleteID = "", ""
+								a.routineEditorOpen = false
 								a.refresh()
 							}
 						}
@@ -212,44 +278,45 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 				}
 			})
 		}
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Spacer(c)
-			if ui.Button(c.Key("routine-new"), "New routine").Padding(7, 10).Clicked() {
-				a.routineEditingID, a.routineDeleteID = "", ""
-				a.routineNameDraft, a.routinePromptDraft = "", ""
-				a.routineDotDraft, a.routineEveryDraft = a.selectedConversationID, "1h"
-				a.routineMessage = ""
+		if a.routineEditorOpen {
+			ui.Divider(c)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				title := "New routine"
+				if a.routineEditingID != "" {
+					title = "Edit routine"
+				}
+				ui.Text(c, title).FontSize(13).Bold()
+				ui.Spacer(c)
+				if ui.Button(c.Key("routine-cancel-edit"), "Cancel").Padding(7, 10).Clicked() {
+					a.routineEditingID, a.routineDeleteID = "", ""
+					a.routineEditorOpen = false
+					a.routineNameDraft, a.routinePromptDraft = "", ""
+					a.routineEveryDraft, a.routineCustomDraft, a.routineDotDraft = "1h", "", a.selectedConversationID
+					a.routineMessage = ""
+				}
+			})
+			ui.Field(c, "Dot", func() { conversationChoice(c, theme, a) })
+			ui.Field(c, "Name", func() {
+				ui.TextInput(c.Key("routine-name"), &a.routineNameDraft).Placeholder("Daily review").FillWidth()
+			})
+			ui.Field(c, "Run every", func() {
+				routineFrequencyChoice(c, theme, a)
+			})
+			if a.routineEveryDraft == "custom" {
+				ui.Field(c, "Custom interval", func() {
+					ui.TextInput(c.Key("routine-custom-every"), &a.routineCustomDraft).
+						Placeholder("e.g. 90m, 2h, or 2h30m").FillWidth()
+				})
+				ui.Text(c, "Use minutes or hours. The minimum interval is 5 minutes and the maximum is 1 year.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			}
-		})
-		ui.Divider(c)
-		ui.Text(c, "Routine details").FontSize(12).Bold()
-		ui.Field(c, "Dot", func() { conversationChoice(c, theme, a) })
-		ui.Field(c, "Name", func() {
-			ui.TextInputBase(c.Key("routine-name"), &a.routineNameDraft).Placeholder("Daily review").FillWidth()
-		})
-		ui.Field(c, "Run every", func() {
-			ui.TextInputBase(c.Key("routine-every"), &a.routineEveryDraft).Placeholder("1h, 8h, 24h").FillWidth()
-		})
-		ui.Field(c, "Instruction", func() {
-			ui.TextAreaBase(c.Key("routine-prompt"), &a.routinePromptDraft).MinHeight(74).MaxHeight(180).FillWidth().
-				Placeholder("Review the current conversation context. State missing inputs clearly and return a concise summary.")
-		})
-		ui.Text(c, "Intervals start after creation or resume (minimum 5m). A test makes a real model call and uses API tokens. The desktop runs schedules while open; use `aether routines serve` in the CLI. Missed intervals are skipped; limits are 200 runs per routine and 300 total per hour.").
-			FontSize(11).TextColor(theme.TextMuted).FillWidth()
-		if a.routineMessage != "" {
-			ui.Text(c, a.routineMessage).FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			ui.Field(c, "Instruction", func() {
+				ui.TextArea(c.Key("routine-prompt"), &a.routinePromptDraft).MinHeight(74).MaxHeight(180).FillWidth().
+					Placeholder("Review the current conversation, note anything missing, and return a concise summary.")
+			})
+			ui.Text(c, "Intervals start after you create or resume a routine (minimum 5 minutes). Run now sends a request to OpenAI and may use your plan. Schedules run while the desktop app is open; missed intervals are skipped.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		}
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.PrimaryButton(c.Key("routine-save"), "Save routine").Padding(9, 13).Clicked() {
-				a.saveRoutine()
-			}
-			if a.routineEditingID != "" && ui.Button(c.Key("routine-cancel-edit"), "Cancel edit").Padding(9, 13).Clicked() {
-				a.routineEditingID, a.routineDeleteID = "", ""
-				a.routineNameDraft, a.routinePromptDraft = "", ""
-				a.routineEveryDraft, a.routineDotDraft = "1h", a.selectedConversationID
-				a.routineMessage = ""
-			}
-		})
 	})
 }
 
@@ -277,20 +344,114 @@ func conversationChoice(c *ui.Context, theme *ui.Theme, a *app) {
 	})
 }
 
+func routineFrequencyChoice(c *ui.Context, theme *ui.Theme, a *app) {
+	selectFrequency := ui.SelectBase(c.Key("routine-every"), &a.routineEveryDraft)
+	selectFrequency.Trigger.FillWidth().MinWidth(0).Padding(8, 10).Radius(9).
+		Background(theme.Background).Border(1, theme.Border).Children(func() {
+		ui.Text(c, routineFrequencyLabel(a.routineEveryDraft)).FontSize(12).FillWidth().SingleLine()
+		ui.Text(c, "⌄").FontSize(12).TextColor(theme.TextMuted)
+	})
+	selectFrequency.Popup(func(panel ui.Element) {
+		panel.Padding(4).Radius(10).Background(theme.Surface).Border(1, theme.Border).
+			Shadow(0, 5, 16, 0, ui.RGBA(0, 0, 0, 0.22))
+		for _, value := range []string{"5m", "15m", "30m", "1h", "4h", "8h", "12h", "24h", "custom"} {
+			item := selectFrequency.Item(value).FillWidth().Padding(9, 10).Radius(7)
+			if item.Highlighted() || value == a.routineEveryDraft {
+				item.Background(theme.Accent.Alpha(0.16)).TextColor(theme.Text)
+			}
+			item.Children(func() { ui.Text(c, routineFrequencyLabel(value)).FontSize(12) })
+		}
+	})
+}
+
+func routineFrequencyLabel(value string) string {
+	switch value {
+	case "5m":
+		return "Every 5 minutes"
+	case "15m":
+		return "Every 15 minutes"
+	case "30m":
+		return "Every 30 minutes"
+	case "1h":
+		return "Every hour"
+	case "4h":
+		return "Every 4 hours"
+	case "8h":
+		return "Every 8 hours"
+	case "12h":
+		return "Every 12 hours"
+	case "24h":
+		return "Daily"
+	case "custom":
+		return "Custom interval…"
+	default:
+		return value
+	}
+}
+
+func routineIntervalSummary(seconds int64) string {
+	duration := time.Duration(seconds) * time.Second
+	if duration%(24*time.Hour) == 0 {
+		days := int(duration / (24 * time.Hour))
+		if days == 1 {
+			return "Daily"
+		}
+		return fmt.Sprintf("Every %d days", days)
+	}
+	if duration%time.Hour == 0 {
+		hours := int(duration / time.Hour)
+		if hours == 1 {
+			return "Every hour"
+		}
+		return fmt.Sprintf("Every %d hours", hours)
+	}
+	if duration%time.Minute == 0 {
+		minutes := int(duration / time.Minute)
+		return fmt.Sprintf("Every %d minutes", minutes)
+	}
+	return fmt.Sprintf("Every %d seconds", int(duration/time.Second))
+}
+
 func (a *app) editRoutine(routine task.Routine) {
 	a.routineEditingID = routine.ID
+	a.routineEditorOpen = true
 	a.routineDeleteID = ""
 	a.routineNameDraft = routine.Name
 	a.routinePromptDraft = routine.Prompt
 	a.routineDotDraft = routine.ConversationID
-	a.routineEveryDraft = task.FormatRoutineInterval(routine.IntervalSeconds)
+	interval := task.FormatRoutineInterval(routine.IntervalSeconds)
+	if isPresetRoutineInterval(interval) {
+		a.routineEveryDraft, a.routineCustomDraft = interval, ""
+	} else {
+		a.routineEveryDraft, a.routineCustomDraft = "custom", interval
+	}
+	a.routineMessage = ""
+}
+
+func (a *app) startRoutineEditor() {
+	a.routineEditingID, a.routineDeleteID = "", ""
+	a.routineEditorOpen = true
+	a.routineNameDraft, a.routinePromptDraft = "", ""
+	a.routineDotDraft, a.routineEveryDraft, a.routineCustomDraft = a.selectedConversationID, "1h", ""
 	a.routineMessage = ""
 }
 
 func (a *app) saveRoutine() {
-	interval, err := time.ParseDuration(strings.TrimSpace(a.routineEveryDraft))
+	intervalValue := a.routineEveryDraft
+	if intervalValue == "custom" {
+		intervalValue = a.routineCustomDraft
+	}
+	interval, err := time.ParseDuration(strings.TrimSpace(intervalValue))
 	if err != nil {
-		a.routineMessage = "Use a Go duration such as 30m, 8h, or 24h."
+		a.routineMessage = "Choose a schedule or enter a valid custom interval."
+		return
+	}
+	if interval < 5*time.Minute {
+		a.routineMessage = "Routines must run at least every 5 minutes."
+		return
+	}
+	if interval > 365*24*time.Hour {
+		a.routineMessage = "The longest allowed interval is 1 year."
 		return
 	}
 	in := task.CreateRoutine{
@@ -304,7 +465,7 @@ func (a *app) saveRoutine() {
 			return
 		}
 		a.routineEditingID = routine.ID
-		a.routineMessage = "Routine saved. First run: " + routine.NextRunAt.Local().Format(time.RFC3339)
+		a.routineMessage = "Routine saved. Next run " + routine.NextRunAt.Local().Format("Jan 2, 3:04 PM")
 	} else {
 		if err := a.db.UpdateRoutine(a.routineEditingID, in); err != nil {
 			a.routineMessage = err.Error()
@@ -315,6 +476,15 @@ func (a *app) saveRoutine() {
 	a.refresh()
 }
 
+func isPresetRoutineInterval(value string) bool {
+	switch value {
+	case "5m", "15m", "30m", "1h", "4h", "8h", "12h", "24h":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *app) testRoutine(id string) {
 	if a.cancelRun != nil {
 		a.routineMessage = "Another Dot run is active. Wait for it to finish before testing a routine."
@@ -323,6 +493,7 @@ func (a *app) testRoutine(id string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelRun = cancel
 	a.message = "Testing routine…"
+	a.routineMessage = "Running routine now…"
 	prefs := a.prefs
 	win := a.win
 	go func() {

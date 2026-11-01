@@ -319,6 +319,5 @@ func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme) {
 			a.openSettings()
 			a.conversationDetailsOpen = false
 		}
-		ui.Text(c, "Chat only · no file access").FontSize(10).TextColor(theme.TextMuted).Padding(2, 4)
 	})
 }

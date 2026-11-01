@@ -6,6 +6,23 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (11) — User-centered Settings redesign
+
+### Session objective
+
+Replace the technical, crowded Settings experience with a clearer user-facing layout based on the supplied screenshots.
+
+### Implementation
+
+- Removed the irrelevant “Chat only · no file access” sidebar tagline and organized Settings into General, AI & responses, Skills, and Routines sections with persistent navigation and save actions.
+- Rewrote model and privacy descriptions in plain language, tucked advanced response controls behind an optional disclosure, and clarified appearance choices.
+- Reworked skill and routine creation into focused empty states and edit forms; added routine frequency presets and clearer run/status feedback.
+
+### Verification
+
+- `git diff --check`, `CGO_ENABLED=0 go build ./...`, and `make bundle` passed. The native app and Settings screens were reviewed at 1120×760 and 760×560.
+- Tests were not run in this session.
+
 ## 2026-11-01 (10) — Shared skills, routines, and model controls
 
 - Added shared skill and routine models, validated store operations, schema 3 migration, explicit `@skill[Name]` selection scoped to one turn, and a shared engine path used by both CLI and desktop. Local routines can run on intervals while the app is open or `aether routines serve` is running; they skip missed intervals, retain 20 recent runs, and use per-routine and global hourly caps.

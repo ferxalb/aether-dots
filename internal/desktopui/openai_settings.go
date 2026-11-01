@@ -59,6 +59,7 @@ func secondsPreference(value string, fallback int64) time.Duration {
 
 func (a *app) openSettings() {
 	a.settingsOpen = true
+	a.settingsTab = 0
 	a.message = ""
 	a.checkCredential()
 }
@@ -162,10 +163,10 @@ func (a *app) removeAPIKey() {
 
 func (a *app) credentialDescription() string {
 	if a.credentialLoading {
-		return "Checking system credential store…"
+		return "Checking macOS Keychain…"
 	}
 	if a.credentialSaved {
-		return "API key saved in the system credential store"
+		return "API key saved in macOS Keychain"
 	}
 	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "" {
 		return "Using OPENAI_API_KEY from the environment"
@@ -173,7 +174,7 @@ func (a *app) credentialDescription() string {
 	if a.credentialError != "" {
 		return "System credential store unavailable: " + a.credentialError
 	}
-	return "No API key saved"
+	return "No API key saved yet"
 }
 
 func (a *app) testModel() {
