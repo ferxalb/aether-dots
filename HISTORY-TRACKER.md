@@ -6,6 +6,24 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (09) — Restore window dragging on the compact header
+
+- Made the main header a window drag handle so users can move the window from its open area without restoring the removed blank inset. Header buttons remain interactive; the separate sidebar titlebar drag area remains available.
+- `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed. The updated MyGo preview was rendered; no live drag gesture was captured in this pass.
+
+## 2026-11-01 (08) — Remove the main-pane titlebar gap
+
+- Removed the empty titlebar spacer from the main pane so the Dot header begins at the top of the window. Kept the native titlebar drag region in the clear sidebar band, away from header actions.
+- Left Customize trailing in the main header; the previous request was to remove the vertical band above the Dot identity.
+- `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed. Reviewed a MyGo-rendered dark chat preview; no live native window was captured.
+
+## 2026-11-01 (07) — Compact Dot header and floating chat composer
+
+- Moved the Customize action beside the Dot identity in the chat header, removing the large empty stretch across the top bar. The profile view keeps its Back to chat action on the trailing edge.
+- Removed the chat footer's full-width background and divider. Inset the composer as a softly raised, rounded surface so it reads as a floating input while remaining available at the minimum window size.
+- `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed.
+- Rendered and reviewed dark and light chat previews at 1120×760 and 760×560 with MyGo's headless renderer. No live native window was captured in this refinement.
+
 ## 2026-11-01 (06) — Chat-first Dot redesign and removal of folder access
 
 - Replaced the task-first workflow with persistent Dots that are created immediately from New Dot, then opened as conversations. Users can set a Dot's name, icon, color, objective, working instructions, and Space; a normal chat prompt starts its work and can refine the profile over time.

@@ -27,7 +27,6 @@ func (a *app) view(c *ui.Context) {
 
 		main := ui.Column(c).Grow(1).FillHeight().MinWidth(0).Background(rootColor)
 		main.Children(func() {
-			ui.Box(c).FillWidth().Height(dragHeight)
 			a.header(c, theme)
 			ui.Box(c).FillWidth().Height(1).Background(theme.Border.Alpha(0.34))
 
@@ -45,7 +44,9 @@ func (a *app) view(c *ui.Context) {
 				})
 			}
 		})
-		ui.Box(c).Absolute().Top(0).Left(0).Right(0).Height(dragHeight).DragWindow()
+		// The main header is also draggable; this separate area covers the
+		// sidebar's clear titlebar band without blocking its controls.
+		ui.Box(c).Absolute().Top(0).Left(0).Width(272).Height(dragHeight).DragWindow()
 	})
 }
 
@@ -78,7 +79,7 @@ func (a *app) workspaceContent(c *ui.Context, theme *ui.Theme) {
 }
 
 func (a *app) header(c *ui.Context, theme *ui.Theme) {
-	row := ui.Row(c).FillWidth().Height(52).Padding(0, 20).AlignItems(ui.Center).Gap(10)
+	row := ui.Row(c).FillWidth().Height(52).Padding(0, 20).AlignItems(ui.Center).Gap(10).DragWindow()
 	row.Children(func() {
 		switch {
 		case a.settingsOpen:

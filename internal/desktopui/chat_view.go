@@ -153,8 +153,7 @@ func conversationRunActivity(c *ui.Context, theme *ui.Theme, a *app, dot task.Do
 func chatComposer(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conversation) {
 	busy := a.cancelRun != nil
 	activeDot, activeDotOK := findDot(a.snapshot, a.runningDotID)
-	footer := ui.Column(c).FillWidth().Gap(6).Padding(10, 20, 10, 20).
-		Background(theme.Background).Border(1, theme.Border.Alpha(0.65))
+	footer := ui.Column(c).FillWidth().Gap(6).Padding(8, 24, 16, 24)
 	footer.Children(func() {
 		if a.conversationError != "" {
 			ui.Text(c, a.conversationError).FontSize(11).TextColor(theme.Danger).FillWidth()
@@ -172,11 +171,12 @@ func chatComposer(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conv
 				}
 			})
 		}
-		composer := ui.Row(c).FillWidth().AlignItems(ui.End).Gap(8).Padding(8, 10, 8, 10).Radius(18).
-			Background(theme.Surface).Border(1, theme.Border)
+		composer := ui.Row(c).FillWidth().AlignItems(ui.End).Gap(8).Padding(9, 12, 9, 14).Radius(24).
+			Background(theme.Surface).Border(1, theme.Border.Alpha(0.48)).
+			Shadow(0, 0, 0, 0, ui.RGBA(0, 0, 0, 0.14))
 		composer.Children(func() {
 			ui.TextAreaBase(c.Key("chat-message-"+conversation.ID), &a.messageDraft).
-				MinHeight(42).MaxHeight(120).Grow(1).MinWidth(0).
+				MinHeight(38).MaxHeight(120).Grow(1).MinWidth(0).
 				Placeholder("Message "+conversation.Name).Label("Message "+conversation.Name).
 				OnShortcut(ui.Cmd, ui.KeyEnter, func() {
 					if !busy && strings.TrimSpace(a.messageDraft) != "" {
