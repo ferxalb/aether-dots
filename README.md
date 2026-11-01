@@ -57,6 +57,10 @@ CGO_ENABLED=0 go tool mygo vet .
 
 The first slice has local-folder reach only. It has no MCP client, cloud worker, OS keychain storage, or arbitrary-app control. A model request sends selected local text to the configured endpoint; local extraction does not.
 
+## Development history
+
+`HISTORY-TRACKER.md` records implementations, decisions, and verification, including work that is still in progress. It is not a release changelog. Reserve `CHANGELOG.md` for version-specific changes that are complete and ready for Beta, RC, or Final product releases.
+
 ## License
 
 AETHER Dots is licensed under Apache-2.0. `resources/licenses/` carries this license and notices/license texts for the dependencies linked into the desktop app.
