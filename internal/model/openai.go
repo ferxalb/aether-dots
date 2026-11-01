@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"aether-dots/desktop/internal/source"
+	"aether-dots/internal/source"
 )
 
 type Config struct {

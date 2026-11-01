@@ -13,10 +13,10 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
-	"aether-dots/desktop/internal/engine"
-	"aether-dots/desktop/internal/model"
-	"aether-dots/desktop/internal/store"
-	"aether-dots/desktop/internal/task"
+	"aether-dots/internal/engine"
+	"aether-dots/internal/model"
+	"aether-dots/internal/store"
+	"aether-dots/internal/task"
 )
 
 type app struct {

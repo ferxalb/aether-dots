@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"aether-dots/desktop/internal/source"
-	"aether-dots/desktop/internal/store"
-	"aether-dots/desktop/internal/task"
+	"aether-dots/internal/source"
+	"aether-dots/internal/store"
+	"aether-dots/internal/task"
 )
 
 var marker = regexp.MustCompile(`(?i)\b(open|pending|unresolved|decision|decide|tbd|todo|blocked|question|feedback|needs review)\b`)

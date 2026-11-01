@@ -3,3 +3,4 @@
 mygo_windows_*.syso
 .DS_Store
 *.md
+!/README.md

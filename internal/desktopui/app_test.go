@@ -5,7 +5,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"aether-dots/desktop/internal/store"
+	"aether-dots/internal/store"
 )
 
 func TestWorkspaceViewShowsCaptureScopeAndModelStatus(t *testing.T) {

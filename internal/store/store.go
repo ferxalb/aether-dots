@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"aether-dots/desktop/internal/task"
+	"aether-dots/internal/task"
 )
 
 type Store struct {

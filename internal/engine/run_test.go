@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"aether-dots/desktop/internal/model"
-	"aether-dots/desktop/internal/source"
-	"aether-dots/desktop/internal/store"
-	"aether-dots/desktop/internal/task"
+	"aether-dots/internal/model"
+	"aether-dots/internal/source"
+	"aether-dots/internal/store"
+	"aether-dots/internal/task"
 )
 
 func TestLocalRunWritesVerifiesAndPersistsDot(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"aether-dots/desktop/internal/source"
+	"aether-dots/internal/source"
 )
 
 func TestChatCompletionsStreaming(t *testing.T) {

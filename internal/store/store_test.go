@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"aether-dots/desktop/internal/task"
+	"aether-dots/internal/task"
 )
 
 func TestStoreRoundTripAndRejectsChangedEvent(t *testing.T) {
