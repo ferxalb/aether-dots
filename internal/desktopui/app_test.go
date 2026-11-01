@@ -87,14 +87,42 @@ func TestSettingsCanReturnToSelectedDotChat(t *testing.T) {
 		t.Fatalf("opening Settings lost selection: settings=%v conversation=%q", a.settingsOpen, a.selectedConversationID)
 	}
 	settings := ui.NewTester(a.view, 1120, 760)
-	if !settings.HasText("Appearance") || !settings.HasText("Official OpenAI Go SDK · Responses API") {
-		t.Fatalf("settings page missing appearance or model configuration: %q", settings.Texts())
+	if !settings.HasText("Appearance") || !settings.HasText("Official OpenAI Go SDK · Responses API") ||
+		!settings.HasText("Generation controls") || !settings.HasText("Skill library") || !settings.HasText("Routines") {
+		t.Fatalf("settings page missing model controls, skills, routines, or appearance: %q", settings.Texts())
 	}
 	if err := settings.Click("Done"); err != nil {
 		t.Fatal(err)
 	}
 	if a.settingsOpen || !a.hasConversationChat() || a.selectedConversationID != conversation.ID {
 		t.Fatalf("closing Settings did not return to chat: settings=%v conversation=%q", a.settingsOpen, a.selectedConversationID)
+	}
+}
+
+func TestSettingsCanSaveSharedSkillAndRoutine(t *testing.T) {
+	a := newMessengerTestApp(t)
+	conversation := createTestConversation(t, a, a.selectedSpaceID, "Automation Dot", "Use the latest chat context.")
+	a.selectConversation(conversation.ID)
+	a.settingsOpen = true
+	a.skillDraft = task.Skill{
+		Name: "Weekly review", Description: "Review the week's work.",
+		WhenToUse: "When asked for a weekly review.", Inputs: "Use facts in the chat.",
+		Steps: "Group progress and risks.", Validation: "Check every statement against the supplied facts.",
+		Output: "Return a short summary.", Approval: "Do not contact anyone or take external actions.",
+	}
+	a.routineNameDraft = "Daily review"
+	a.routinePromptDraft = "Summarize the current context and report missing information."
+	a.routineDotDraft = conversation.ID
+	a.routineEveryDraft = "30m"
+	tester := ui.NewTester(a.view, 1120, 760)
+	clickUIControl(t, tester, "Save skill", 1120, 760)
+	if len(a.db.Snapshot().Skills) != 1 {
+		t.Fatal("skill form did not save the reusable playbook")
+	}
+	clickUIControl(t, tester, "Save routine", 1120, 760)
+	snapshot := a.db.Snapshot()
+	if len(snapshot.Routines) != 1 || snapshot.Routines[0].ConversationID != conversation.ID || snapshot.Routines[0].IntervalSeconds != 1800 {
+		t.Fatalf("routine form did not save the interval schedule: %#v", snapshot.Routines)
 	}
 }
 

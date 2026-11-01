@@ -6,6 +6,13 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (10) — Shared skills, routines, and model controls
+
+- Added shared skill and routine models, validated store operations, schema 3 migration, explicit `@skill[Name]` selection scoped to one turn, and a shared engine path used by both CLI and desktop. Local routines can run on intervals while the app is open or `aether routines serve` is running; they skip missed intervals, retain 20 recent runs, and use per-routine and global hourly caps.
+- Added CLI commands and desktop Settings forms for managing skills and routines, testing or pausing routines, and inspecting recent outcomes. Added shared generation controls for reasoning effort, response detail, output-token limit, retry count, and timeout, with desktop preferences and CLI environment variables.
+- Kept Dot execution limited to its profile and conversation context. Routines do not use event/webhook triggers or connectors, and they cannot access user files, folders, apps, or accounts. No live model request or native macOS window was used for verification.
+- `CGO_ENABLED=0 go test -count=1 ./...`, `CGO_ENABLED=0 go test -race ./...`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, `make cli-help`, and `git diff --check` passed. `TestWriteUIPreviews` passed; dark and light MyGo-rendered Settings, skills, and routine screens were reviewed at 1120×760 and 760×560. Preview files are in `/tmp/aether-dots-ui-review/`.
+
 ## 2026-11-01 (09) — Restore window dragging on the compact header
 
 - Made the main header a window drag handle so users can move the window from its open area without restoring the removed blank inset. Header buttons remain interactive; the separate sidebar titlebar drag area remains available.

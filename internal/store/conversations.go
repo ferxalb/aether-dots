@@ -119,6 +119,17 @@ func validateProfileStyle(icon, color string) error {
 // CreateConversationRun atomically records a user request and the Dot run that
 // will answer it using the saved profile and recent chat context.
 func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot, task.ConversationMessage, error) {
+	var dot task.Dot
+	var message task.ConversationMessage
+	err := s.change(func(db *task.Database) error {
+		var err error
+		dot, message, err = createConversationRun(db, conversationID, content, "", time.Now().UTC())
+		return err
+	})
+	return dot, message, err
+}
+
+func createConversationRun(db *task.Database, conversationID, content, routineID string, now time.Time) (task.Dot, task.ConversationMessage, error) {
 	if strings.TrimSpace(content) == "" {
 		return task.Dot{}, task.ConversationMessage{}, errors.New("message is empty")
 	}
@@ -136,55 +147,54 @@ func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot,
 	if err != nil {
 		return task.Dot{}, task.ConversationMessage{}, err
 	}
-	now := time.Now().UTC()
 	var dot task.Dot
 	var message task.ConversationMessage
-	err = s.change(func(db *task.Database) error {
-		ci := conversationIndex(db, conversationID)
-		if ci < 0 {
-			return errors.New("conversation not found")
+	ci := conversationIndex(db, conversationID)
+	if ci < 0 {
+		return task.Dot{}, task.ConversationMessage{}, errors.New("conversation not found")
+	}
+	conversation := &db.Conversations[ci]
+	if !hasSpace(db, conversation.SpaceID) {
+		return task.Dot{}, task.ConversationMessage{}, errors.New("conversation space not found")
+	}
+	for _, existing := range db.Dots {
+		if existing.ConversationID != "" && (existing.Status == task.Captured || existing.Status == task.Ready || existing.Status == task.Running) {
+			return task.Dot{}, task.ConversationMessage{}, ErrDotAlreadyActive
 		}
-		conversation := &db.Conversations[ci]
-		if !hasSpace(db, conversation.SpaceID) {
-			return errors.New("conversation space not found")
+	}
+	parentDotID := ""
+	for i := len(db.Dots) - 1; i >= 0; i-- {
+		parent := db.Dots[i]
+		if parent.ConversationID != conversation.ID {
+			continue
 		}
-		for _, existing := range db.Dots {
-			if existing.ConversationID != "" && (existing.Status == task.Captured || existing.Status == task.Ready || existing.Status == task.Running) {
-				return errors.New("a Dot delegation is already queued or running")
-			}
+		if parent.SpaceID != conversation.SpaceID {
+			return task.Dot{}, task.ConversationMessage{}, errors.New("saved Dot space no longer matches its task history")
 		}
-		parentDotID := ""
-		for i := len(db.Dots) - 1; i >= 0; i-- {
-			parent := db.Dots[i]
-			if parent.ConversationID != conversation.ID {
-				continue
-			}
-			if parent.SpaceID != conversation.SpaceID {
-				return errors.New("saved Dot space no longer matches its task history")
-			}
-			parentDotID = parent.ID
-			break
-		}
-		objective := conversationObjective(*conversation, content)
-		if len(objective) > task.MaxConversationObjectiveBytes {
-			return errors.New("combined Dot purpose and message exceed the objective limit")
-		}
-		dot = task.Dot{
-			ID: dotID, SpaceID: conversation.SpaceID,
-			ConversationID: conversation.ID, ParentDotID: parentDotID,
-			Name: shortName(content), Objective: objective,
-			Status:    task.Ready,
-			CreatedAt: now, UpdatedAt: now,
-			Events: []task.Event{},
-		}
-		appendEvent(&dot, "captured", "Chat message queued for this Dot.")
-		message = task.ConversationMessage{ID: messageID, Role: "user", Content: content, DotID: dot.ID, CreatedAt: now}
-		conversation.Messages = append(conversation.Messages, message)
-		conversation.UpdatedAt = now
-		db.Dots = append(db.Dots, dot)
-		return nil
-	})
-	return dot, message, err
+		parentDotID = parent.ID
+		break
+	}
+	selected, hasSkill := selectSkill(db.Skills, content)
+	objective := conversationObjectiveWithSkill(*conversation, content, selected, hasSkill)
+	if len(objective) > task.MaxConversationObjectiveBytes {
+		return task.Dot{}, task.ConversationMessage{}, errors.New("combined Dot purpose, skill, and message exceed the objective limit")
+	}
+	dot = task.Dot{
+		ID: dotID, SpaceID: conversation.SpaceID,
+		ConversationID: conversation.ID, ParentDotID: parentDotID,
+		Name: shortName(content), Objective: objective,
+		Status: task.Ready, CreatedAt: now, UpdatedAt: now,
+		Events: []task.Event{}, RoutineID: routineID,
+	}
+	if hasSkill {
+		dot.SkillID = selected.ID
+	}
+	appendEvent(&dot, "captured", "Chat message queued for this Dot.")
+	message = task.ConversationMessage{ID: messageID, Role: "user", Content: content, DotID: dot.ID, CreatedAt: now}
+	conversation.Messages = append(conversation.Messages, message)
+	conversation.UpdatedAt = now
+	db.Dots = append(db.Dots, dot)
+	return dot, message, nil
 }
 
 // AppendConversationResult stores a generated assistant response. Repeating the
@@ -282,6 +292,10 @@ func conversationIndex(db *task.Database, id string) int {
 }
 
 func conversationObjective(conversation task.Conversation, message string) string {
+	return conversationObjectiveWithSkill(conversation, message, task.Skill{}, false)
+}
+
+func conversationObjectiveWithSkill(conversation task.Conversation, message string, skill task.Skill, hasSkill bool) string {
 	var b strings.Builder
 	b.WriteString("Dot name:\n")
 	b.WriteString(conversation.Name)
@@ -294,6 +308,27 @@ func conversationObjective(conversation task.Conversation, message string) strin
 	if conversation.Instructions != "" {
 		b.WriteString("\n\nDot working instructions:\n")
 		b.WriteString(conversation.Instructions)
+	}
+	if hasSkill {
+		b.WriteString("\n\nUse this explicitly selected skill for this turn only. Its instructions do not grant access to tools, files, folders, apps, or accounts. Follow its approval boundary and state when required inputs are missing.\n")
+		b.WriteString("\nSkill: ")
+		b.WriteString(skill.Name)
+		if skill.Description != "" {
+			b.WriteString("\nDescription: ")
+			b.WriteString(skill.Description)
+		}
+		b.WriteString("\nWhen to use: ")
+		b.WriteString(skill.WhenToUse)
+		b.WriteString("\nRequired inputs: ")
+		b.WriteString(skill.Inputs)
+		b.WriteString("\nSteps: ")
+		b.WriteString(skill.Steps)
+		b.WriteString("\nValidation: ")
+		b.WriteString(skill.Validation)
+		b.WriteString("\nExpected output: ")
+		b.WriteString(skill.Output)
+		b.WriteString("\nApproval boundary: ")
+		b.WriteString(skill.Approval)
 	}
 	context := boundedConversationContext(conversation.Messages)
 	if context != "" {

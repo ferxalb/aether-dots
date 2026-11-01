@@ -32,6 +32,7 @@ func TestWriteUIPreviews(t *testing.T) {
 		{name: "chat", app: chatApp},
 		{name: "profile", app: profileApp},
 		{name: "welcome", app: welcomeApp},
+		{name: "settings", app: newSettingsPreviewApp(t, chatApp)},
 	}
 	for _, view := range views {
 		for _, appearance := range []string{"Dark", "Light"} {
@@ -59,6 +60,53 @@ func TestWriteUIPreviews(t *testing.T) {
 			}
 		}
 	}
+	settingsTester := ui.NewTester(views[3].app.view, 1120, 760)
+	for page := 0; page < 5; page++ {
+		file := filepath.Join(dir, "settings-scroll-"+strconv.Itoa(page)+".png")
+		out, err := os.Create(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(out, settingsTester.Image()); err != nil {
+			out.Close()
+			t.Fatal(err)
+		}
+		if err := out.Close(); err != nil {
+			t.Fatal(err)
+		}
+		settingsTester.Scroll(1080, 720, 0, 620)
+		settingsTester.Frame()
+	}
+}
+
+func newSettingsPreviewApp(t *testing.T, source *app) *app {
+	t.Helper()
+	skill, err := source.db.CreateSkill(task.CreateSkill{
+		Name: "Weekly review", Description: "A clear weekly summary.",
+		WhenToUse: "When reviewing the week's work.", Inputs: "Use facts supplied in the conversation.",
+		Steps: "Group progress, risks, and next steps.", Validation: "Check that every item comes from the supplied facts.",
+		Output: "Return a short summary with three headings.", Approval: "Do not contact anyone or take external actions.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, ok := findConversation(source.db.Snapshot(), source.selectedConversationID)
+	if !ok {
+		t.Fatal("preview conversation is missing")
+	}
+	routine, err := source.db.CreateRoutine(task.CreateRoutine{
+		ConversationID: conversation.ID, Name: "Weekly check-in", Prompt: "Summarize the latest context and identify missing inputs.",
+		IntervalSeconds: task.MinRoutineIntervalSeconds,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := *source
+	preview.settingsOpen = true
+	preview.editSkill(skill)
+	preview.editRoutine(routine)
+	preview.refresh()
+	return &preview
 }
 
 func newUIPreviewApps(t *testing.T) (*app, *app, *app) {

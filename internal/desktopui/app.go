@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math"
+	"sync/atomic"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -46,6 +47,17 @@ type app struct {
 	spaceDraft          string
 	renameSpaceID       string
 	spaceManagementOpen bool
+	skillEditingID      string
+	skillDeleteID       string
+	skillDraft          task.Skill
+	skillMessage        string
+	routineEditingID    string
+	routineDeleteID     string
+	routineNameDraft    string
+	routinePromptDraft  string
+	routineDotDraft     string
+	routineEveryDraft   string
+	routineMessage      string
 	messageDraft        string
 	messageDrafts       map[string]string
 	chatScroll          ui.ScrollState
@@ -56,12 +68,14 @@ type app struct {
 	runningDotID        string
 	cancelRun           context.CancelFunc
 
-	credentialChecked bool
-	credentialLoading bool
-	credentialSaved   bool
-	credentialError   string
-	settingsSaving    bool
-	modelConnection   string
+	credentialChecked       bool
+	credentialLoading       bool
+	credentialSaved         bool
+	credentialError         string
+	settingsSaving          bool
+	modelConnection         string
+	routineSchedulerStarted bool
+	routinePreferences      *atomic.Pointer[preferences]
 }
 
 func Run(dataDir string) error {
@@ -112,6 +126,7 @@ func Run(dataDir string) error {
 			a.message = "Capture shortcut unavailable: " + err.Error()
 		}
 		show()
+		a.startRoutineScheduler()
 	})
 	return mygo.App.Run()
 }

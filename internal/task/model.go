@@ -1,8 +1,11 @@
 package task
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 const (
 	MaxConversationNameBytes         = 128
@@ -11,8 +14,19 @@ const (
 	MaxConversationInstructionsBytes = 4096
 	MaxConversationContextMessages   = 12
 	MaxConversationContextBytes      = 24 * 1024
-	MaxConversationObjectiveBytes    = MaxConversationPurposeBytes + MaxConversationInstructionsBytes + MaxConversationMessageBytes + MaxConversationContextBytes + 1024
+	MaxSkillNameBytes                = 128
+	MaxSkillDescriptionBytes         = 1024
+	MaxSkillFieldBytes               = 4096
+	MaxSkillDefinitionBytes          = 16 * 1024
+	MaxRoutineNameBytes              = 128
+	MaxRoutinePromptBytes            = MaxConversationMessageBytes - 512
+	MaxRoutineRuns                   = 20
+	MaxRoutineRunsPerHour            = 200
+	MaxRoutineRunsTotalPerHour       = 300
+	MaxConversationObjectiveBytes    = MaxConversationPurposeBytes + MaxConversationInstructionsBytes + MaxConversationMessageBytes + MaxConversationContextBytes + MaxSkillDefinitionBytes + 2048
 )
+
+const MinRoutineIntervalSeconds int64 = 5 * 60
 
 type Status string
 
@@ -48,6 +62,8 @@ type Dot struct {
 	SpaceID        string    `json:"space_id"`
 	ConversationID string    `json:"conversation_id,omitempty"`
 	ParentDotID    string    `json:"parent_dot_id,omitempty"`
+	SkillID        string    `json:"skill_id,omitempty"`
+	RoutineID      string    `json:"routine_id,omitempty"`
 	Name           string    `json:"name"`
 	Objective      string    `json:"objective"`
 	Status         Status    `json:"status"`
@@ -81,11 +97,55 @@ type ConversationMessage struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Skill is a reusable, user-authored playbook shared by every Dot.
+type Skill struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	WhenToUse   string    `json:"when_to_use"`
+	Inputs      string    `json:"inputs"`
+	Steps       string    `json:"steps"`
+	Validation  string    `json:"validation"`
+	Output      string    `json:"output"`
+	Approval    string    `json:"approval"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Routine stores an interval-based recurring prompt. Runs are local to the
+// app or CLI process and are recorded in the owning conversation.
+type Routine struct {
+	ID              string       `json:"id"`
+	ConversationID  string       `json:"conversation_id"`
+	Name            string       `json:"name"`
+	Prompt          string       `json:"prompt"`
+	IntervalSeconds int64        `json:"interval_seconds"`
+	Active          bool         `json:"active"`
+	NextRunAt       time.Time    `json:"next_run_at"`
+	LastRunAt       time.Time    `json:"last_run_at,omitempty"`
+	LastStatus      string       `json:"last_status,omitempty"`
+	Runs            []RoutineRun `json:"runs,omitempty"`
+	RunStarts       []time.Time  `json:"run_starts,omitempty"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+}
+
+type RoutineRun struct {
+	DotID      string    `json:"dot_id"`
+	Status     string    `json:"status"`
+	Message    string    `json:"message,omitempty"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at,omitempty"`
+}
+
 type Database struct {
-	SchemaVersion int            `json:"schema_version"`
-	Spaces        []Space        `json:"spaces"`
-	Dots          []Dot          `json:"dots"`
-	Conversations []Conversation `json:"conversations,omitempty"`
+	SchemaVersion    int            `json:"schema_version"`
+	Spaces           []Space        `json:"spaces"`
+	Dots             []Dot          `json:"dots"`
+	Conversations    []Conversation `json:"conversations,omitempty"`
+	Skills           []Skill        `json:"skills,omitempty"`
+	Routines         []Routine      `json:"routines,omitempty"`
+	RoutineRunStarts []time.Time    `json:"routine_run_starts,omitempty"`
 }
 
 type CreateConversation struct {
@@ -95,4 +155,32 @@ type CreateConversation struct {
 	Color        string
 	Purpose      string
 	Instructions string
+}
+
+type CreateSkill struct {
+	Name        string
+	Description string
+	WhenToUse   string
+	Inputs      string
+	Steps       string
+	Validation  string
+	Output      string
+	Approval    string
+}
+
+type CreateRoutine struct {
+	ConversationID  string
+	Name            string
+	Prompt          string
+	IntervalSeconds int64
+}
+
+func FormatRoutineInterval(seconds int64) string {
+	if seconds > 0 && seconds%3600 == 0 {
+		return strconv.FormatInt(seconds/3600, 10) + "h"
+	}
+	if seconds > 0 && seconds%60 == 0 {
+		return strconv.FormatInt(seconds/60, 10) + "m"
+	}
+	return (time.Duration(seconds) * time.Second).String()
 }

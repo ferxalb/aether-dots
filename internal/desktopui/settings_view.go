@@ -6,9 +6,12 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 	ui.Column(c).FillWidth().Gap(16).Children(func() {
 		ui.Column(c).Gap(4).Children(func() {
 			ui.Text(c, "Make it yours").FontSize(27).Bold()
-			ui.Text(c, "Choose how AETHER looks and how it connects to OpenAI.").TextColor(theme.TextMuted)
+			ui.Text(c, "Tune generation, save skills, and set local schedules.").TextColor(theme.TextMuted)
 		})
 		a.openAISettings(c, theme)
+		a.modelOptionsSettings(c, theme)
+		a.skillLibrarySettings(c, theme)
+		a.routineSettings(c, theme)
 		a.appearanceSettings(c, theme)
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			save := ui.PrimaryButton(c.Key("settings-save"), "Save changes").Padding(10, 16).

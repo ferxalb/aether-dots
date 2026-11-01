@@ -23,7 +23,7 @@ CGO_ENABLED=0 go run .
 
 Choose **New Dot** or press `⌘N` to create a Dot and open its chat immediately. Start by sending a prompt. Use **Customize** to change its name, icon, color, objective, or lasting working instructions. `⌘⇧Space` opens AETHER from another app; the menu bar item can reopen it after the window closes.
 
-Dots use only their saved profile and recent chat context. They cannot read or write user files or folders. Replies are saved to chat history in AETHER's local store; Dot tasks do not create output files.
+Dots use their saved profile and recent chat context. You can add a reusable skill to a specific turn with `@skill[Skill name]`. They cannot read or write user files or folders. Replies are saved to chat history in AETHER's local store; Dot tasks do not create output files.
 
 ## Model setup
 
@@ -32,9 +32,42 @@ Model replies use the official OpenAI Go SDK and Responses API. The desktop Sett
 ```sh
 export AETHER_MODEL_NAME="gpt-6.1-sol"
 export OPENAI_API_KEY="..."
+export AETHER_REASONING_EFFORT="medium"
+export AETHER_TEXT_VERBOSITY="medium"
+export AETHER_MAX_OUTPUT_TOKENS="8192"
+export AETHER_MAX_RETRIES="2"
+export AETHER_MODEL_TIMEOUT_SECONDS="90"
 ```
 
-The desktop Settings page includes model selection, a secure API-key field, appearance mode, seven color palettes, and a connection check. The API key is never written to the chat store or preferences file. Requests use the OpenAI Responses API with response storage disabled. Each reply includes the Dot profile, the newest user message, and up to 12 recent chat messages within a 24 KiB context budget; older messages may be omitted and long entries excerpted.
+The desktop Settings page includes model selection, a secure API-key field, reasoning effort, response detail, output-token limit, retry count, timeout, appearance mode, seven color palettes, and a connection check. The API key is never written to the chat store or preferences file. Requests use the OpenAI Responses API with response storage disabled. Each reply includes the Dot profile, the newest user message, any explicitly selected skill, and up to 12 recent chat messages within a 24 KiB context budget; older messages may be omitted and long entries excerpted.
+
+## Skills and routines
+
+Create skills in Settings or with `aether skills create`. A skill records when it applies, required inputs, steps, validation, output format, and approval boundaries. Skills are shared across Dots, but a chat uses one only when you explicitly name it, for example `@skill[Weekly review]`.
+
+```sh
+aether skills create --name "Weekly review" \
+  --description "Summarize progress, risks, and next steps." \
+  --when-to-use "When asked for a weekly review." \
+  --inputs "Use facts provided in the conversation." \
+  --steps "Group progress, risks, and next steps." \
+  --validation "Check each statement against the supplied facts." \
+  --output "Return a short summary with three headings." \
+  --approval "Do not contact anyone or take external actions."
+```
+
+Create an interval routine in Settings or with the CLI:
+
+```sh
+aether routines create <dot-id> --name "Daily review" \
+  --prompt "Summarize the latest context and call out missing inputs." \
+  --every 24h
+aether routines list
+aether routines test <routine-id>
+aether routines pause <routine-id>
+```
+
+Intervals must be at least five minutes. A new or resumed schedule waits for its next interval; **Test now** makes a real model call without moving that schedule. Routines run on the local machine while the desktop app is open, or while `aether routines serve` is running. They use the owning Dot's profile and recent chat context, save each result in that conversation, keep 20 recent run records, and skip missed intervals instead of replaying them. The scheduler caps runs at 200 per routine and 300 total per hour; a rate-limited scheduled run is recorded as failed and is not retried until the next interval. Routine prompts do not access files, folders, apps, or accounts.
 
 ## CLI
 
@@ -49,7 +82,7 @@ CGO_ENABLED=0 go run ./cmd/aether send <dot-id> --message "Summarize this discus
 CGO_ENABLED=0 go run ./cmd/aether inspect <dot-id>
 ```
 
-Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants.
+Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants; schema v2 stores migrate to the skills and local routines format.
 
 ## Package and checks
 

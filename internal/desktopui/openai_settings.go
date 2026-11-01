@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,11 +15,27 @@ import (
 var openAISecrets = mygo.Secrets.Service(openAIService)
 
 func openAIGenerator(modelName string, keyOverride ...string) model.Generator {
-	config := model.Config{
-		Model:   strings.TrimSpace(modelName),
-		APIKey:  strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
-		Timeout: 90 * time.Second,
+	config := model.FromEnvironment()
+	if strings.TrimSpace(modelName) != "" {
+		config.Model = strings.TrimSpace(modelName)
 	}
+	return openAIGeneratorConfig(config, keyOverride...)
+}
+
+func openAIGeneratorWithPreferences(prefs preferences, keyOverride ...string) model.Generator {
+	config := model.Config{
+		Model:           strings.TrimSpace(prefs.Model),
+		APIKey:          strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		Timeout:         secondsPreference(prefs.TimeoutSeconds, 90),
+		ReasoningEffort: prefs.ReasoningEffort,
+		TextVerbosity:   prefs.TextVerbosity,
+		MaxOutputTokens: integerPreference(prefs.MaxOutputTokens, model.DefaultMaxOutputTokens),
+		MaxRetries:      int(integerPreference(prefs.MaxRetries, int64(model.DefaultMaxRetries))),
+	}
+	return openAIGeneratorConfig(config, keyOverride...)
+}
+
+func openAIGeneratorConfig(config model.Config, keyOverride ...string) model.Generator {
 	if key, err := openAISecrets.Get(openAIKeyName); err == nil && strings.TrimSpace(string(key)) != "" {
 		config.APIKey = strings.TrimSpace(string(key))
 	}
@@ -26,6 +43,18 @@ func openAIGenerator(modelName string, keyOverride ...string) model.Generator {
 		config.APIKey = strings.TrimSpace(keyOverride[0])
 	}
 	return model.Generator{Config: config}
+}
+
+func integerPreference(value string, fallback int64) int64 {
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func secondsPreference(value string, fallback int64) time.Duration {
+	return time.Duration(integerPreference(value, fallback)) * time.Second
 }
 
 func (a *app) openSettings() {
@@ -66,6 +95,7 @@ func (a *app) saveSettings() {
 		a.message = err.Error()
 		return
 	}
+	a.publishRoutinePreferences()
 	key := strings.TrimSpace(a.apiKeyDraft)
 	if key == "" {
 		a.message = "Settings saved."
@@ -152,13 +182,13 @@ func (a *app) testModel() {
 		return
 	}
 	a.modelConnection = "Checking…"
-	modelName := a.prefs.Model
+	prefs := a.prefs
 	keyDraft := a.apiKeyDraft
 	win := a.win
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		err := openAIGenerator(modelName, keyDraft).Test(ctx)
+		err := openAIGeneratorWithPreferences(prefs, keyDraft).Test(ctx)
 		if win != nil {
 			win.Update(func() {
 				if err != nil {

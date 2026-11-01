@@ -157,3 +157,37 @@ func TestRecoverInterruptedConversationRun(t *testing.T) {
 		t.Fatalf("unexpected recovered state: %#v", got)
 	}
 }
+
+func TestSchemaV2MigrationStartsAutomationCollectionsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Open(dir); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "dots.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["schema_version"] = float64(2)
+	raw["skills"] = []any{map[string]any{"name": "Legacy skill"}}
+	raw["routines"] = []any{map[string]any{"name": "Legacy schedule"}}
+	data, err = json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := db.Snapshot()
+	if snapshot.SchemaVersion != task.SchemaVersion || len(snapshot.Skills) != 0 || len(snapshot.Routines) != 0 {
+		t.Fatalf("unexpected schema 2 migration: %#v", snapshot)
+	}
+}

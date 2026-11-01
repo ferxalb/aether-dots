@@ -151,3 +151,37 @@ func TestRunWithProgressPublishesModelPhases(t *testing.T) {
 		t.Fatalf("unexpected persisted phase notifications: %#v", checkpoints)
 	}
 }
+
+func TestRoutineTestUsesSharedConversationEngineAndRecordsHistory(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "store"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Routine Dot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routine, err := db.CreateRoutine(task.CreateRoutine{
+		ConversationID: conversation.ID, Name: "Context check", Prompt: "Summarize the latest context.",
+		IntervalSeconds: task.MinRoutineIntervalSeconds,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generator := &testGenerator{ready: true, reply: "Routine summary."}
+	if err := RunRoutineOnce(context.Background(), db, routine.ID, generator, nil); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := db.Snapshot()
+	if len(snapshot.Routines) != 1 || snapshot.Routines[0].LastStatus != "succeeded" || len(snapshot.Routines[0].Runs) != 1 {
+		t.Fatalf("routine run history was not recorded: %#v", snapshot.Routines)
+	}
+	if len(snapshot.Conversations) != 1 || len(snapshot.Conversations[0].Messages) != 2 ||
+		!strings.Contains(snapshot.Conversations[0].Messages[0].Content, "Routine: Context check") ||
+		snapshot.Conversations[0].Messages[1].Content != "Routine summary." {
+		t.Fatalf("routine did not use the normal conversation path: %#v", snapshot.Conversations)
+	}
+	if snapshot.Routines[0].Runs[0].Status != "succeeded" {
+		t.Fatalf("routine run status=%q", snapshot.Routines[0].Runs[0].Status)
+	}
+}

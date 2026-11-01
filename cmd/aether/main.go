@@ -27,8 +27,12 @@ func main() {
 func run(args []string) error {
 	root := flag.NewFlagSet("aether", flag.ContinueOnError)
 	root.SetOutput(os.Stderr)
+	root.Usage = printHelp
 	dataDir := root.String("data-dir", "", "local Dot chat store folder (must appear before the command)")
 	if err := root.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	args = root.Args()
@@ -65,6 +69,10 @@ func run(args []string) error {
 		return runMessage(db, args[1])
 	case "model":
 		return modelCommand(args[1:])
+	case "skills":
+		return skillsCommand(db, args[1:])
+	case "routines":
+		return routinesCommand(db, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q (try `aether help`)", args[0])
 	}
@@ -206,7 +214,8 @@ func modelCommand(args []string) error {
 		return errors.New("usage: aether model test")
 	}
 	config := model.FromEnvironment()
-	fmt.Printf("Testing OpenAI Responses API with model %s using OPENAI_API_KEY…\n", config.Model)
+	fmt.Printf("Testing OpenAI Responses API with model %s (reasoning %s, verbosity %s, max output %d tokens, retries %d) using OPENAI_API_KEY…\n",
+		config.Model, config.ReasoningEffort, config.TextVerbosity, config.MaxOutputTokens, config.MaxRetries)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := (model.Generator{Config: config}).Test(ctx); err != nil {
@@ -239,6 +248,8 @@ Commands:
   run <message-id>              Retry a saved message
   spaces [list|create|rename]  Manage Spaces
   model test                   Test the OpenAI connection
+  skills [list|create|update|inspect|delete]  Manage reusable playbooks
+  routines [list|create|update|pause|resume|test|inspect|delete|serve]  Manage schedules
 
 Profile options:
   --name <name>
@@ -249,6 +260,19 @@ Profile options:
   --space <name>
 
 Dot replies use profile and chat context. The CLI does not read or write
-user-selected files or folders. Set OPENAI_API_KEY for CLI model access.
+user-selected files or folders. Select a saved playbook in chat with
+@skill[Skill name]. Set OPENAI_API_KEY for CLI model access.
+
+Model settings (environment):
+  AETHER_MODEL_NAME                model ID (default: gpt-6.1-sol)
+  AETHER_REASONING_EFFORT          none|minimal|low|medium|high|xhigh|max
+  AETHER_TEXT_VERBOSITY            low|medium|high
+  AETHER_MAX_OUTPUT_TOKENS         256–65536 (default: 8192)
+  AETHER_MAX_RETRIES               0–5 (default: 2)
+  AETHER_MODEL_TIMEOUT_SECONDS     request timeout (default: 90)
+
+Routines use an interval of at least 5 minutes and run while the desktop app
+is open or while aether routines serve is running. Each run is saved in its
+Dot conversation; missed intervals are skipped.
 `)
 }

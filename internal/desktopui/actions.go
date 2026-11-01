@@ -25,9 +25,9 @@ func (a *app) startRun(id string) {
 		a.conversationError = ""
 	}
 	win := a.win
-	modelName := a.prefs.Model
+	prefs := a.prefs
 	go func() {
-		generator := openAIGenerator(modelName)
+		generator := openAIGeneratorWithPreferences(prefs)
 		err := engine.RunWithProgress(ctx, a.db, id, &generator, func(delta string) {
 			if win != nil {
 				win.Update(func() {

@@ -125,7 +125,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		})
 
 		profilePanel(c, theme, "Privacy", func() {
-			ui.Text(c, "This Dot only uses its profile and chat history. It cannot read or write files or folders.").
+			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. It cannot access your files, folders, apps, or accounts.").
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
 
@@ -200,7 +200,7 @@ func (a *app) workspaceWelcomeView(c *ui.Context, theme *ui.Theme) {
 		if ui.PrimaryButton(c.Key("welcome-create-dot"), "New Dot").Padding(10, 16).Clicked() {
 			a.startCreator()
 		}
-		ui.Text(c, "Dots use their profile and chat history. They do not access local files or folders.").
+		ui.Text(c, "Dots use their profile and chat history. Named skills and local routines add reusable workflows. Dots do not access files or folders.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth().TextAlign(ui.Center)
 	})
 }

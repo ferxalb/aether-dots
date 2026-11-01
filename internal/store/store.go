@@ -17,9 +17,11 @@ import (
 )
 
 type Store struct {
-	mu   sync.RWMutex
-	path string
-	db   task.Database
+	mu      sync.RWMutex
+	leaseMu sync.Mutex
+	path    string
+	db      task.Database
+	lease   *os.File
 }
 
 func DefaultDataDir() (string, error) {
@@ -55,15 +57,22 @@ func Open(dir string) (*Store, error) {
 	if err := json.Unmarshal(b, &db); err != nil {
 		return nil, fmt.Errorf("decode task store: %w", err)
 	}
-	if db.SchemaVersion != 1 && db.SchemaVersion != task.SchemaVersion {
+	if db.SchemaVersion < 1 || db.SchemaVersion > task.SchemaVersion {
 		return nil, fmt.Errorf("unsupported task store schema %d (expected %d)", db.SchemaVersion, task.SchemaVersion)
 	}
 	if err := verifyEvents(db); err != nil {
 		return nil, fmt.Errorf("task event history failed integrity check: %w", err)
 	}
 	store := &Store{path: path, db: db}
-	if db.SchemaVersion == 1 {
-		migrateLegacyFileAccess(&db)
+	if db.SchemaVersion < task.SchemaVersion {
+		if db.SchemaVersion == 1 {
+			migrateLegacyFileAccess(&db)
+		}
+		// Skills and routines are introduced in schema 3. Ignore similarly
+		// named fields from older stores rather than importing legacy data.
+		db.Skills = nil
+		db.Routines = nil
+		db.RoutineRunStarts = nil
 		db.SchemaVersion = task.SchemaVersion
 		if err := store.persist(db); err != nil {
 			return nil, fmt.Errorf("migrate task store: %w", err)
@@ -259,6 +268,9 @@ func verifyEvents(db task.Database) error {
 // migrateLegacyFileAccess removes persisted fields and timeline details from
 // schema v1, whose tasks stored user-selected local folder grants.
 func migrateLegacyFileAccess(db *task.Database) {
+	db.Skills = nil
+	db.Routines = nil
+	db.RoutineRunStarts = nil
 	for i := range db.Dots {
 		dot := &db.Dots[i]
 		dot.Checkpoint = ""
