@@ -6,6 +6,26 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (03) — Settings page, themes, and official OpenAI SDK
+
+### Session objective
+
+Replace the environment-only model status panel with a first-class settings page, add appearance choices, use OpenAI's official Go SDK, and split the native UI into focused source files.
+
+### Implementation
+
+- Added a dedicated Settings destination in the app sidebar with OpenAI model configuration and an asynchronous connection check using the Responses API.
+- Replaced hand-written Responses/Chat Completions HTTP streaming with `github.com/openai/openai-go/v3`. Requests stream through the SDK and set `store: false`; provider-compatible endpoints and the Chat Completions toggle were removed.
+- Added local preferences for model name, appearance mode, and seven palettes. The API key is stored through MyGo's system credential store and never enters the task store or preferences file. `OPENAI_API_KEY` remains a CLI and desktop fallback.
+- Added System, Light, and Dark appearance modes and Obsidian, Forest, Ocean, Silver, Violet, Rose, and Amber palettes. The system mode follows macOS appearance.
+- Split the former desktop UI source into app/runtime, navigation/layout, task views, settings, theme, preferences, and action files.
+- Updated the README, CLI help, and existing model/UI tests for the new configuration flow.
+
+### Verification
+
+- `gofmt`, `go mod tidy`, `git diff --check`, and `CGO_ENABLED=0 go build ./...` completed successfully.
+- The test suite and native GUI were not run during this session.
+
 ## 2026-11-01 (02) — Native workspace refresh and command shortcuts
 
 ### Session objective

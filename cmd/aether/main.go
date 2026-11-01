@@ -203,7 +203,7 @@ func modelCommand(args []string) error {
 		return errors.New("usage: aether model test")
 	}
 	config := model.FromEnvironment()
-	fmt.Printf("Testing %s via %s (%s) using key from %s…\n", config.API, config.EndpointLabel(), config.Model, config.KeyEnv)
+	fmt.Printf("Testing OpenAI Responses API with model %s using OPENAI_API_KEY…\n", config.Model)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := (model.Generator{Config: config}).Test(ctx); err != nil {
@@ -323,12 +323,11 @@ Commands:
   mode <dot-id> local|model   Change a Dot's execution mode
   run <dot-id>                Run a captured Dot
   resume <dot-id>             Resume/retry a paused or failed Dot
-  model test                  Test the OpenAI-compatible endpoint
+  model test                  Test the OpenAI Responses API connection
   routine [list|promote|edit|run]
 
-Model settings (optional): AETHER_MODEL_BASE_URL, AETHER_MODEL_NAME,
-AETHER_MODEL_API (default responses), AETHER_MODEL_API_KEY_ENV, and the named
-key variable (default OPENAI_API_KEY). The API key is read from the process
-environment and is never saved.
+Model settings (optional): AETHER_MODEL_NAME and OPENAI_API_KEY. The desktop
+app also lets you save the model name locally and stores the API key in the
+system credential store. The CLI reads OPENAI_API_KEY from its environment.
 `)
 }

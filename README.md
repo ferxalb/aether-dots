@@ -27,21 +27,16 @@ CGO_ENABLED=0 go run .
 
 The app opens with an empty `Personal` Space. Use **Choose source folder**, **Choose destination**, enter an outcome, and create a Dot. `⌘⇧Space` opens AETHER from another app; the menu bar item can reopen it after the window closes.
 
-The default `local` mode reads bounded UTF-8 Markdown/text/CSV/JSON files and creates a deterministic list of lines containing open-decision markers. It uses no account or credential and clearly labels the limits of that extraction. `model` mode sends the selected text to the configured OpenAI-compatible endpoint and streams the draft into the event view. Review model output before relying on its conclusions.
+The default `local` mode reads bounded UTF-8 Markdown/text/CSV/JSON files and creates a deterministic list of lines containing open-decision markers. It uses no account or credential and clearly labels the limits of that extraction. `model` mode sends the selected text to the configured OpenAI model and streams the draft into the event view. Review model output before relying on its conclusions.
 
-Model configuration is environment-based. The OpenAI Responses API is the default; set `AETHER_MODEL_API=chat` for a provider that exposes Chat Completions instead.
+Model tasks use the official OpenAI Go SDK and OpenAI Responses API. The desktop Settings page stores the selected model in the local preferences file and the API key in the system credential store. The CLI reads its API key from the environment.
 
 ```sh
-export AETHER_MODEL_BASE_URL="https://api.openai.com/v1"
 export AETHER_MODEL_NAME="gpt-6.1-sol"
-export AETHER_MODEL_API="responses"
-export AETHER_MODEL_API_KEY_ENV="OPENAI_API_KEY"
 export OPENAI_API_KEY="..."
 ```
 
-For a server exposing only Chat Completions, set `AETHER_MODEL_API=chat`.
-
-Only the endpoint, model name, and environment variable name are used as configuration; the key is never written to the task store or logs. The UI's **Test model connection** button and `aether model test` check the provider.
+The desktop Settings page includes model selection, a secure API-key field, appearance mode, seven color palettes, and a connection check. The API key is never written to the task store or preferences file. Requests use the OpenAI Responses API with response storage disabled. The **Test connection** button and `aether model test` check the configured model.
 
 ## CLI
 
