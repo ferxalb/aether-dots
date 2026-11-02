@@ -159,7 +159,7 @@ func sendCommand(db *store.Store, args []string) error {
 func runMessage(db *store.Store, id string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	generator := model.NewProvider(model.FromEnvironment())
+	generator := engine.WithSpecialistDelegation(db, id, model.NewProvider(model.FromEnvironment()), nil)
 	if err := engine.Run(ctx, db, id, generator, func(delta string) { fmt.Print(delta) }); err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Println("\nReply paused. Retry the message when ready.")
@@ -264,8 +264,10 @@ Profile options:
   --color <hex>
   --space <name>
 
-Dot replies use profile and chat context. The CLI does not read or write
-user-selected files or folders. Select a saved playbook in chat with
+Dot replies use profile and chat context. Function calls are limited to local
+time, arithmetic, and specialists explicitly granted in the same Space. A
+handoff shares only its typed request fields and is saved in both chats. The
+CLI does not read or write user-selected files or folders. Select a saved playbook in chat with
 @skill[Skill name]. Choose a provider with AETHER_MODEL_PROVIDER.
 
 Model settings (environment):

@@ -6,6 +6,26 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (19) — Permissioned Dot handoffs and provider-neutral tools
+
+### Session objective
+
+Make AETHER Dots: independent specialists, clearer task handoffs, provider-neutral capabilities, and auditable permission checks.
+
+### Implementation
+
+- Added a shared model function catalog. OpenAI Responses and OpenAI-compatible Chat Completions now use the same local time, calculator, and request-scoped tool contracts. Function calls have bounded arguments, outputs, rounds, and call counts; parallel execution is disabled for Responses.
+- Added directional specialist grants in each Dot profile. Grants are empty by default, same-Space only, and limited to 12 peers. Moving a Dot clears old grants to it. A run can hand off up to three typed tasks, one level deep.
+- The store rechecks each grant atomically when creating a handoff. A request contains only the task, constraints, and expected output; it does not copy the requesting Dot's full transcript. The receiving Dot uses its own profile and history.
+- Saved incoming requests and specialist results in both conversations with source attribution. Accepted, rejected, failed, and completed handoffs are recorded in the task event chains. Routines and CLI runs use the same per-task capability binding.
+- Added specialist selection and privacy details to Customize, plus visible handoff attribution and a “consulting …” run status in chat. Bumped the store schema to v4; schema v3 skills and routines are preserved and receive no automatic grants.
+- Kept the existing no-local-files boundary. No shell, browser, account, or arbitrary-network connector was added.
+
+### Verification
+
+- `gofmt`, `git diff --check`, and `CGO_ENABLED=0 go build ./...` passed.
+- Automated tests, live provider function calls, and a native window preview were not run. Provider-specific function-call behavior and visual layout remain unverified against configured accounts and the running macOS app.
+
 ## 2026-11-01 (18) — Reasoning effort across model providers
 
 ### Session objective

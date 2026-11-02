@@ -10,37 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	openai "github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/packages/param"
-	"github.com/openai/openai-go/v3/shared"
 )
-
-func nativeToolDefinitions() []openai.ChatCompletionToolUnionParam {
-	return []openai.ChatCompletionToolUnionParam{
-		openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
-			Name:        "aether_current_time",
-			Description: param.NewOpt("Return the current local date and time. This function does not access the network or user data."),
-			Parameters: shared.FunctionParameters{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"additionalProperties": false,
-			},
-		}),
-		openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
-			Name:        "aether_calculate",
-			Description: param.NewOpt("Evaluate a basic arithmetic expression using numbers, parentheses, and +, -, *, /, and ^."),
-			Parameters: shared.FunctionParameters{
-				"type": "object",
-				"properties": map[string]any{
-					"expression": map[string]any{"type": "string", "description": "A basic arithmetic expression, up to 256 characters."},
-				},
-				"required":             []string{"expression"},
-				"additionalProperties": false,
-			},
-		}),
-	}
-}
 
 func executeNativeTool(name, rawArguments string) (string, error) {
 	if len(rawArguments) > 1024 {

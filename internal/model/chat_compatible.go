@@ -19,7 +19,7 @@ import (
 const (
 	maxNativeToolCalls = 8
 	maxToolRounds      = 4
-	maxToolArguments   = 1024
+	maxToolArguments   = 12 * 1024
 )
 
 // CompatibleGenerator uses the official OpenAI Go SDK against providers that
@@ -79,8 +79,9 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 	}
 	config := normalizeConfig(g.Config)
 	client := g.client(config)
+	toolset := registeredTools(config)
 	messages := []openai.ChatCompletionMessageParamUnion{
-		openai.SystemMessage(compatibleSystemInstructions(config.DisableNativeTools)),
+		openai.SystemMessage(compatibleSystemInstructions(len(toolset) == 0)),
 		openai.UserMessage(objective),
 	}
 	var result strings.Builder
@@ -97,8 +98,8 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 		if !config.DisableReasoningEffort && strings.TrimSpace(config.ReasoningEffort) != "" {
 			params.ReasoningEffort = shared.ReasoningEffort(strings.TrimSpace(config.ReasoningEffort))
 		}
-		if !config.DisableNativeTools {
-			params.Tools = nativeToolDefinitions()
+		if len(toolset) > 0 {
+			params.Tools = compatibleToolDefinitions(toolset)
 		}
 		stream := client.Chat.Completions.NewStreaming(ctx, params)
 		var content strings.Builder
@@ -140,7 +141,7 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 					call.arguments.WriteString(delta.Function.Arguments)
 					if call.arguments.Len() > maxToolArguments {
 						_ = stream.Close()
-						return "", errors.New("native function arguments exceeded the 1 KiB limit")
+						return "", errors.New("native function arguments exceeded the 12 KiB limit")
 					}
 				}
 				if result.Len() > 2*1024*1024 {
@@ -199,13 +200,14 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 		messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &assistant})
 		for _, index := range indices {
 			call := calls[index]
-			result, err := executeNativeTool(call.name, call.arguments.String())
+			result, err := executeRegisteredTool(ctx, toolset, call.name, call.arguments.String())
 			if err != nil {
+				if ctx.Err() != nil {
+					return "", ctx.Err()
+				}
 				result = "Function error: " + err.Error()
 			}
-			if len(result) > 4096 {
-				result = strings.ToValidUTF8(result[:4096], "")
-			}
+			result = redactProviderText(result, config.APIKey)
 			toolMessage := openai.ChatCompletionToolMessageParam{
 				Content:    openai.ChatCompletionToolMessageParamContentUnion{OfString: param.NewOpt(result)},
 				ToolCallID: call.id,
@@ -217,11 +219,23 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 }
 
 func compatibleSystemInstructions(disableTools bool) string {
-	instructions := "You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and conversation context. You have no access to the user's files, folders, apps, or accounts, and cannot take actions outside this chat. Never claim to access tools or perform external actions."
+	instructions := "You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and conversation context. You have no general access to the user's files, folders, apps, accounts, or network. Never claim to perform an action that was not completed."
 	if !disableTools {
-		instructions += " AETHER provides only the explicitly listed, local read-only functions."
+		instructions += " AETHER provides only the explicitly listed local functions; their descriptions state what information they can share or change."
 	}
 	return instructions
+}
+
+func compatibleToolDefinitions(tools []Tool) []openai.ChatCompletionToolUnionParam {
+	definitions := make([]openai.ChatCompletionToolUnionParam, 0, len(tools))
+	for _, tool := range tools {
+		definitions = append(definitions, openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name:        tool.Name,
+			Description: param.NewOpt(tool.Description),
+			Parameters:  shared.FunctionParameters(tool.Parameters),
+		}))
+	}
+	return definitions
 }
 
 func (g CompatibleGenerator) Test(ctx context.Context) error {

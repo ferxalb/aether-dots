@@ -27,7 +27,9 @@ Dots use their saved profile and the conversation history before the current mes
 
 ## Model setup
 
-The desktop Settings page supports three real connection modes: OpenAI through the official Go SDK and Responses API, OpenRouter through the SDK's OpenAI-compatible Chat Completions API, and a custom OpenAI-compatible endpoint. Each provider keeps its own model selection; changing providers does not modify Dot profiles or saved conversation messages. OpenRouter loads its live text-input/text-output chat model catalog, including models from many providers, in a searchable modal; its virtualized list keeps every matching model available without building the whole catalog at once. The picker displays each model's published context size and whether it declares native function or reasoning-effort support; AETHER sends OpenRouter capabilities only when the selected model declares support. Custom endpoints may use native functions and reasoning effort when their Chat Completions implementation supports them. These functions cannot access files, apps, accounts, or the network.
+The desktop Settings page supports three real connection modes: OpenAI through the official Go SDK and Responses API, OpenRouter through the SDK's OpenAI-compatible Chat Completions API, and a custom OpenAI-compatible endpoint. Each provider keeps its own model selection; changing providers does not modify Dot profiles or saved conversation messages. OpenRouter loads its live text-input/text-output chat model catalog, including models from many providers, in a searchable modal; its virtualized list keeps every matching model available without building the whole catalog at once. The picker displays each model's published context size and whether it declares native function or reasoning-effort support; AETHER sends OpenRouter functions only when the selected model declares support. OpenAI, OpenRouter, and custom endpoints use one provider-neutral function catalog when the selected model supports function calls. The built-in functions provide local time and arithmetic. Custom endpoints must implement function calls to use them.
+
+Each Dot can be granted access to up to 12 specialist Dots in its Space, with at most three handoffs per run. A handoff sends a typed task, constraints, and expected output to the selected Dot; it does not send the requesting Dot's full chat history. The specialist uses its own profile and saved history. The request and result are saved in both conversations, and each decision is recorded in the task event chain. Grants start empty and are directional; moving a Dot to another Space clears old grants to it. Handoffs can make additional model requests and use the same configured provider. No function has general access to files, folders, apps, accounts, or arbitrary network destinations.
 
 Desktop API keys are stored separately per provider in the system credential store (macOS Keychain on macOS). Provider settings and the custom endpoint URL are stored in local preferences; secrets are never written to preferences, Dot data, or logs. Remote custom endpoints must use HTTPS. Cleartext HTTP is accepted only for loopback endpoints such as localhost.
 
@@ -51,7 +53,7 @@ export AETHER_MAX_RETRIES="2"
 export AETHER_MODEL_TIMEOUT_SECONDS="90"
 ```
 
-The desktop Settings page includes provider selection, provider-specific model settings, the live OpenRouter catalog, custom endpoint configuration, a masked API-key field, optional generation controls, and a connection check. Both the OpenAI Responses and OpenRouter/compatible Chat Completions adapters stream text as it arrives; the chat batches UI updates and renders live and saved replies with MyGo's incremental Markdown parser. OpenAI Responses requests disable response storage. A reply receives the Dot profile, the explicitly selected skill, the newest user message, and the saved conversation history before that message. AETHER does not impose a token context window; the selected model/provider enforces its own published window. A 16 MiB local prompt safety ceiling prevents oversized requests from exhausting app memory, and an over-limit conversation fails clearly while its saved messages remain intact.
+The desktop Settings page includes provider selection, provider-specific model settings, the live OpenRouter catalog, custom endpoint configuration, a masked API-key field, optional generation controls, and a connection check. Both the OpenAI Responses and OpenRouter/compatible Chat Completions adapters stream text as it arrives and execute the same bounded function catalog; the chat batches UI updates and renders live and saved replies with MyGo's incremental Markdown parser. OpenAI Responses requests disable response storage. A reply receives the Dot profile, the explicitly selected skill, the newest user message, and the saved conversation history before that message. AETHER does not impose a token context window; the selected model/provider enforces its own published window. A 16 MiB local prompt safety ceiling prevents oversized requests from exhausting app memory, and an over-limit conversation fails clearly while its saved messages remain intact.
 
 ## Skills and routines
 
@@ -79,7 +81,7 @@ aether routines test <routine-id>
 aether routines pause <routine-id>
 ```
 
-Intervals must be at least five minutes. A new or resumed schedule waits for its next interval; **Test now** makes a real model call without moving that schedule. Routines run on the local machine while the desktop app is open, or while `aether routines serve` is running. They use the owning Dot's profile and recent chat context, save each result in that conversation, keep 20 recent run records, and skip missed intervals instead of replaying them. The scheduler caps runs at 200 per routine and 300 total per hour; a rate-limited scheduled run is recorded as failed and is not retried until the next interval. Routine prompts do not access files, folders, apps, or accounts.
+Intervals must be at least five minutes. A new or resumed schedule waits for its next interval; **Test now** makes a real model call without moving that schedule. Routines run on the local machine while the desktop app is open, or while `aether routines serve` is running. They use the owning Dot's profile and recent chat context, can consult only its explicitly granted specialists, save results and handoffs in the affected conversations, keep 20 recent run records, and skip missed intervals instead of replaying them. The scheduler caps runs at 200 per routine and 300 total per hour; a rate-limited scheduled run is recorded as failed and is not retried until the next interval. Routine prompts do not access files, folders, apps, or accounts.
 
 ## CLI
 
@@ -94,7 +96,7 @@ CGO_ENABLED=0 go run ./cmd/aether send <dot-id> --message "Summarize this discus
 CGO_ENABLED=0 go run ./cmd/aether inspect <dot-id>
 ```
 
-Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants; schema v2 stores migrate to the skills and local routines format.
+Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants; schema v2 stores migrate to the skills and local routines format. Schema v3 conversations migrate to v4 with no specialist grants; grants are opt-in.
 
 ## Package and checks
 
@@ -104,7 +106,7 @@ CGO_ENABLED=0 go test ./...
 CGO_ENABLED=0 go tool mygo vet .
 ```
 
-The app's own Dot store and preferences are local. Dot task execution has no user-selected filesystem read or write access, no MCP client, cloud worker, or arbitrary-app control.
+The app's own Dot store and preferences are local. Dot task execution has no user-selected filesystem read or write access, MCP client, cloud worker, or arbitrary-app control. Its function catalog is scoped to the current request; a specialist handoff requires a saved same-Space grant and is rechecked when the tool runs.
 
 ## Development history
 

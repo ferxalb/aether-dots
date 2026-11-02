@@ -35,6 +35,7 @@ func (a *app) openConversationProfile() {
 	a.profileName = conversation.Name
 	a.profilePurpose = conversation.Purpose
 	a.profileInstructions = conversation.Instructions
+	a.profileDelegateIDs = append([]string(nil), conversation.DelegatedDotIDs...)
 	a.profileIcon = conversation.Icon
 	a.profileColor = conversation.Color
 	a.profileSpaceID = conversation.SpaceID
@@ -55,6 +56,7 @@ func (a *app) saveConversationProfile() {
 		a.profileColor,
 		a.profilePurpose,
 		a.profileInstructions,
+		validProfileDelegateIDs(a.snapshot, a.selectedConversationID, a.profileSpaceID, a.profileDelegateIDs),
 	)
 	if err != nil {
 		a.conversationError = err.Error()

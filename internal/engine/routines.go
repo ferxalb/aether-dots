@@ -11,21 +11,36 @@ import (
 )
 
 type GeneratorFactory func() Generator
+type TaskGeneratorFactory func(task.Dot) Generator
 
 // RunRoutineOnce performs a manual test run. It uses the same persisted Dot
 // conversation and lifecycle as an ordinary chat message.
 func RunRoutineOnce(ctx context.Context, db *store.Store, routineID string, generator Generator, onProgress func()) error {
+	return RunRoutineOnceWithTaskFactory(ctx, db, routineID, func(task.Dot) Generator { return generator }, onProgress)
+}
+
+// RunRoutineOnceWithTaskFactory selects a generator after the store has
+// created the durable run, allowing scoped capabilities to bind to that Dot.
+func RunRoutineOnceWithTaskFactory(ctx context.Context, db *store.Store, routineID string, generator TaskGeneratorFactory, onProgress func()) error {
 	_, dot, err := db.StartRoutineNow(routineID, time.Now().UTC())
 	if err != nil {
 		return err
 	}
-	return runRoutineDot(ctx, db, dot, generator, onProgress)
+	var selected Generator
+	if generator != nil {
+		selected = generator(dot)
+	}
+	return runRoutineDot(ctx, db, dot, selected, onProgress)
 }
 
 // RunDueRoutines starts each due routine serially. The store atomically claims
 // a routine before the model call, so repeated scheduler ticks cannot enqueue
 // the same run twice.
 func RunDueRoutines(ctx context.Context, db *store.Store, generator Generator, onProgress func()) (int, error) {
+	return RunDueRoutinesWithTaskFactory(ctx, db, func(task.Dot) Generator { return generator }, onProgress)
+}
+
+func RunDueRoutinesWithTaskFactory(ctx context.Context, db *store.Store, generator TaskGeneratorFactory, onProgress func()) (int, error) {
 	now := time.Now().UTC()
 	due := make([]string, 0)
 	for _, routine := range db.Snapshot().Routines {
@@ -55,7 +70,11 @@ func RunDueRoutines(ctx context.Context, db *store.Store, generator Generator, o
 		if onProgress != nil {
 			onProgress()
 		}
-		if err := runRoutineDot(ctx, db, dot, generator, onProgress); err != nil && errors.Is(err, context.Canceled) {
+		var selected Generator
+		if generator != nil {
+			selected = generator(dot)
+		}
+		if err := runRoutineDot(ctx, db, dot, selected, onProgress); err != nil && errors.Is(err, context.Canceled) {
 			return started, err
 		}
 	}
@@ -65,6 +84,15 @@ func RunDueRoutines(ctx context.Context, db *store.Store, generator Generator, o
 // RunRoutineLoop keeps schedules active while the desktop app or CLI daemon is
 // running. Missed intervals are skipped rather than replayed in a burst.
 func RunRoutineLoop(ctx context.Context, db *store.Store, generator GeneratorFactory, pollInterval time.Duration, onProgress func()) error {
+	return RunRoutineLoopWithTaskFactory(ctx, db, func(task.Dot) Generator {
+		if generator == nil {
+			return nil
+		}
+		return generator()
+	}, pollInterval, onProgress)
+}
+
+func RunRoutineLoopWithTaskFactory(ctx context.Context, db *store.Store, generator TaskGeneratorFactory, pollInterval time.Duration, onProgress func()) error {
 	if err := db.AcquireRoutineLease(); err != nil {
 		return err
 	}
@@ -78,11 +106,7 @@ func RunRoutineLoop(ctx context.Context, db *store.Store, generator GeneratorFac
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var current Generator
-		if generator != nil && hasDueRoutine(db, time.Now().UTC()) {
-			current = generator()
-		}
-		if _, err := RunDueRoutines(ctx, db, current, onProgress); err != nil && !errors.Is(err, context.Canceled) {
+		if _, err := RunDueRoutinesWithTaskFactory(ctx, db, generator, onProgress); err != nil && !errors.Is(err, context.Canceled) {
 			return err
 		}
 		select {
@@ -91,15 +115,6 @@ func RunRoutineLoop(ctx context.Context, db *store.Store, generator GeneratorFac
 		case <-ticker.C:
 		}
 	}
-}
-
-func hasDueRoutine(db *store.Store, now time.Time) bool {
-	for _, routine := range db.Snapshot().Routines {
-		if routine.Active && !routine.NextRunAt.After(now) {
-			return true
-		}
-	}
-	return false
 }
 
 func runRoutineDot(ctx context.Context, db *store.Store, dot task.Dot, generator Generator, onProgress func()) error {

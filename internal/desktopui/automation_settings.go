@@ -464,11 +464,14 @@ func (a *app) testRoutine(id string) {
 	prefs := a.prefs
 	win := a.win
 	go func() {
-		err := engine.RunRoutineOnce(ctx, a.db, id, generatorForPreferences(prefs), func() {
+		progress := func() {
 			if win != nil {
 				win.Update(func() { a.refresh() })
 			}
-		})
+		}
+		err := engine.RunRoutineOnceWithTaskFactory(ctx, a.db, id, func(dot task.Dot) engine.Generator {
+			return generatorForConversationRun(prefs, a.db, dot.ID, progress)
+		}, progress)
 		cancel()
 		finish := func() {
 			a.cancelRun = nil
@@ -499,12 +502,20 @@ func (a *app) startRoutineScheduler() {
 	a.routinePreferences.Store(&prefs)
 	win := a.win
 	go func() {
-		err := engine.RunRoutineLoop(context.Background(), a.db, func() engine.Generator {
+		err := engine.RunRoutineLoopWithTaskFactory(context.Background(), a.db, func(dot task.Dot) engine.Generator {
 			current := a.routinePreferences.Load()
 			if current == nil {
-				return generatorForPreferences(prefs)
+				return generatorForConversationRun(prefs, a.db, dot.ID, func() {
+					if win != nil {
+						win.Update(func() { a.refresh() })
+					}
+				})
 			}
-			return generatorForPreferences(*current)
+			return generatorForConversationRun(*current, a.db, dot.ID, func() {
+				if win != nil {
+					win.Update(func() { a.refresh() })
+				}
+			})
 		}, 30*time.Second, func() {
 			if win != nil {
 				win.Update(func() { a.refresh() })

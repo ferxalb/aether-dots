@@ -171,8 +171,9 @@ func updateRoutineCommand(db *store.Store, args []string) error {
 func testRoutineCommand(db *store.Store, id string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	generator := model.NewProvider(model.FromEnvironment())
-	if err := engine.RunRoutineOnce(ctx, db, id, generator, nil); err != nil {
+	if err := engine.RunRoutineOnceWithTaskFactory(ctx, db, id, func(dot task.Dot) engine.Generator {
+		return engine.WithSpecialistDelegation(db, dot.ID, model.NewProvider(model.FromEnvironment()), nil)
+	}, nil); err != nil {
 		return err
 	}
 	snapshot := db.Snapshot()
@@ -200,10 +201,12 @@ func testRoutineCommand(db *store.Store, id string) error {
 func serveRoutines(db *store.Store) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	generator := func() engine.Generator { return model.NewProvider(model.FromEnvironment()) }
+	generator := func(dot task.Dot) engine.Generator {
+		return engine.WithSpecialistDelegation(db, dot.ID, model.NewProvider(model.FromEnvironment()), nil)
+	}
 	fmt.Println("Routine scheduler running. Press Ctrl+C to stop.")
 	reported := make(map[string]string)
-	err := engine.RunRoutineLoop(ctx, db, generator, 30*time.Second, func() {
+	err := engine.RunRoutineLoopWithTaskFactory(ctx, db, generator, 30*time.Second, func() {
 		for _, routine := range db.Snapshot().Routines {
 			if len(routine.Runs) == 0 {
 				continue

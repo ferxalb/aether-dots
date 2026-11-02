@@ -46,6 +46,7 @@ type app struct {
 	profileName         string
 	profilePurpose      string
 	profileInstructions string
+	profileDelegateIDs  []string
 	profileIcon         string
 	profileColor        string
 	profileSpaceID      string

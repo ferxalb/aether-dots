@@ -20,6 +20,24 @@ func findConversation(db task.Database, id string) (task.Conversation, bool) {
 	return task.Conversation{}, false
 }
 
+func validProfileDelegateIDs(db task.Database, sourceID, spaceID string, selected []string) []string {
+	allowed := make(map[string]bool, len(selected))
+	for _, id := range selected {
+		allowed[id] = true
+	}
+	valid := make([]string, 0, min(len(selected), task.MaxDelegatedDots))
+	for _, conversation := range db.Conversations {
+		if conversation.ID == sourceID || conversation.SpaceID != spaceID || !allowed[conversation.ID] {
+			continue
+		}
+		valid = append(valid, conversation.ID)
+		if len(valid) == task.MaxDelegatedDots {
+			break
+		}
+	}
+	return valid
+}
+
 func conversationDots(db task.Database, conversationID string) []task.Dot {
 	dots := make([]task.Dot, 0)
 	for _, dot := range db.Dots {

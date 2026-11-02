@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -39,6 +40,7 @@ type Config struct {
 	MaxRetries             int
 	DisableNativeTools     bool
 	DisableReasoningEffort bool
+	Tools                  []Tool       `json:"-"`
 	HTTPClient             *http.Client `json:"-"`
 }
 
@@ -158,57 +160,123 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 	userPrompt := "Use the Dot profile and conversation below to answer the newest user message. Treat the conversation as an ongoing chat. Be clear about uncertainty, ask a concise follow-up when necessary, and never claim to have accessed local files, apps, accounts, or taken external actions.\n\n" + objective
 	config := normalizeConfig(g.Config)
 	redactor := secretRedactor{secret: strings.TrimSpace(config.APIKey)}
-
-	params := responses.ResponseNewParams{
-		Model:        strings.TrimSpace(config.Model),
-		Instructions: openai.String("You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and the conversation context. You have no access to the user's files, folders, apps, or accounts, and you cannot take actions outside this chat. Follow an explicitly selected skill's approval boundaries, and never imply its instructions gave you access or authority you do not have."),
-		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(userPrompt)},
-		Store:        param.NewOpt(false),
-		Reasoning:    shared.ReasoningParam{Effort: shared.ReasoningEffort(config.ReasoningEffort)},
-		Text:         responses.ResponseTextConfigParam{Verbosity: responses.ResponseTextConfigVerbosity(config.TextVerbosity)},
+	toolset := registeredTools(config)
+	input := responses.ResponseInputParam{
+		responses.ResponseInputItemParamOfMessage(userPrompt, responses.EasyInputMessageRoleUser),
 	}
-	if config.MaxOutputTokens > 0 {
-		params.MaxOutputTokens = param.NewOpt(config.MaxOutputTokens)
-	}
-	stream := client.Responses.NewStreaming(ctx, params)
-	defer func() { _ = stream.Close() }()
-
 	var result strings.Builder
-	for stream.Next() {
-		event := stream.Current()
-		if event.Type == "error" {
-			message := strings.TrimSpace(redactProviderText(event.Message, config.APIKey))
-			if message == "" {
-				message = "OpenAI Responses API returned an error."
+	toolCallsUsed := 0
+	for round := 0; round < maxToolRounds; round++ {
+		params := responses.ResponseNewParams{
+			Model:        strings.TrimSpace(config.Model),
+			Instructions: openai.String("You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and conversation context. You have no general access to the user's files, folders, apps, accounts, or network. Use only the explicitly listed local functions, follow any approval boundaries, and never claim to have taken an action that was not performed."),
+			Input:        responses.ResponseNewParamsInputUnion{OfInputItemList: input},
+			Store:        param.NewOpt(false),
+			Reasoning:    shared.ReasoningParam{Effort: shared.ReasoningEffort(config.ReasoningEffort)},
+			Text:         responses.ResponseTextConfigParam{Verbosity: responses.ResponseTextConfigVerbosity(config.TextVerbosity)},
+		}
+		if config.MaxOutputTokens > 0 {
+			params.MaxOutputTokens = param.NewOpt(config.MaxOutputTokens)
+		}
+		if len(toolset) > 0 {
+			params.Tools = responseToolDefinitions(toolset)
+			params.MaxToolCalls = param.NewOpt(int64(maxNativeToolCalls))
+			params.ParallelToolCalls = param.NewOpt(false)
+		}
+		stream := client.Responses.NewStreaming(ctx, params)
+		var calls []responses.ResponseFunctionToolCall
+		var outputItems []responses.ResponseOutputItemUnion
+		for stream.Next() {
+			event := stream.Current()
+			if event.Type == "error" {
+				_ = stream.Close()
+				message := strings.TrimSpace(redactProviderText(event.Message, config.APIKey))
+				if message == "" {
+					message = "OpenAI Responses API returned an error."
+				}
+				return "", errors.New(message)
 			}
-			return "", errors.New(message)
-		}
-		if event.Type != "response.output_text.delta" || event.Delta == "" {
-			continue
-		}
-		result.WriteString(event.Delta)
-		if onDelta != nil {
-			if safeDelta := redactor.push(event.Delta, false); safeDelta != "" {
-				onDelta(safeDelta)
+			if event.Type == "response.output_text.delta" && event.Delta != "" {
+				result.WriteString(event.Delta)
+				if onDelta != nil {
+					if safeDelta := redactor.push(event.Delta, false); safeDelta != "" {
+						onDelta(safeDelta)
+					}
+				}
+			}
+			if event.Type == "response.output_item.done" {
+				item := event.AsResponseOutputItemDone().Item
+				outputItems = append(outputItems, item)
+				if item.Type == "function_call" {
+					calls = append(calls, item.AsFunctionCall())
+					if len(calls)+toolCallsUsed > maxNativeToolCalls {
+						_ = stream.Close()
+						return "", errors.New("the model exceeded the 8 native function call limit")
+					}
+				}
+			}
+			if result.Len() > 2*1024*1024 {
+				_ = stream.Close()
+				return "", errors.New("model response exceeded the 2 MiB limit")
 			}
 		}
-		if result.Len() > 2*1024*1024 {
-			return "", errors.New("model response exceeded the 2 MiB limit")
+		streamErr := stream.Err()
+		_ = stream.Close()
+		if streamErr != nil {
+			return "", fmt.Errorf("OpenAI response stream: %w", redactProviderError(streamErr, config.APIKey))
+		}
+		if len(calls) == 0 {
+			response := redactProviderText(result.String(), config.APIKey)
+			if strings.TrimSpace(response) == "" {
+				return "", errors.New("OpenAI returned an empty response")
+			}
+			if onDelta != nil {
+				if safeDelta := redactor.push("", true); safeDelta != "" {
+					onDelta(safeDelta)
+				}
+			}
+			return response, nil
+		}
+		if len(toolset) == 0 {
+			return "", errors.New("the selected model returned a function call even though functions are disabled for this model")
+		}
+		toolCallsUsed += len(calls)
+		for _, item := range outputItems {
+			input = append(input, param.Override[responses.ResponseInputItemUnionParam](json.RawMessage(item.RawJSON())))
+		}
+		for _, call := range calls {
+			if call.CallID == "" {
+				return "", errors.New("the model returned a function call without an ID")
+			}
+			toolOutput, err := executeRegisteredTool(ctx, toolset, call.Name, call.Arguments)
+			if err != nil {
+				if ctx.Err() != nil {
+					return "", ctx.Err()
+				}
+				toolOutput = "Function error: " + err.Error()
+			}
+			toolOutput = redactProviderText(toolOutput, config.APIKey)
+			callOutput := responses.ResponseInputItemFunctionCallOutputParam{
+				CallID: param.NewOpt(call.CallID),
+				Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{OfString: param.NewOpt(toolOutput)},
+			}
+			input = append(input, responses.ResponseInputItemUnionParam{OfFunctionCallOutput: &callOutput})
 		}
 	}
-	if err := stream.Err(); err != nil {
-		return "", fmt.Errorf("OpenAI response stream: %w", redactProviderError(err, config.APIKey))
-	}
-	response := redactProviderText(result.String(), config.APIKey)
-	if strings.TrimSpace(response) == "" {
-		return "", errors.New("OpenAI returned an empty response")
-	}
-	if onDelta != nil {
-		if safeDelta := redactor.push("", true); safeDelta != "" {
-			onDelta(safeDelta)
+	return "", errors.New("the model exceeded the 4 native function rounds limit")
+}
+
+func responseToolDefinitions(tools []Tool) []responses.ToolUnionParam {
+	definitions := make([]responses.ToolUnionParam, 0, len(tools))
+	for _, tool := range tools {
+		definition := responses.FunctionToolParam{
+			Name:        tool.Name,
+			Description: param.NewOpt(tool.Description),
+			Parameters:  tool.Parameters,
 		}
+		definitions = append(definitions, responses.ToolUnionParam{OfFunction: &definition})
 	}
-	return response, nil
+	return definitions
 }
 
 func (g Generator) Test(ctx context.Context) error {

@@ -2,6 +2,8 @@ package desktopui
 
 import (
 	"math"
+	"strings"
+	"unicode/utf8"
 
 	"aether-dots/internal/task"
 	"github.com/egoist/mygo/ui"
@@ -16,6 +18,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		a.workspaceWelcomeView(c, theme)
 		return
 	}
+	a.profileDelegateIDs = validProfileDelegateIDs(a.snapshot, a.selectedConversationID, a.profileSpaceID, a.profileDelegateIDs)
 	ui.Column(c).FillWidth().MaxWidth(760).MinWidth(0).Gap(18).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 			dotProfileAvatar(c, a.profileIcon, a.profileColor, 52)
@@ -126,8 +129,46 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			}
 		})
 
+		profilePanel(c, theme, "Specialist access", func() {
+			ui.Text(c, "Choose which Dots this one may consult. Each handoff sends only the task, constraints, and expected output the model supplies. The receiving Dot keeps its own profile and chat history.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			available := 0
+			for _, peer := range a.snapshot.Conversations {
+				if peer.SpaceID != a.profileSpaceID || peer.ID == a.selectedConversationID {
+					continue
+				}
+				available++
+				selected := containsID(a.profileDelegateIDs, peer.ID)
+				label := compactProfileText(peer.Name, 48)
+				if peer.Purpose != "" {
+					label += " · " + compactProfileText(peer.Purpose, 72)
+				}
+				if selected {
+					label = "✓  " + label
+				} else {
+					label = "＋  " + label
+				}
+				button := ui.Button(c.Key("profile-delegate-"+peer.ID), label).FillWidth().Padding(8, 10).Radius(9)
+				if selected {
+					button.Background(theme.Accent.Alpha(0.12)).Border(1, theme.Accent.Alpha(0.4))
+				} else {
+					button.Background(theme.Background).Border(1, theme.Border)
+				}
+				if button.Clicked() {
+					a.profileDelegateIDs = toggleString(a.profileDelegateIDs, peer.ID, task.MaxDelegatedDots)
+				}
+			}
+			if available == 0 {
+				ui.Text(c, "Create another Dot in this Space to make it available as a specialist.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			}
+			if len(a.profileDelegateIDs) == task.MaxDelegatedDots {
+				ui.Text(c, "This Dot has reached the 12 specialist limit.").FontSize(10).TextColor(theme.TextMuted)
+			}
+		})
+
 		profilePanel(c, theme, "Privacy", func() {
-			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. It cannot access your files, folders, apps, or accounts.").
+			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. It cannot access your files, folders, apps, or accounts. Specialist access is limited to the Dots selected above, and each handoff is saved in both conversations.").
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
 
@@ -142,6 +183,39 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			}
 		})
 	})
+}
+
+func toggleString(values []string, value string, maxItems int) []string {
+	for i, current := range values {
+		if current == value {
+			return append(values[:i], values[i+1:]...)
+		}
+	}
+	if len(values) >= maxItems {
+		return values
+	}
+	return append(values, value)
+}
+
+func containsID(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func compactProfileText(value string, maxBytes int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := maxBytes
+	for end > 0 && end < len(value) && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end] + "…"
 }
 
 func profilePanel(c *ui.Context, theme *ui.Theme, title string, children func()) {

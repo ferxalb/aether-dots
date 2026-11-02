@@ -62,7 +62,7 @@ func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversatio
 	return conversation, err
 }
 
-func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string) error {
+func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs ...[]string) error {
 	spaceID = strings.TrimSpace(spaceID)
 	name = strings.TrimSpace(name)
 	icon = strings.TrimSpace(icon)
@@ -90,6 +90,15 @@ func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpos
 			return errors.New("Space not found")
 		}
 		conversation := &db.Conversations[i]
+		requestedDelegates := conversation.DelegatedDotIDs
+		if len(delegatedDotIDs) > 0 {
+			requestedDelegates = delegatedDotIDs[0]
+		}
+		grants, err := validateDelegates(db, id, spaceID, requestedDelegates)
+		if err != nil {
+			return err
+		}
+		conversation.DelegatedDotIDs = grants
 		conversation.SpaceID = spaceID
 		conversation.Name = name
 		conversation.Icon = icon
@@ -97,6 +106,19 @@ func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpos
 		conversation.Purpose = purpose
 		conversation.Instructions = instructions
 		conversation.UpdatedAt = time.Now().UTC()
+		for peerIndex := range db.Conversations {
+			peer := &db.Conversations[peerIndex]
+			if peer.ID == conversation.ID || peer.SpaceID == spaceID || len(peer.DelegatedDotIDs) == 0 {
+				continue
+			}
+			remaining := peer.DelegatedDotIDs[:0]
+			for _, delegatedID := range peer.DelegatedDotIDs {
+				if delegatedID != conversation.ID {
+					remaining = append(remaining, delegatedID)
+				}
+			}
+			peer.DelegatedDotIDs = remaining
+		}
 		return nil
 	})
 }
@@ -130,6 +152,10 @@ func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot,
 }
 
 func createConversationRun(db *task.Database, conversationID, content, routineID string, now time.Time) (task.Dot, task.ConversationMessage, error) {
+	return createConversationRunFrom(db, conversationID, content, routineID, now, "", "", true)
+}
+
+func createConversationRunFrom(db *task.Database, conversationID, content, routineID string, now time.Time, sourceDotID, parentDotIDOverride string, allowSkillSelection bool) (task.Dot, task.ConversationMessage, error) {
 	if strings.TrimSpace(content) == "" {
 		return task.Dot{}, task.ConversationMessage{}, errors.New("message is empty")
 	}
@@ -158,23 +184,31 @@ func createConversationRun(db *task.Database, conversationID, content, routineID
 		return task.Dot{}, task.ConversationMessage{}, errors.New("conversation space not found")
 	}
 	for _, existing := range db.Dots {
-		if existing.ConversationID != "" && (existing.Status == task.Captured || existing.Status == task.Ready || existing.Status == task.Running) {
+		if existing.Status != task.Captured && existing.Status != task.Ready && existing.Status != task.Running {
+			continue
+		}
+		if existing.ConversationID == conversationID || (sourceDotID == "" && existing.DelegatedByDotID == "") {
 			return task.Dot{}, task.ConversationMessage{}, ErrDotAlreadyActive
 		}
 	}
-	parentDotID := ""
-	for i := len(db.Dots) - 1; i >= 0; i-- {
-		parent := db.Dots[i]
-		if parent.ConversationID != conversation.ID {
-			continue
+	parentDotID := parentDotIDOverride
+	if parentDotID == "" {
+		for i := len(db.Dots) - 1; i >= 0; i-- {
+			parent := db.Dots[i]
+			if parent.ConversationID != conversation.ID {
+				continue
+			}
+			if parent.SpaceID != conversation.SpaceID {
+				return task.Dot{}, task.ConversationMessage{}, errors.New("saved Dot space no longer matches its task history")
+			}
+			parentDotID = parent.ID
+			break
 		}
-		if parent.SpaceID != conversation.SpaceID {
-			return task.Dot{}, task.ConversationMessage{}, errors.New("saved Dot space no longer matches its task history")
-		}
-		parentDotID = parent.ID
-		break
 	}
-	selected, hasSkill := selectSkill(db.Skills, content)
+	selected, hasSkill := task.Skill{}, false
+	if allowSkillSelection {
+		selected, hasSkill = selectSkill(db.Skills, content)
+	}
 	// Keep the durable Dot record compact and provider-neutral. The engine
 	// assembles the complete conversation from saved messages when it runs.
 	objective := conversationObjectiveBase(*conversation, content, selected, hasSkill)
@@ -184,7 +218,8 @@ func createConversationRun(db *task.Database, conversationID, content, routineID
 	dot = task.Dot{
 		ID: dotID, SpaceID: conversation.SpaceID,
 		ConversationID: conversation.ID, ConversationContextDeferred: true, ParentDotID: parentDotID,
-		Name: shortName(content), Objective: objective,
+		DelegatedByDotID: sourceDotID,
+		Name:             shortName(content), Objective: objective,
 		Status: task.Ready, CreatedAt: now, UpdatedAt: now,
 		Events: []task.Event{}, RoutineID: routineID,
 	}
@@ -192,7 +227,7 @@ func createConversationRun(db *task.Database, conversationID, content, routineID
 		dot.SkillID = selected.ID
 	}
 	appendEvent(&dot, "captured", "Chat message queued for this Dot.")
-	message = task.ConversationMessage{ID: messageID, Role: "user", Content: content, DotID: dot.ID, CreatedAt: now}
+	message = task.ConversationMessage{ID: messageID, Role: "user", Content: content, DotID: dot.ID, SourceDotID: sourceDotID, CreatedAt: now}
 	conversation.Messages = append(conversation.Messages, message)
 	conversation.UpdatedAt = now
 	db.Dots = append(db.Dots, dot)
@@ -424,6 +459,8 @@ func allConversationContext(messages []task.ConversationMessage, maxBytes int) (
 			label = "User request"
 		case "assistant":
 			label = "Assistant reply"
+		case "handoff":
+			label = "Specialist response"
 		default:
 			continue
 		}
@@ -444,7 +481,7 @@ func allConversationContext(messages []task.ConversationMessage, maxBytes int) (
 func boundedConversationContext(messages []task.ConversationMessage) string {
 	recent := make([]task.ConversationMessage, 0, task.MaxConversationContextMessages)
 	for i := len(messages) - 1; i >= 0 && len(recent) < task.MaxConversationContextMessages; i-- {
-		if messages[i].Role == "user" || messages[i].Role == "assistant" {
+		if messages[i].Role == "user" || messages[i].Role == "assistant" || messages[i].Role == "handoff" {
 			recent = append(recent, messages[i])
 		}
 	}
@@ -466,6 +503,8 @@ func conversationContextEntry(message task.ConversationMessage, maxBytes int) (s
 	label := "User request"
 	if message.Role == "assistant" {
 		label = "Assistant reply"
+	} else if message.Role == "handoff" {
+		label = "Specialist response"
 	} else if message.Role != "user" {
 		return "", false
 	}

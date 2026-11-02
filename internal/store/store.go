@@ -68,11 +68,13 @@ func Open(dir string) (*Store, error) {
 		if db.SchemaVersion == 1 {
 			migrateLegacyFileAccess(&db)
 		}
-		// Skills and routines are introduced in schema 3. Ignore similarly
-		// named fields from older stores rather than importing legacy data.
-		db.Skills = nil
-		db.Routines = nil
-		db.RoutineRunStarts = nil
+		if db.SchemaVersion < 3 {
+			// Skills and routines are introduced in schema 3. Ignore similarly
+			// named fields from older stores rather than importing legacy data.
+			db.Skills = nil
+			db.Routines = nil
+			db.RoutineRunStarts = nil
+		}
 		db.SchemaVersion = task.SchemaVersion
 		if err := store.persist(db); err != nil {
 			return nil, fmt.Errorf("migrate task store: %w", err)

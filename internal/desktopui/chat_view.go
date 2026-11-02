@@ -66,16 +66,28 @@ func emptyConversationFeed(c *ui.Context, theme *ui.Theme, a *app, conversation 
 }
 
 func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conversation, message task.ConversationMessage, dots map[string]task.Dot) {
-	if message.Role != "user" && message.Role != "assistant" {
+	if message.Role != "user" && message.Role != "assistant" && message.Role != "handoff" {
 		return
 	}
 	dot := dots[message.DotID]
 	isUser := message.Role == "user"
 	rowKey := "message-row-" + message.ID
 	bubbleKey := "message-bubble-" + message.ID
-	if !isUser && dot.ID != "" {
+	if message.Role == "assistant" && dot.ID != "" {
 		rowKey = "assistant-reply-row-" + dot.ID
 		bubbleKey = "assistant-reply-bubble-" + dot.ID
+	}
+	speaker := conversation
+	if message.SourceDotID != "" {
+		if source, ok := findDot(a.snapshot, message.SourceDotID); ok {
+			if sourceConversation, ok := findConversation(a.snapshot, source.ConversationID); ok {
+				speaker = sourceConversation
+			}
+		}
+	}
+	if message.Role == "handoff" {
+		rowKey = "handoff-row-" + message.ID
+		bubbleKey = "handoff-bubble-" + message.ID
 	}
 	row := ui.Row(c.Key(rowKey)).FillWidth().AlignItems(ui.Start)
 	row.Children(func() {
@@ -92,9 +104,15 @@ func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation ta
 		bubble.Children(func() {
 			if !isUser {
 				ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
-					profileAvatarForConversation(c, conversation, 20)
-					ui.Text(c, conversation.Name).FontSize(10).Bold().TextColor(theme.TextMuted)
+					profileAvatarForConversation(c, speaker, 20)
+					label := speaker.Name
+					if message.Role == "handoff" {
+						label += " · specialist result"
+					}
+					ui.Text(c, label).FontSize(10).Bold().TextColor(theme.TextMuted)
 				})
+			} else if message.SourceDotID != "" {
+				ui.Text(c, "Handoff from "+speaker.Name).FontSize(10).Bold().TextColor(theme.AccentText)
 			}
 			if isUser {
 				ui.Text(c, message.Content).FontSize(13).FillWidth()
@@ -145,6 +163,9 @@ func conversationRunActivity(c *ui.Context, theme *ui.Theme, a *app, dot task.Do
 	switch dot.Status {
 	case task.Running:
 		activity = "Thinking…"
+		if strings.HasPrefix(dot.Checkpoint, "consulting ") {
+			activity = "Consulting " + strings.TrimPrefix(dot.Checkpoint, "consulting ")
+		}
 	case task.Done:
 		activity = "Replied"
 	case task.WaitingInput:

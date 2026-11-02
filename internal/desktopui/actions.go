@@ -31,7 +31,16 @@ func (a *app) startRun(id string) {
 	win := a.win
 	prefs := a.prefs
 	go func() {
-		generator := generatorForPreferences(prefs)
+		onProgress := func() {
+			if win != nil {
+				win.Update(func() {
+					if a.runningDotID == id {
+						a.refresh()
+					}
+				})
+			}
+		}
+		generator := generatorForConversationRun(prefs, a.db, id, onProgress)
 		var deltas chan string
 		var deltasDone chan struct{}
 		if win != nil {
@@ -43,15 +52,7 @@ func (a *app) startRun(id string) {
 			if deltas != nil {
 				deltas <- delta
 			}
-		}, func() {
-			if win != nil {
-				win.Update(func() {
-					if a.runningDotID == id {
-						a.refresh()
-					}
-				})
-			}
-		})
+		}, onProgress)
 		if deltas != nil {
 			close(deltas)
 			<-deltasDone

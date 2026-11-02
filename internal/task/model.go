@@ -5,13 +5,18 @@ import (
 	"time"
 )
 
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 const (
 	MaxConversationNameBytes         = 128
 	MaxConversationPurposeBytes      = 4096
 	MaxConversationMessageBytes      = 8192
 	MaxConversationInstructionsBytes = 4096
+	MaxDelegatedDots                 = 12
+	MaxDelegationsPerRun             = 3
+	MaxDelegatedTaskBytes            = 3072
+	MaxDelegatedConstraintBytes      = 1024
+	MaxDelegatedOutputBytes          = 1024
 	MaxConversationContextMessages   = 12
 	MaxConversationContextBytes      = 24 * 1024
 	MaxSkillNameBytes                = 128
@@ -66,6 +71,7 @@ type Dot struct {
 	ConversationID              string    `json:"conversation_id,omitempty"`
 	ConversationContextDeferred bool      `json:"conversation_context_deferred,omitempty"`
 	ParentDotID                 string    `json:"parent_dot_id,omitempty"`
+	DelegatedByDotID            string    `json:"delegated_by_dot_id,omitempty"`
 	SkillID                     string    `json:"skill_id,omitempty"`
 	RoutineID                   string    `json:"routine_id,omitempty"`
 	Name                        string    `json:"name"`
@@ -79,26 +85,31 @@ type Dot struct {
 
 // Conversation is a durable Dot identity with its own chat history and profile.
 type Conversation struct {
-	ID           string                `json:"id"`
-	SpaceID      string                `json:"space_id"`
-	Name         string                `json:"name"`
-	Icon         string                `json:"icon"`
-	Color        string                `json:"color"`
-	Purpose      string                `json:"purpose"`
-	Instructions string                `json:"instructions,omitempty"`
-	CreatedAt    time.Time             `json:"created_at"`
-	UpdatedAt    time.Time             `json:"updated_at"`
-	Messages     []ConversationMessage `json:"messages"`
+	ID           string `json:"id"`
+	SpaceID      string `json:"space_id"`
+	Name         string `json:"name"`
+	Icon         string `json:"icon"`
+	Color        string `json:"color"`
+	Purpose      string `json:"purpose"`
+	Instructions string `json:"instructions,omitempty"`
+	// DelegatedDotIDs are the same-Space specialists this Dot may consult.
+	// Grants are directional and empty by default.
+	DelegatedDotIDs []string              `json:"delegated_dot_ids,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
+	Messages        []ConversationMessage `json:"messages"`
 }
 
 // ConversationMessage is an append-only, persisted user request or verified
 // assistant result. DotID links the message to its real task run.
 type ConversationMessage struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	DotID     string    `json:"dot_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID      string `json:"id"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	DotID   string `json:"dot_id"`
+	// SourceDotID identifies a specialist that sent or returned this handoff.
+	SourceDotID string    `json:"source_dot_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Skill is a reusable, user-authored playbook shared by every Dot.
