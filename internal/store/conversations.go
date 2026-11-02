@@ -63,6 +63,16 @@ func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversatio
 }
 
 func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs ...[]string) error {
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, delegatedDotIDs, nil, nil)
+}
+
+// UpdateConversationProfileAndGitHub saves the Dot profile and its independent
+// repository grants in one transaction.
+func (s *Store) UpdateConversationProfileAndGitHub(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs []string, githubRepositoryIDs []int64, disclosureAccepted bool) error {
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, [][]string{delegatedDotIDs}, &githubRepositoryIDs, &disclosureAccepted)
+}
+
+func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs [][]string, githubRepositoryIDs *[]int64, disclosureAccepted *bool) error {
 	spaceID = strings.TrimSpace(spaceID)
 	name = strings.TrimSpace(name)
 	icon = strings.TrimSpace(icon)
@@ -90,6 +100,7 @@ func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpos
 			return errors.New("Space not found")
 		}
 		conversation := &db.Conversations[i]
+		previousSpaceID := conversation.SpaceID
 		requestedDelegates := conversation.DelegatedDotIDs
 		if len(delegatedDotIDs) > 0 {
 			requestedDelegates = delegatedDotIDs[0]
@@ -98,6 +109,29 @@ func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpos
 		if err != nil {
 			return err
 		}
+		if previousSpaceID != spaceID && githubRepositoryIDs != nil && len(*githubRepositoryIDs) > 0 {
+			return errors.New("save the Dot's new Space before granting GitHub repositories again")
+		}
+		if githubRepositoryIDs != nil {
+			grants, err := validateGitHubRepositoryGrants(db, *githubRepositoryIDs)
+			if err != nil {
+				return err
+			}
+			if len(grants) > 0 && (disclosureAccepted == nil || !*disclosureAccepted) {
+				return errors.New("acknowledge that selected GitHub data may be sent to the configured model before granting access")
+			}
+			conversation.GitHubRepositoryIDs = grants
+			conversation.GitHubGrantSpaceID = ""
+			conversation.GitHubModelDisclosureAccepted = len(grants) > 0 && *disclosureAccepted
+			if len(grants) > 0 {
+				conversation.GitHubGrantSpaceID = spaceID
+			}
+		} else if previousSpaceID != spaceID {
+			conversation.GitHubRepositoryIDs = nil
+			conversation.GitHubGrantSpaceID = ""
+			conversation.GitHubModelDisclosureAccepted = false
+			disableConversationGitHubRoutines(db, conversation.ID)
+		}
 		conversation.DelegatedDotIDs = grants
 		conversation.SpaceID = spaceID
 		conversation.Name = name
@@ -105,6 +139,9 @@ func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpos
 		conversation.Color = color
 		conversation.Purpose = purpose
 		conversation.Instructions = instructions
+		if len(conversation.GitHubRepositoryIDs) == 0 {
+			disableConversationGitHubRoutines(db, conversation.ID)
+		}
 		conversation.UpdatedAt = time.Now().UTC()
 		for peerIndex := range db.Conversations {
 			peer := &db.Conversations[peerIndex]

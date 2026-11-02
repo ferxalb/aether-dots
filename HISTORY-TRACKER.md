@@ -6,6 +6,41 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-02 (1) — Native integrations and read-only GitHub
+
+### GitHub integration
+
+- Added a fifth Settings tab, **Integrations**, with a native GitHub card and clearly disabled Apple Notes and Apple Reminders cards. Upcoming Apple integrations request no macOS permissions.
+- Implemented GitHub App Device Flow using the public Client ID and `offline_access`, GitHub-directed polling intervals and `slow_down`, cancellation, expiring user tokens, refresh-token rotation, and a separate MyGo credential-store service (`com.aetherdots.github`). No client secret or private key is used.
+- Added environment and MyGo linker-flag configuration for the public App Client ID and slug. Missing configuration produces a visible setup state.
+- Added authenticated user, accessible App installation, repository discovery, and selection. Authenticated requests use fixed GitHub hosts, bounded responses, no redirects, request timeouts, cancellation, GitHub API version headers, pagination, and sanitized error mapping.
+- Added explicit per-Dot grants tied to stable repository IDs, an AI-provider disclosure, same-Space binding, current selection and installation checks, immediate local revocation, and a separate opt-in for scheduled Routines. Specialists receive only their own grants.
+- Added bounded provider-neutral read-only tools for repositories, issues, pull requests, commit metadata, check runs, Actions runs, and job summaries. They return GitHub links, mark remote data as untrusted, and record read activity without storing issue or repository text. Source files, diffs, workflow logs, archives, and write operations remain unavailable.
+- Added matching CLI commands for login, status, refresh, selection, Dot grants, Routine opt-in, revocation, and local disconnect.
+- Bumped task-store schema to v5. Older stores migrate with GitHub disconnected and no selected repositories, Dot grants, or Routine opt-ins. Credentials remain outside the JSON task store.
+
+### Apple integration research and documentation
+
+- Documented the development Mac's Notes scripting dictionary as an observation, not a cross-version guarantee. A future read-only Notes connector requires explicit Apple Events authorization and the signed app's usage description; private Notes databases and Full Disk Access remain out of scope.
+- Documented a future EventKit Reminders path with explicit opt-in, selected lists, `NSRemindersFullAccessUsageDescription` on current macOS, and no Calendar access. Notes and Reminders are not implemented in this milestone.
+- Updated README setup, permissions, configuration, consent, CLI use, disconnection, troubleshooting, schema migration, and known limitations. Updated the project `AGENTS.md` to permit only the fixed-host, explicitly authorized GitHub client.
+- Refreshed stale assertions to test the current settings label, optional provider-default output limit, and conversation context assembled at request time.
+
+### Verification
+
+- `gofmt` completed for changed Go files; `git diff --check` passed.
+- `CGO_ENABLED=0 go test ./...` passed.
+- `CGO_ENABLED=0 go build ./...` passed.
+- `go tool mygo vet .` passed.
+- `CGO_ENABLED=1 go test -race ./internal/integrations/github ./internal/store ./internal/engine ./internal/desktopui` passed.
+- `make bundle` built and signed `build/darwin-amd64/AETHER Dots.app`; `codesign --verify --deep --strict` passed. The bundle contains no Notes or Reminders privacy usage strings because those integrations are not enabled.
+- Launched the bundle and inspected the native Settings and Integrations UI. No real GitHub account flow was started.
+
+### Not verified in this session
+
+- Live Device Flow authorization, App installation, real repository discovery, token rotation against GitHub, and model-provider calls require a registered GitHub App Client ID and user account; no credential was available here.
+- Production Developer ID signing, notarization, DMG packaging, and a non-macOS build were not performed.
+
 ## 2026-11-01 (19) — Permissioned Dot handoffs and provider-neutral tools
 
 ### Session objective

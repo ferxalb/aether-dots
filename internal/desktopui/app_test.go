@@ -94,7 +94,7 @@ func TestSettingsCanReturnToSelectedDotChat(t *testing.T) {
 	for _, section := range []struct {
 		label, content string
 	}{
-		{"AI & responses", "Powers replies and scheduled runs for your Dots."},
+		{"AI & responses", "Choose a provider for replies and scheduled runs."},
 		{"Skills", "Save reusable instructions and choose when a Dot should use them."},
 		{"Routines", "Have a Dot repeat a prompt on a schedule."},
 	} {

@@ -55,6 +55,88 @@ export AETHER_MODEL_TIMEOUT_SECONDS="90"
 
 The desktop Settings page includes provider selection, provider-specific model settings, the live OpenRouter catalog, custom endpoint configuration, a masked API-key field, optional generation controls, and a connection check. Both the OpenAI Responses and OpenRouter/compatible Chat Completions adapters stream text as it arrives and execute the same bounded function catalog; the chat batches UI updates and renders live and saved replies with MyGo's incremental Markdown parser. OpenAI Responses requests disable response storage. A reply receives the Dot profile, the explicitly selected skill, the newest user message, and the saved conversation history before that message. AETHER does not impose a token context window; the selected model/provider enforces its own published window. A 16 MiB local prompt safety ceiling prevents oversized requests from exhausting app memory, and an over-limit conversation fails clearly while its saved messages remain intact.
 
+## Integrations
+
+Settings → **Integrations** includes GitHub, Apple Notes, and Apple Reminders. GitHub is a real read-only integration. Notes and Reminders are marked **Coming soon**; the app does not request Apple Events or Reminders authorization.
+
+### GitHub App setup
+
+AETHER uses GitHub App Device Flow. Create or configure a GitHub App that you control, enable **Device Flow**, and enable user authorization. Do not create a client secret for AETHER or embed a private key. Device Flow uses the app's public **Client ID**; GitHub distinguishes that from the App ID and client secret. The flow requests `offline_access`, follows GitHub's polling interval, observes `slow_down`, and uses expiring access tokens with refresh-token rotation when GitHub returns them. GitHub may require the user to install the App before any repositories are available.
+
+Grant only these repository permissions:
+
+| GitHub App permission | Access | Used for |
+| --- | --- | --- |
+| Metadata | Read | Repository metadata and installation repository discovery |
+| Contents | Read | Commit metadata, including the default branch's latest commit |
+| Issues | Read | List and inspect issues |
+| Pull requests | Read | List and inspect pull requests |
+| Checks | Read | Inspect commit check runs |
+| Actions | Read | Inspect recent workflow runs and job summaries |
+
+The GitHub REST API calls also read the authenticated user, accessible App installations, and repositories inside those installations. GitHub limits user access tokens to the intersection of the App's permissions and the signed-in user's access. AETHER does not request write permissions. It does not fetch repository source files, diffs, workflow logs, or archives.
+
+For local development, set the public Client ID before launching AETHER:
+
+```sh
+export AETHER_GITHUB_CLIENT_ID="your-public-github-app-client-id"
+export AETHER_GITHUB_APP_SLUG="your-github-app-slug" # enables the install link when needed
+make run
+```
+
+For a distributable MyGo app, embed the public configuration through MyGo's linker flags (the pinned MyGo v0.7.3 reads `MYGO_LDFLAGS`). These values are public identifiers, not credentials:
+
+```sh
+MYGO_LDFLAGS="-X aether-dots/internal/integrations/github.EmbeddedClientID=your-public-client-id -X aether-dots/internal/integrations/github.EmbeddedAppSlug=your-app-slug" make bundle
+```
+
+The `AETHER_GITHUB_CLIENT_ID` and `AETHER_GITHUB_APP_SLUG` environment variables override the embedded values. Do not put a GitHub App client secret, private key, access token, or refresh token in linker flags, source control, preferences, or the task store.
+
+### Connect and grant access
+
+In Settings → Integrations, select **Connect GitHub**, enter the one-time code on GitHub, then install the App for the accounts and repositories AETHER should be able to discover. Use **Manage repositories** to select the repositories AETHER may offer to Dots. Connection does not grant any Dot access.
+
+Open **Customize** for a Dot, enable GitHub, select exact repositories, and accept the disclosure that retrieved repository metadata, issue/PR text, commit details, and CI results may be sent to that Dot's configured model provider. GitHub tokens never go to a model. Retrieved GitHub text is treated as untrusted evidence. Each operation checks the Dot's current Space, repository grant, local selection, current App installation access, and connection again. Specialists use their own grants. Scheduled Routines need a separate **Allow this Routine to use the Dot's GitHub grants** choice.
+
+The provider-neutral GitHub tools work with supported OpenAI, OpenRouter, and OpenAI-compatible function-calling models. If the selected model is known not to support functions, AETHER omits the GitHub tools and reports that it did not query GitHub. A Dot can request a repository health review, open issues and pull requests, commit metadata, check runs, recent workflow runs, and bounded job summaries. Results include GitHub source links and a checked-at time for CI summaries. AETHER records the read operation in the Dot's append-only event history without copying private issue or repository content there.
+
+The CLI uses the same Keychain credential store and local grants:
+
+```sh
+aether github login
+aether github status
+aether github refresh
+aether github repositories
+aether github select <repository-id> [repository-id ...]
+aether github grant --allow-model-data <dot-id> <repository-id> [repository-id ...]
+aether send <dot-id> --message "Check the latest CI status for my selected repository"
+aether github revoke <dot-id>
+aether github disconnect
+```
+
+Routine use is a separate opt-in:
+
+```sh
+aether routines create <dot-id> --name "Repository health" \
+  --prompt "Summarize the selected repository's latest CI, issues, and pull requests." \
+  --every 24h --github-read-only
+```
+
+Disconnect cancels local GitHub requests, removes AETHER's Keychain token and local repository/Dot/Routine grants, and disables further tool calls. It does not uninstall the GitHub App or revoke its authorization on GitHub. Use the **GitHub authorized apps** link in Settings to manage server-side authorization.
+
+### Troubleshooting and future Apple integrations
+
+- **Not configured:** register a GitHub App with Device Flow enabled and set or embed its public Client ID.
+- **Authorized but no installations or repositories:** install the App for the intended account and choose repositories in GitHub's installation settings. Then use **Refresh GitHub access**.
+- **Permission required:** verify the read permissions above and whether the App's repository selection includes the selected repository. Refresh to remove access that GitHub has withdrawn.
+- **Session expired:** reconnect GitHub. AETHER refreshes expiring user tokens automatically while the refresh token remains valid.
+- **Rate limited:** wait for GitHub's returned retry interval before refreshing or asking a Dot to repeat the read.
+- **No GitHub function appears:** select a model/provider that supports tool calls; a custom endpoint must implement the existing function-call protocol.
+
+Apple Notes remains a future macOS-only integration. On the development Mac, the installed `Notes.sdef` exposes accounts, folders, notes, HTML `body`, read-only `plaintext`, attachment metadata, and a `password protected` property. That local dictionary is a platform-version observation, not a stable cross-version API contract. A future read-only connector should use a supported Notes scripting surface through explicit Apple Events authorization, including `NSAppleEventsUsageDescription` in the signed app's Info.plist, expose only selected accounts/folders and unlocked notes, and never inspect Notes' private database or require Full Disk Access. Scripting support for rich text, attachments, smart folders, and locked notes must be verified against each supported macOS release. The Settings page does not run scripts or probe Notes.
+
+Apple Reminders remains a separate future EventKit integration. A future implementation should request Reminders authorization only after explicit user opt-in, include `NSRemindersFullAccessUsageDescription` for macOS 14 and later (and the appropriate legacy `NSRemindersUsageDescription` fallback if older systems remain supported) in the actual signed app, and scope reads to selected lists. EventKit full Reminders access is a read/write OS permission, so AETHER would still enforce read-only behavior until separate write approvals exist. It must not request Calendar event access. The Reminders AppleScript dictionary is not a substitute for EventKit authorization. Neither Apple permission is requested by this release.
+
 ## Skills and routines
 
 Create skills in Settings or with `aether skills create`. A skill records when it applies, required inputs, steps, validation, output format, and approval boundaries. Skills are shared across Dots, but a chat uses one only when you explicitly name it, for example `@skill[Weekly review]`.
@@ -96,7 +178,7 @@ CGO_ENABLED=0 go run ./cmd/aether send <dot-id> --message "Summarize this discus
 CGO_ENABLED=0 go run ./cmd/aether inspect <dot-id>
 ```
 
-Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants; schema v2 stores migrate to the skills and local routines format. Schema v3 conversations migrate to v4 with no specialist grants; grants are opt-in.
+Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants; schema v2 stores migrate to the skills and local routines format. Schema v3 conversations migrate to v4 with no specialist grants; grants are opt-in. Schema v4 stores migrate to v5 with GitHub disconnected and no repository selections, Dot grants, or Routine opt-ins; credentials are never part of the task store.
 
 ## Package and checks
 

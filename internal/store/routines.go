@@ -33,6 +33,7 @@ func (s *Store) CreateRoutine(in task.CreateRoutine) (task.Routine, error) {
 	now := time.Now().UTC()
 	routine := task.Routine{
 		ID: id, ConversationID: in.ConversationID, Name: in.Name, Prompt: in.Prompt,
+		GitHubEnabled:   in.GitHubEnabled,
 		IntervalSeconds: in.IntervalSeconds, Active: true,
 		NextRunAt: now.Add(time.Duration(in.IntervalSeconds) * time.Second),
 		Runs:      []task.RoutineRun{}, CreatedAt: now, UpdatedAt: now,
@@ -40,6 +41,9 @@ func (s *Store) CreateRoutine(in task.CreateRoutine) (task.Routine, error) {
 	err = s.change(func(db *task.Database) error {
 		if conversationIndex(db, in.ConversationID) < 0 {
 			return errors.New("routine Dot not found")
+		}
+		if in.GitHubEnabled && !conversationHasValidGitHubGrant(db, in.ConversationID) {
+			return errors.New("enable GitHub for a Routine only after its Dot has an authorized repository grant")
 		}
 		count := 0
 		for _, existing := range db.Routines {
@@ -79,6 +83,9 @@ func (s *Store) UpdateRoutine(id string, in task.CreateRoutine) error {
 		if conversationIndex(db, in.ConversationID) < 0 {
 			return errors.New("routine Dot not found")
 		}
+		if in.GitHubEnabled && !conversationHasValidGitHubGrant(db, in.ConversationID) {
+			return errors.New("enable GitHub for a Routine only after its Dot has an authorized repository grant")
+		}
 		count := 0
 		for _, other := range db.Routines {
 			if other.ID == id || other.ConversationID != in.ConversationID {
@@ -96,10 +103,31 @@ func (s *Store) UpdateRoutine(id string, in task.CreateRoutine) error {
 		intervalChanged := routine.IntervalSeconds != in.IntervalSeconds
 		routine.ConversationID, routine.Name = in.ConversationID, in.Name
 		routine.Prompt, routine.IntervalSeconds = in.Prompt, in.IntervalSeconds
+		routine.GitHubEnabled = in.GitHubEnabled
 		if intervalChanged && routine.Active {
 			routine.NextRunAt = time.Now().UTC().Add(time.Duration(in.IntervalSeconds) * time.Second)
 		}
 		routine.UpdatedAt = time.Now().UTC()
+		return nil
+	})
+}
+
+// SetRoutineGitHubEnabled is a separate, explicit consent action for local
+// scheduled runs. A Dot's repository grants alone never authorize a Routine.
+func (s *Store) SetRoutineGitHubEnabled(id string, enabled bool) error {
+	return s.change(func(db *task.Database) error {
+		i := routineIndex(db, id)
+		if i < 0 {
+			return errors.New("routine not found")
+		}
+		if db.Routines[i].GitHubEnabled == enabled {
+			return nil
+		}
+		if enabled && !conversationHasValidGitHubGrant(db, db.Routines[i].ConversationID) {
+			return errors.New("grant this Dot a GitHub repository before enabling Routine access")
+		}
+		db.Routines[i].GitHubEnabled = enabled
+		db.Routines[i].UpdatedAt = time.Now().UTC()
 		return nil
 	})
 }

@@ -116,6 +116,13 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 	}
 }
 
+func githubToolsKnownUnsupported(prefs preferences) bool {
+	return prefs.Provider == string(model.ProviderOpenRouter) &&
+		prefs.OpenRouterCatalogModel != "" &&
+		prefs.OpenRouterCatalogModel == strings.TrimSpace(prefs.OpenRouterModel) &&
+		!prefs.OpenRouterModelSupportsTools
+}
+
 func providerFromSelection(selection string) string {
 	switch selection {
 	case "OpenRouter":

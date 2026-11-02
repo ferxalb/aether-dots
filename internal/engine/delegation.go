@@ -25,14 +25,21 @@ type specialistRequest struct {
 // otherwise provider-neutral generator. A delegated run receives the base
 // generator, so specialists cannot recursively delegate during this release.
 func WithSpecialistDelegation(db *store.Store, parentDotID string, provider model.Provider, onProgress func()) model.Provider {
-	tool, ok := specialistHandoffTool(db, parentDotID, provider, onProgress)
+	return WithSpecialistDelegationFactory(db, parentDotID, provider, func(string) model.Provider { return provider }, onProgress)
+}
+
+// WithSpecialistDelegationFactory creates each specialist's provider from its
+// own identity. This keeps request-scoped integration tools from flowing from
+// a caller into a delegated Dot.
+func WithSpecialistDelegationFactory(db *store.Store, parentDotID string, provider model.Provider, childProvider func(string) model.Provider, onProgress func()) model.Provider {
+	tool, ok := specialistHandoffTool(db, parentDotID, childProvider, onProgress)
 	if !ok {
 		return provider
 	}
 	return model.WithTools(provider, tool)
 }
 
-func specialistHandoffTool(db *store.Store, parentDotID string, provider model.Provider, onProgress func()) (model.Tool, bool) {
+func specialistHandoffTool(db *store.Store, parentDotID string, childProvider func(string) model.Provider, onProgress func()) (model.Tool, bool) {
 	parentConversation, peers, ok := db.DelegationTargets(parentDotID)
 	if !ok || len(parentConversation.DelegatedDotIDs) == 0 {
 		return model.Tool{}, false
@@ -103,7 +110,11 @@ func specialistHandoffTool(db *store.Store, parentDotID string, provider model.P
 		if onProgress != nil {
 			onProgress()
 		}
-		if err := RunWithProgress(ctx, db, child.ID, provider, nil, onProgress); err != nil {
+		var childGenerator model.Provider
+		if childProvider != nil {
+			childGenerator = childProvider(child.ID)
+		}
+		if err := RunWithProgress(ctx, db, child.ID, childGenerator, nil, onProgress); err != nil {
 			_ = db.AppendEvent(parentDotID, "delegation_failed", "The granted specialist did not complete the handoff.")
 			if ctx.Err() != nil {
 				return "", ctx.Err()

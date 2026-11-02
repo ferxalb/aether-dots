@@ -19,12 +19,13 @@ func TestPreferencesAddModelControlsWithoutBreakingOlderFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if prefs.Model != "gpt-custom" || prefs.ReasoningEffort != "medium" || prefs.TextVerbosity != "medium" ||
-		prefs.MaxOutputTokens != "8192" || prefs.MaxRetries != "2" || prefs.TimeoutSeconds != "90" {
+		prefs.MaxOutputTokens != "" || prefs.MaxOutputTokensSet || prefs.MaxRetries != "2" || prefs.TimeoutSeconds != "90" {
 		t.Fatalf("older preferences did not receive generation defaults: %#v", prefs)
 	}
 	prefs.ReasoningEffort = "high"
 	prefs.TextVerbosity = "low"
 	prefs.MaxOutputTokens = "16384"
+	prefs.MaxOutputTokensSet = true
 	prefs.MaxRetries = "0"
 	prefs.TimeoutSeconds = "180"
 	if err := savePreferences(dir, prefs); err != nil {

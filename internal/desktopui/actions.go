@@ -40,7 +40,7 @@ func (a *app) startRun(id string) {
 				})
 			}
 		}
-		generator := generatorForConversationRun(prefs, a.db, id, onProgress)
+		generator := generatorForConversationRun(prefs, a.db, id, a.githubService, onProgress)
 		var deltas chan string
 		var deltasDone chan struct{}
 		if win != nil {

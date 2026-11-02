@@ -4,18 +4,23 @@ import "github.com/egoist/mygo/ui"
 
 func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 	section := max(0, min(len(a.settingsScroll)-1, a.settingsTab))
-	sectionKey := [...]string{"general", "ai", "skills", "routines"}[section]
+	sectionKey := [...]string{"general", "ai", "integrations", "skills", "routines"}[section]
+	heading, description := "Preferences", "Choose how AETHER looks and how your Dots work."
+	if section == 2 {
+		heading = "Integrations"
+		description = "Connect the tools your Dots can work with. You're always in control of what they can access."
+	}
 	ui.Column(c).Grow(1).FillWidth().MinHeight(0).Children(func() {
 		ui.Column(c).FillWidth().Gap(14).Padding(20, 26, 0, 26).Shrink(0).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(14).Children(func() {
 				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-					ui.Text(c, "Preferences").FontSize(24).Bold()
-					ui.Text(c, "Choose how AETHER looks and how your Dots work.").
+					ui.Text(c, heading).FontSize(24).Bold()
+					ui.Text(c, description).
 						FontSize(12).TextColor(theme.TextMuted).FillWidth()
 				})
 				a.settingsAction(c, theme)
 			})
-			ui.Tabs(c, &a.settingsTab, "General", "AI & responses", "Skills", "Routines").FillWidth()
+			ui.Tabs(c, &a.settingsTab, "General", "AI & responses", "Integrations", "Skills", "Routines").FillWidth()
 		})
 		ui.Scroll(c.Key("settings-content-" + sectionKey)).TrackScroll(&a.settingsScroll[section]).
 			Grow(1).Shrink(1).FillWidth().MinHeight(0).Children(func() {
@@ -28,8 +33,10 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 						a.modelOptionsSettings(c, theme)
 					}
 				case 2:
-					a.skillLibrarySettings(c, theme)
+					a.integrationSettings(c, theme)
 				case 3:
+					a.skillLibrarySettings(c, theme)
+				case 4:
 					a.routineSettings(c, theme)
 				default:
 					a.appearanceSettings(c, theme)
@@ -50,7 +57,7 @@ func (a *app) settingsAction(c *ui.Context, theme *ui.Theme) {
 		if save.Clicked() {
 			a.saveSettings()
 		}
-	case 2:
+	case 3:
 		if a.skillEditorOpen {
 			label := "Save skill"
 			if a.skillEditingID != "" {
@@ -60,7 +67,7 @@ func (a *app) settingsAction(c *ui.Context, theme *ui.Theme) {
 				a.saveSkill()
 			}
 		}
-	case 3:
+	case 4:
 		if a.routineEditorOpen {
 			label := "Save routine"
 			if a.routineEditingID != "" {

@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"unicode/utf8"
@@ -167,8 +168,74 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			}
 		})
 
+		profilePanel(c, theme, "GitHub access", func() {
+			conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
+			ui.Text(c, "GitHub permissions are specific to this Dot and stay limited to repositories you selected in Integrations.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			if conversation.SpaceID != a.profileSpaceID {
+				ui.Text(c, "Moving a Dot to another Space clears its GitHub grants. Save the new Space first, then grant repositories again.").
+					FontSize(11).TextColor(theme.Danger).FillWidth()
+			}
+			if !a.snapshot.GitHubConnected {
+				ui.Text(c, "Connect GitHub and select repositories in Settings → Integrations before granting access.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			}
+			if ui.Checkbox(c.Key("profile-github-enabled"), &a.profileGitHubEnabledDraft, "Enable GitHub for this Dot").
+				Disabled(!a.snapshot.GitHubConnected || conversation.SpaceID != a.profileSpaceID).Changed() && !a.profileGitHubEnabledDraft {
+				a.profileGitHubRepositoryIDs = nil
+				a.profileGitHubDisclosureAccepted = false
+			}
+			if a.profileGitHubEnabledDraft && a.snapshot.GitHubConnected && conversation.SpaceID == a.profileSpaceID {
+				ui.Text(c, "Permissions · Read-only").FontSize(10).Bold().TextColor(theme.Accent)
+				ui.Text(c, "Selected repository metadata, issue and pull request text, commit details, and CI results may be sent to the AI provider configured for this Dot. This release does not retrieve source files. AETHER never sends your GitHub token.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+				if !a.profileGitHubDisclosureAccepted || len(a.profileGitHubRepositoryIDs) == 0 {
+					if ui.Checkbox(c.Key("profile-github-disclosure"), &a.profileGitHubDisclosureAccepted,
+						"I understand selected GitHub data may be sent to my configured AI provider").Changed() {
+						// The saved grant is committed only after this explicit disclosure choice.
+					}
+				}
+				selected := make([]task.GitHubRepository, 0)
+				for _, repository := range a.snapshot.GitHubRepositories {
+					if repository.Selected {
+						selected = append(selected, repository)
+					}
+				}
+				ui.TextInput(c.Key("profile-github-repository-search"), &a.profileGitHubRepositorySearch).
+					Placeholder("Filter selected repositories").FillWidth().Label("Filter selected repositories")
+				filtered := filterGitHubRepositories(selected, a.profileGitHubRepositorySearch)
+				if len(filtered) == 0 {
+					ui.Text(c, "Select repositories in Settings → Integrations first.").FontSize(10).TextColor(theme.TextMuted).FillWidth()
+				} else {
+					limit := a.profileGitHubRepositoryLimit
+					if limit <= 0 {
+						limit = 50
+					}
+					shown := min(len(filtered), limit)
+					for _, repository := range filtered[:shown] {
+						repository := repository
+						checked := containsInt64(a.profileGitHubRepositoryIDs, repository.ID)
+						if ui.Checkbox(c.Key("profile-github-repo-"+fmt.Sprint(repository.ID)), &checked, repository.FullName).FillWidth().Changed() {
+							a.profileGitHubRepositoryIDs = toggleInt64(a.profileGitHubRepositoryIDs, repository.ID, task.MaxGitHubDotGrants)
+						}
+					}
+					if shown < len(filtered) {
+						if ui.Button(c.Key("profile-github-repos-more"), fmt.Sprintf("Show %d more", min(50, len(filtered)-shown))).Clicked() {
+							a.profileGitHubRepositoryLimit = shown + 50
+						}
+					}
+					ui.Text(c, fmt.Sprintf("%d of %d selected repositories granted to this Dot", len(a.profileGitHubRepositoryIDs), len(selected))).
+						FontSize(10).TextColor(theme.TextMuted).FillWidth()
+				}
+				if githubToolsKnownUnsupported(a.prefs) {
+					ui.Text(c, "The selected OpenRouter model is marked as not supporting function calls. This Dot won't inspect GitHub data until you select a model with function support.").
+						FontSize(10).TextColor(theme.Danger).FillWidth()
+				}
+			}
+		})
+
 		profilePanel(c, theme, "Privacy", func() {
-			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. It cannot access your files, folders, apps, or accounts. Specialist access is limited to the Dots selected above, and each handoff is saved in both conversations.").
+			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. It cannot access your files, folders, or apps. GitHub access is limited to the repositories explicitly granted above; other account access remains unavailable. Specialist access is limited to the Dots selected above, and each handoff is saved in both conversations.").
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
 
@@ -204,6 +271,27 @@ func containsID(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func containsInt64(values []int64, target int64) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func toggleInt64(values []int64, target int64, maxItems int) []int64 {
+	for i, value := range values {
+		if value == target {
+			return append(values[:i], values[i+1:]...)
+		}
+	}
+	if len(values) >= maxItems {
+		return values
+	}
+	return append(values, target)
 }
 
 func compactProfileText(value string, maxBytes int) string {

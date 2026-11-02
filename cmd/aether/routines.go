@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"aether-dots/internal/engine"
-	"aether-dots/internal/model"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
 )
@@ -117,6 +116,7 @@ func createRoutineCommand(db *store.Store, args []string) error {
 	name := fs.String("name", "", "routine name")
 	prompt := fs.String("prompt", "", "instruction to run on schedule")
 	every := fs.Duration("every", 0, "repeat interval (minimum 5m; for example 1h or 24h)")
+	githubReadOnly := fs.Bool("github-read-only", false, "allow this Routine to use the Dot's explicitly granted GitHub repositories")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func createRoutineCommand(db *store.Store, args []string) error {
 	}
 	routine, err := db.CreateRoutine(task.CreateRoutine{
 		ConversationID: fs.Arg(0), Name: *name, Prompt: *prompt,
-		IntervalSeconds: int64(*every / time.Second),
+		IntervalSeconds: int64(*every / time.Second), GitHubEnabled: *githubReadOnly,
 	})
 	if err == nil {
 		fmt.Printf("Created routine %q (%s); first run at %s\n", routine.Name, routine.ID, routine.NextRunAt.Local().Format(time.RFC3339))
@@ -152,6 +152,7 @@ func updateRoutineCommand(db *store.Store, args []string) error {
 	name := fs.String("name", existing.Name, "routine name")
 	prompt := fs.String("prompt", existing.Prompt, "instruction to run on schedule")
 	every := fs.Duration("every", time.Duration(existing.IntervalSeconds)*time.Second, "repeat interval")
+	githubReadOnly := fs.Bool("github-read-only", existing.GitHubEnabled, "allow this Routine to use the Dot's explicitly granted GitHub repositories")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -160,7 +161,7 @@ func updateRoutineCommand(db *store.Store, args []string) error {
 	}
 	if err := db.UpdateRoutine(existing.ID, task.CreateRoutine{
 		ConversationID: *dotID, Name: *name, Prompt: *prompt,
-		IntervalSeconds: int64(*every / time.Second),
+		IntervalSeconds: int64(*every / time.Second), GitHubEnabled: *githubReadOnly,
 	}); err != nil {
 		return err
 	}
@@ -172,7 +173,7 @@ func testRoutineCommand(db *store.Store, id string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := engine.RunRoutineOnceWithTaskFactory(ctx, db, id, func(dot task.Dot) engine.Generator {
-		return engine.WithSpecialistDelegation(db, dot.ID, model.NewProvider(model.FromEnvironment()), nil)
+		return cliGitHubGenerator(db, dot.ID, newGitHubService())
 	}, nil); err != nil {
 		return err
 	}
@@ -202,7 +203,7 @@ func serveRoutines(db *store.Store) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	generator := func(dot task.Dot) engine.Generator {
-		return engine.WithSpecialistDelegation(db, dot.ID, model.NewProvider(model.FromEnvironment()), nil)
+		return cliGitHubGenerator(db, dot.ID, newGitHubService())
 	}
 	fmt.Println("Routine scheduler running. Press Ctrl+C to stop.")
 	reported := make(map[string]string)

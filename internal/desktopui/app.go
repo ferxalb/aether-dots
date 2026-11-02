@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 
+	"aether-dots/internal/integrations/github"
 	"aether-dots/internal/model"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
@@ -41,39 +42,44 @@ type app struct {
 	settingsOpen            bool
 	settingsTab             int
 	settingsAdvancedOpen    bool
-	settingsScroll          [4]ui.ScrollState
+	settingsScroll          [5]ui.ScrollState
 
-	profileName         string
-	profilePurpose      string
-	profileInstructions string
-	profileDelegateIDs  []string
-	profileIcon         string
-	profileColor        string
-	profileSpaceID      string
-	spaceDraft          string
-	renameSpaceID       string
-	spaceManagementOpen bool
-	adt                 ADT
-	skillEditingID      string
-	skillEditorOpen     bool
-	skillAdvancedOpen   bool
-	skillDeleteID       string
-	skillDraft          task.Skill
-	routineEditingID    string
-	routineEditorOpen   bool
-	routineDeleteID     string
-	routineNameDraft    string
-	routinePromptDraft  string
-	routineDotDraft     string
-	routineEveryDraft   string
-	routineCustomDraft  string
-	messageDraft        string
-	messageDrafts       map[string]string
-	chatScroll          ui.ScrollState
-	conversationError   string
-	apiKeyDraft         string
-	apiKeyDrafts        map[string]string
-	providerSelection   string
+	profileName                     string
+	profilePurpose                  string
+	profileInstructions             string
+	profileDelegateIDs              []string
+	profileGitHubEnabledDraft       bool
+	profileGitHubDisclosureAccepted bool
+	profileGitHubRepositorySearch   string
+	profileGitHubRepositoryLimit    int
+	profileIcon                     string
+	profileColor                    string
+	profileSpaceID                  string
+	spaceDraft                      string
+	renameSpaceID                   string
+	spaceManagementOpen             bool
+	adt                             ADT
+	skillEditingID                  string
+	skillEditorOpen                 bool
+	skillAdvancedOpen               bool
+	skillDeleteID                   string
+	skillDraft                      task.Skill
+	routineEditingID                string
+	routineEditorOpen               bool
+	routineDeleteID                 string
+	routineNameDraft                string
+	routinePromptDraft              string
+	routineDotDraft                 string
+	routineEveryDraft               string
+	routineCustomDraft              string
+	routineGitHubEnabledDraft       bool
+	messageDraft                    string
+	messageDrafts                   map[string]string
+	chatScroll                      ui.ScrollState
+	conversationError               string
+	apiKeyDraft                     string
+	apiKeyDrafts                    map[string]string
+	providerSelection               string
 
 	openRouterCatalog         []model.OpenRouterModel
 	openRouterSearch          string
@@ -90,15 +96,36 @@ type app struct {
 	runningDotID string
 	cancelRun    context.CancelFunc
 
-	credentialChecked       bool
-	credentialLoading       bool
-	credentialSaved         bool
-	credentialError         string
-	credentialProvider      string
-	settingsSaving          bool
-	modelConnection         string
-	routineSchedulerStarted bool
-	routinePreferences      *atomic.Pointer[preferences]
+	credentialChecked          bool
+	credentialLoading          bool
+	credentialSaved            bool
+	credentialError            string
+	credentialProvider         string
+	githubService              *github.Service
+	githubStatus               string
+	githubError                string
+	githubUser                 github.User
+	githubAvatar               ui.ImageSource
+	githubAvatarCancel         context.CancelFunc
+	githubAvatarRequest        uint64
+	githubInstallations        []github.Installation
+	githubRepositories         []task.GitHubRepository
+	githubDeviceCode           string
+	githubVerificationURL      string
+	githubLoading              bool
+	githubLoaded               bool
+	githubDisconnecting        bool
+	githubAuthCancel           context.CancelFunc
+	githubRequestCancel        context.CancelFunc
+	githubManageRepositories   bool
+	githubRepositorySearch     string
+	githubRepositoryLimit      int
+	githubTruncated            bool
+	profileGitHubRepositoryIDs []int64
+	settingsSaving             bool
+	modelConnection            string
+	routineSchedulerStarted    bool
+	routinePreferences         *atomic.Pointer[preferences]
 }
 
 func Run(dataDir string) error {
@@ -113,7 +140,8 @@ func Run(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	a := &app{db: db, dataDir: dataDir, prefs: prefs, providerSelection: providerSelectionLabel(prefs.Provider)}
+	a := &app{db: db, dataDir: dataDir, prefs: prefs, providerSelection: providerSelectionLabel(prefs.Provider),
+		githubService: github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil)}
 	a.refresh()
 	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.WhenReady(func() {

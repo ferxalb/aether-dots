@@ -69,9 +69,16 @@ func TestConversationProfileAndRepliesPersistWithoutFolderGrants(t *testing.T) {
 	if second.ParentDotID != first.ID || secondMessage.DotID != second.ID {
 		t.Fatalf("follow-up was not linked to its previous run: second=%#v message=%#v", second, secondMessage)
 	}
-	for _, part := range []string{"Recent conversation context", "Assistant reply:\n" + reply, "Newest user message:\nMake that shorter"} {
-		if !strings.Contains(second.Objective, part) {
-			t.Errorf("follow-up objective missing %q: %q", part, second.Objective)
+	if !second.ConversationContextDeferred {
+		t.Fatal("follow-up prompt should assemble prior context at request time")
+	}
+	prompt, err := db.ConversationObjective(second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range []string{"Complete saved conversation context", "Assistant reply:\n" + reply, "Newest user message:\nMake that shorter"} {
+		if !strings.Contains(prompt, part) {
+			t.Errorf("follow-up prompt missing %q: %q", part, prompt)
 		}
 	}
 

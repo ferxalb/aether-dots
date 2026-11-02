@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 const (
 	MaxConversationNameBytes         = 128
@@ -17,6 +17,8 @@ const (
 	MaxDelegatedTaskBytes            = 3072
 	MaxDelegatedConstraintBytes      = 1024
 	MaxDelegatedOutputBytes          = 1024
+	MaxGitHubRepositories            = 2000
+	MaxGitHubDotGrants               = 100
 	MaxConversationContextMessages   = 12
 	MaxConversationContextBytes      = 24 * 1024
 	MaxSkillNameBytes                = 128
@@ -94,10 +96,15 @@ type Conversation struct {
 	Instructions string `json:"instructions,omitempty"`
 	// DelegatedDotIDs are the same-Space specialists this Dot may consult.
 	// Grants are directional and empty by default.
-	DelegatedDotIDs []string              `json:"delegated_dot_ids,omitempty"`
-	CreatedAt       time.Time             `json:"created_at"`
-	UpdatedAt       time.Time             `json:"updated_at"`
-	Messages        []ConversationMessage `json:"messages"`
+	DelegatedDotIDs []string `json:"delegated_dot_ids,omitempty"`
+	// GitHub access is separately granted by stable repository ID. Grants are
+	// bound to the current Space and default to empty.
+	GitHubRepositoryIDs           []int64               `json:"github_repository_ids,omitempty"`
+	GitHubGrantSpaceID            string                `json:"github_grant_space_id,omitempty"`
+	GitHubModelDisclosureAccepted bool                  `json:"github_model_disclosure_accepted,omitempty"`
+	CreatedAt                     time.Time             `json:"created_at"`
+	UpdatedAt                     time.Time             `json:"updated_at"`
+	Messages                      []ConversationMessage `json:"messages"`
 }
 
 // ConversationMessage is an append-only, persisted user request or verified
@@ -134,6 +141,7 @@ type Routine struct {
 	ConversationID  string       `json:"conversation_id"`
 	Name            string       `json:"name"`
 	Prompt          string       `json:"prompt"`
+	GitHubEnabled   bool         `json:"github_enabled,omitempty"`
 	IntervalSeconds int64        `json:"interval_seconds"`
 	Active          bool         `json:"active"`
 	NextRunAt       time.Time    `json:"next_run_at"`
@@ -154,13 +162,30 @@ type RoutineRun struct {
 }
 
 type Database struct {
-	SchemaVersion    int            `json:"schema_version"`
-	Spaces           []Space        `json:"spaces"`
-	Dots             []Dot          `json:"dots"`
-	Conversations    []Conversation `json:"conversations,omitempty"`
-	Skills           []Skill        `json:"skills,omitempty"`
-	Routines         []Routine      `json:"routines,omitempty"`
-	RoutineRunStarts []time.Time    `json:"routine_run_starts,omitempty"`
+	SchemaVersion        int                `json:"schema_version"`
+	Spaces               []Space            `json:"spaces"`
+	Dots                 []Dot              `json:"dots"`
+	Conversations        []Conversation     `json:"conversations,omitempty"`
+	Skills               []Skill            `json:"skills,omitempty"`
+	Routines             []Routine          `json:"routines,omitempty"`
+	RoutineRunStarts     []time.Time        `json:"routine_run_starts,omitempty"`
+	GitHubRepositories   []GitHubRepository `json:"github_repositories,omitempty"`
+	GitHubConnected      bool               `json:"github_connected,omitempty"`
+	GitHubLastVerifiedAt time.Time          `json:"github_last_verified_at,omitempty"`
+}
+
+// GitHubRepository is a non-secret, locally selected resource. Its stable ID
+// is the authorization key; owner/name are refreshed display and API fields.
+type GitHubRepository struct {
+	ID             int64  `json:"id"`
+	InstallationID int64  `json:"installation_id"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
+	FullName       string `json:"full_name"`
+	Private        bool   `json:"private"`
+	HTMLURL        string `json:"html_url"`
+	DefaultBranch  string `json:"default_branch,omitempty"`
+	Selected       bool   `json:"selected,omitempty"`
 }
 
 type CreateConversation struct {
@@ -188,6 +213,7 @@ type CreateRoutine struct {
 	Name            string
 	Prompt          string
 	IntervalSeconds int64
+	GitHubEnabled   bool
 }
 
 func FormatRoutineInterval(seconds int64) string {

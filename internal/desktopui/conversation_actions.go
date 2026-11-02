@@ -36,6 +36,9 @@ func (a *app) openConversationProfile() {
 	a.profilePurpose = conversation.Purpose
 	a.profileInstructions = conversation.Instructions
 	a.profileDelegateIDs = append([]string(nil), conversation.DelegatedDotIDs...)
+	a.profileGitHubRepositoryIDs = append([]int64(nil), conversation.GitHubRepositoryIDs...)
+	a.profileGitHubEnabledDraft = len(conversation.GitHubRepositoryIDs) > 0
+	a.profileGitHubDisclosureAccepted = conversation.GitHubModelDisclosureAccepted
 	a.profileIcon = conversation.Icon
 	a.profileColor = conversation.Color
 	a.profileSpaceID = conversation.SpaceID
@@ -48,7 +51,12 @@ func (a *app) openConversationProfile() {
 }
 
 func (a *app) saveConversationProfile() {
-	err := a.db.UpdateConversationProfile(
+	githubRepositoryIDs := append([]int64(nil), a.profileGitHubRepositoryIDs...)
+	current, _ := findConversation(a.snapshot, a.selectedConversationID)
+	if a.profileSpaceID != current.SpaceID || !a.profileGitHubEnabledDraft || !a.profileGitHubDisclosureAccepted {
+		githubRepositoryIDs = nil
+	}
+	err := a.db.UpdateConversationProfileAndGitHub(
 		a.selectedConversationID,
 		a.profileSpaceID,
 		a.profileName,
@@ -57,6 +65,8 @@ func (a *app) saveConversationProfile() {
 		a.profilePurpose,
 		a.profileInstructions,
 		validProfileDelegateIDs(a.snapshot, a.selectedConversationID, a.profileSpaceID, a.profileDelegateIDs),
+		githubRepositoryIDs,
+		a.profileGitHubDisclosureAccepted,
 	)
 	if err != nil {
 		a.conversationError = err.Error()

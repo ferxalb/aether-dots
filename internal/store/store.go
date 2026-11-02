@@ -65,6 +65,21 @@ func Open(dir string) (*Store, error) {
 	}
 	store := &Store{path: path, db: db}
 	if db.SchemaVersion < task.SchemaVersion {
+		if db.SchemaVersion < 5 {
+			// GitHub access is opt-in. Older stores migrate with no selected
+			// repositories and no Dot or Routine grants.
+			db.GitHubRepositories = nil
+			db.GitHubConnected = false
+			db.GitHubLastVerifiedAt = time.Time{}
+			for i := range db.Conversations {
+				db.Conversations[i].GitHubRepositoryIDs = nil
+				db.Conversations[i].GitHubGrantSpaceID = ""
+				db.Conversations[i].GitHubModelDisclosureAccepted = false
+			}
+			for i := range db.Routines {
+				db.Routines[i].GitHubEnabled = false
+			}
+		}
 		if db.SchemaVersion == 1 {
 			migrateLegacyFileAccess(&db)
 		}

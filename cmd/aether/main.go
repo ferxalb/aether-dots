@@ -73,6 +73,8 @@ func run(args []string) error {
 		return skillsCommand(db, args[1:])
 	case "routines":
 		return routinesCommand(db, args[1:])
+	case "github":
+		return githubCommand(db, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q (try `aether help`)", args[0])
 	}
@@ -159,7 +161,7 @@ func sendCommand(db *store.Store, args []string) error {
 func runMessage(db *store.Store, id string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	generator := engine.WithSpecialistDelegation(db, id, model.NewProvider(model.FromEnvironment()), nil)
+	generator := cliGitHubGenerator(db, id, newGitHubService())
 	if err := engine.Run(ctx, db, id, generator, func(delta string) { fmt.Print(delta) }); err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Println("\nReply paused. Retry the message when ready.")
@@ -255,6 +257,7 @@ Commands:
   model test                   Test the selected model provider
   skills [list|create|update|inspect|delete]  Manage reusable playbooks
   routines [list|create|update|pause|resume|test|inspect|delete|serve]  Manage schedules
+  github [login|status|refresh|repositories|select|grant|revoke|disconnect]  Manage the read-only GitHub connection
 
 Profile options:
   --name <name>
@@ -274,6 +277,8 @@ Model settings (environment):
   AETHER_MODEL_PROVIDER           openai|openrouter|openai-compatible (default: openai)
   AETHER_MODEL_NAME                model ID (required for OpenRouter and custom endpoints)
   AETHER_MODEL_BASE_URL            custom OpenAI-compatible endpoint base URL
+  AETHER_GITHUB_CLIENT_ID          public GitHub App Client ID for Device Flow
+  AETHER_GITHUB_APP_SLUG           optional public App slug for the installation link
   OPENAI_API_KEY                   OpenAI credential
   OPENROUTER_API_KEY               OpenRouter credential
   AETHER_COMPATIBLE_API_KEY        custom endpoint credential (optional on localhost)

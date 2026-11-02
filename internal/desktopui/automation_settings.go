@@ -215,8 +215,11 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 							state = "Active"
 						}
 						ui.Text(c, routine.Name+" · "+state).FontSize(12).Bold().SingleLine()
-						ui.Text(c, conversationName+" · "+routineIntervalSummary(routine.IntervalSeconds)).
-							FontSize(10).TextColor(theme.TextMuted).SingleLine()
+						details := conversationName + " · " + routineIntervalSummary(routine.IntervalSeconds)
+						if routine.GitHubEnabled {
+							details += " · GitHub enabled"
+						}
+						ui.Text(c, details).FontSize(10).TextColor(theme.TextMuted).SingleLine()
 					})
 					if ui.Button(c.Key("routine-edit-"+routine.ID), "Edit").Padding(6, 9).Clicked() {
 						a.editRoutine(routine)
@@ -314,6 +317,16 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 				ui.TextArea(c.Key("routine-prompt"), &a.routinePromptDraft).MinHeight(74).MaxHeight(180).FillWidth().
 					Placeholder("Review the current conversation, note anything missing, and return a concise summary.")
 			})
+			routineDotHasGitHubGrants := conversationHasGitHubGrants(a.snapshot, a.routineDotDraft)
+			if ui.Checkbox(c.Key("routine-github-enabled"), &a.routineGitHubEnabledDraft,
+				"Allow this Routine to read the Dot's granted GitHub repositories").
+				Disabled(!a.snapshot.GitHubConnected || !routineDotHasGitHubGrants).Changed() {
+				// This is a separate, opt-in permission for scheduled execution.
+			}
+			if a.routineGitHubEnabledDraft {
+				ui.Text(c, "This Routine can send selected repository metadata, issue and pull request text, and CI results to the configured AI provider. It cannot retrieve source files or change GitHub data.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+			}
 			ui.Text(c, "Intervals start after you create or resume a routine (minimum 5 minutes). Runs send requests to your selected provider and may use your plan. Schedules run while the desktop app is open; missed intervals are skipped.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		}
@@ -326,6 +339,16 @@ func conversationChoice(c *ui.Context, theme *ui.Theme, a *app) {
 		options = append(options, dropdownOption{value: conversation.ID, label: conversation.Name})
 	}
 	dropdownSelect(c, theme, "routine-dot", "Choose a Dot", &a.routineDotDraft, options, false)
+}
+
+func conversationHasGitHubGrants(snapshot task.Database, conversationID string) bool {
+	for _, conversation := range snapshot.Conversations {
+		if conversation.ID == conversationID {
+			return len(conversation.GitHubRepositoryIDs) > 0 && conversation.GitHubModelDisclosureAccepted &&
+				conversation.GitHubGrantSpaceID == conversation.SpaceID
+		}
+	}
+	return false
 }
 
 func routineFrequencyChoice(c *ui.Context, theme *ui.Theme, a *app) {
@@ -388,6 +411,7 @@ func (a *app) editRoutine(routine task.Routine) {
 	a.routineNameDraft = routine.Name
 	a.routinePromptDraft = routine.Prompt
 	a.routineDotDraft = routine.ConversationID
+	a.routineGitHubEnabledDraft = routine.GitHubEnabled
 	interval := task.FormatRoutineInterval(routine.IntervalSeconds)
 	if isPresetRoutineInterval(interval) {
 		a.routineEveryDraft, a.routineCustomDraft = interval, ""
@@ -401,6 +425,7 @@ func (a *app) startRoutineEditor() {
 	a.routineEditorOpen = true
 	a.routineNameDraft, a.routinePromptDraft = "", ""
 	a.routineDotDraft, a.routineEveryDraft, a.routineCustomDraft = a.selectedConversationID, "1h", ""
+	a.routineGitHubEnabledDraft = false
 }
 
 func (a *app) saveRoutine() {
@@ -424,6 +449,7 @@ func (a *app) saveRoutine() {
 	in := task.CreateRoutine{
 		ConversationID: a.routineDotDraft, Name: a.routineNameDraft,
 		Prompt: a.routinePromptDraft, IntervalSeconds: int64(interval / time.Second),
+		GitHubEnabled: a.routineGitHubEnabledDraft,
 	}
 	if a.routineEditingID == "" {
 		routine, err := a.db.CreateRoutine(in)
@@ -470,7 +496,7 @@ func (a *app) testRoutine(id string) {
 			}
 		}
 		err := engine.RunRoutineOnceWithTaskFactory(ctx, a.db, id, func(dot task.Dot) engine.Generator {
-			return generatorForConversationRun(prefs, a.db, dot.ID, progress)
+			return generatorForConversationRun(prefs, a.db, dot.ID, a.githubService, progress)
 		}, progress)
 		cancel()
 		finish := func() {
@@ -505,13 +531,13 @@ func (a *app) startRoutineScheduler() {
 		err := engine.RunRoutineLoopWithTaskFactory(context.Background(), a.db, func(dot task.Dot) engine.Generator {
 			current := a.routinePreferences.Load()
 			if current == nil {
-				return generatorForConversationRun(prefs, a.db, dot.ID, func() {
+				return generatorForConversationRun(prefs, a.db, dot.ID, a.githubService, func() {
 					if win != nil {
 						win.Update(func() { a.refresh() })
 					}
 				})
 			}
-			return generatorForConversationRun(*current, a.db, dot.ID, func() {
+			return generatorForConversationRun(*current, a.db, dot.ID, a.githubService, func() {
 				if win != nil {
 					win.Update(func() { a.refresh() })
 				}
