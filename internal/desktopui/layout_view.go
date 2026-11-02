@@ -21,7 +21,8 @@ func (a *app) view(c *ui.Context) {
 		rootColor = ui.Transparent
 	}
 
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(rootColor).Children(func() {
+	root := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(rootColor)
+	root.Children(func() {
 		a.sidebar(c, theme, dragHeight, vibrant)
 		ui.Box(c).Width(1).FillHeight().Background(theme.Border.Alpha(0.42))
 
@@ -53,7 +54,7 @@ func (a *app) view(c *ui.Context) {
 	if a.settingsOpen {
 		toastConfig.Position = ADTBottomRight
 	}
-	a.adt.Render(c, theme, toastConfig)
+	a.adt.Render(c, theme, toastConfig, root)
 }
 
 func (a *app) hasConversationChat() bool {

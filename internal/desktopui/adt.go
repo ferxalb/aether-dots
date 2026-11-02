@@ -129,9 +129,10 @@ func (a *ADT) Loading(id, title, description string) string {
 	return a.Push(ADTNotice{ID: id, Title: title, Description: description, Level: ADTLoading, Duration: -1})
 }
 
-// Render adds queued notices to MyGo's accessible toast lifecycle. The newest
-// toast stays expanded so its detail and action remain immediately usable.
-func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig) {
+// Render uses MyGo's accessible toast lifecycle and paints cards in parent,
+// after scroll content, so they remain visible above the app's content.
+// The newest toast stays expanded so its detail and action remain usable.
+func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig, parent ui.Element) {
 	if a == nil {
 		return
 	}
@@ -166,28 +167,6 @@ func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig) {
 	a.hoveredID = ""
 
 	ui.ToastViewportBase(c, func(viewport ui.Element, toasts []ui.Toast) {
-		viewport.Left(config.Left).Right(config.Right).Top(config.Top).Bottom(config.Bottom).
-			Width(config.MaxWidth).Gap(adtStackGap)
-		if adtPositionIsBottom(config.Position) {
-			viewport.Justify(ui.End)
-		} else {
-			viewport.Justify(ui.Start)
-		}
-		topMargin, rightMargin, bottomMargin, leftMargin := float32(0), float32(0), float32(0), float32(0)
-		if adtPositionIsBottom(config.Position) {
-			topMargin = ui.Auto
-		}
-		switch {
-		case adtPositionIsLeft(config.Position):
-			viewport.AlignItems(ui.Start)
-			rightMargin = ui.Auto
-		case adtPositionIsCenter(config.Position):
-			viewport.AlignItems(ui.Center)
-			rightMargin, leftMargin = ui.Auto, ui.Auto
-		default:
-			viewport.AlignItems(ui.End)
-			leftMargin = ui.Auto
-		}
 		var stackHeight float32
 		addHeight := func(height float32) {
 			if stackHeight > 0 {
@@ -199,24 +178,84 @@ func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig) {
 			for i := range toasts {
 				id := toasts[i].ID
 				selected := previousHoveredID == id || (previousHoveredID == "" && i == len(toasts)-1)
-				addHeight(adtToastCard(a, c, theme, config, toasts[i], selected))
+				addHeight(adtToastCardHeight(c, config, toasts[i], selected))
 			}
 		} else {
 			for i := len(toasts) - 1; i >= 0; i-- {
 				id := toasts[i].ID
 				selected := previousHoveredID == id || (previousHoveredID == "" && i == len(toasts)-1)
-				addHeight(adtToastCard(a, c, theme, config, toasts[i], selected))
+				addHeight(adtToastCardHeight(c, config, toasts[i], selected))
 			}
 		}
-		viewport.Margin(topMargin, rightMargin, bottomMargin, leftMargin).
-			Height(max(stackHeight, adtPillHeight))
+		viewport.Width(config.MaxWidth).Height(max(stackHeight, adtPillHeight))
+		adtStackPosition(viewport, config, stackHeight)
+
+		parent.Children(func() {
+			stack := ui.Column(c).Key("adt-stack").Absolute().Width(config.MaxWidth).
+				Height(max(stackHeight, adtPillHeight)).Gap(adtStackGap)
+			adtStackPosition(stack, config, stackHeight)
+			stack.Transition(ui.ElementTransition{Animation: adtTransition(), Position: true})
+			stack.Children(func() {
+				if adtPositionIsBottom(config.Position) {
+					for i := range toasts {
+						id := toasts[i].ID
+						selected := previousHoveredID == id || (previousHoveredID == "" && i == len(toasts)-1)
+						adtToastCard(a, c, theme, config, toasts[i], selected)
+					}
+					return
+				}
+				for i := len(toasts) - 1; i >= 0; i-- {
+					id := toasts[i].ID
+					selected := previousHoveredID == id || (previousHoveredID == "" && i == len(toasts)-1)
+					adtToastCard(a, c, theme, config, toasts[i], selected)
+				}
+			})
+		})
 		if previousHoveredID != a.hoveredID {
 			c.After(time.Second / 60)
 		}
 	})
 }
 
-func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toast ui.Toast, selected bool) float32 {
+func adtStackPosition(stack ui.Element, config ADTConfig, height float32) {
+	stack.Left(config.Left).Right(config.Right).Top(config.Top).Bottom(config.Bottom)
+	topMargin, rightMargin, bottomMargin, leftMargin := float32(0), float32(0), float32(0), float32(0)
+	if adtPositionIsBottom(config.Position) {
+		topMargin = ui.Auto
+		stack.Justify(ui.End)
+	} else {
+		stack.Justify(ui.Start)
+	}
+	switch {
+	case adtPositionIsLeft(config.Position):
+		stack.AlignItems(ui.Start)
+		rightMargin = ui.Auto
+	case adtPositionIsCenter(config.Position):
+		stack.AlignItems(ui.Center)
+		rightMargin, leftMargin = ui.Auto, ui.Auto
+	default:
+		stack.AlignItems(ui.End)
+		leftMargin = ui.Auto
+	}
+	stack.Margin(topMargin, rightMargin, bottomMargin, leftMargin).
+		Height(max(height, adtPillHeight))
+}
+
+func adtToastCardHeight(c *ui.Context, config ADTConfig, toast ui.Toast, selected bool) float32 {
+	notice, ok := toast.Data.(ADTNotice)
+	if !ok {
+		notice = ADTNotice{Level: ADTInfo, Duration: adtDefaultDuration}
+	}
+	if notice.Duration == 0 {
+		notice.Duration = adtDefaultDuration
+	}
+	if !selected || (notice.Description == "" && notice.Action == "") {
+		return adtPillHeight
+	}
+	return adtPillHeight + adtExpandedBodyHeight(c, notice, config.MaxWidth)
+}
+
+func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toast ui.Toast, selected bool) {
 	notice, ok := toast.Data.(ADTNotice)
 	if !ok {
 		notice = ADTNotice{Level: ADTInfo, Duration: adtDefaultDuration}
@@ -253,10 +292,6 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 	width := compactWidth
 	if expanded {
 		width = config.MaxWidth
-	}
-	cardHeight := adtPillHeight
-	if expanded {
-		cardHeight += adtExpandedBodyHeight(c, notice, width)
 	}
 	entryY := float32(-4)
 	if adtPositionIsBottom(config.Position) {
@@ -311,9 +346,6 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 			return
 		}
 		bodyTop, bodyBottom := float32(1), float32(13)
-		if adtPositionIsBottom(config.Position) {
-			bodyTop, bodyBottom = bodyBottom, bodyTop
-		}
 		body := ui.Column(c).Key("adt-body-"+toast.ID).FillWidth().Gap(9).
 			Padding(bodyTop, 15, bodyBottom, 44)
 		body.Transition(ui.ElementTransition{
@@ -337,15 +369,9 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 		})
 	}
 	root.Children(func() {
-		if adtPositionIsBottom(config.Position) {
-			buildBody()
-			buildHeader()
-			return
-		}
 		buildHeader()
 		buildBody()
 	})
-	return cardHeight
 }
 
 func adtPositionIsBottom(position ADTPosition) bool {
