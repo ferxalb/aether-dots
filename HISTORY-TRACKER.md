@@ -6,6 +6,25 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (15) — Provider adapters and secure model settings
+
+### Session objective
+
+Replace the single-provider settings path with real, swappable OpenAI, OpenRouter, and custom OpenAI-compatible connections while preserving local chat history and provider credentials.
+
+### Implementation
+
+- Added a provider-neutral runtime contract. OpenAI continues through the official Go SDK Responses API; OpenRouter and custom compatible endpoints use the official SDK's streamed Chat Completions API.
+- Added provider selection, separate model settings per provider, custom base URL settings, provider-specific credential-store entries, and CLI environment selection. Provider changes do not rewrite existing Dot or conversation records. OpenRouter defaults to `openai/gpt-6.1-sol`; custom endpoints require a model ID and tool-call support.
+- Added a local function-call loop for compatible providers with only current time and bounded arithmetic functions. It rejects unknown functions and malformed/oversized arguments, limits calls and rounds, and grants no file, shell, account, or network access.
+- Kept keys out of preferences and task data. Custom remote endpoints require HTTPS, loopback HTTP is allowed for local servers, API redirects are blocked, and configured keys are redacted from provider errors and generated text before reaching the UI or conversation store.
+- Documented provider setup, CLI environment variables, key storage, and function limits.
+
+### Verification
+
+- `gofmt`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed.
+- Automated tests were not run. No live provider request or native window preview was made; credentials and endpoint-specific behavior remain unverified in this session.
+
 ## 2026-11-01 (14) — ADT full-component adaptation and responsive feedback
 
 ### Session objective

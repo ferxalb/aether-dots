@@ -27,11 +27,20 @@ Dots use their saved profile and recent chat context. You can add a reusable ski
 
 ## Model setup
 
-Model replies use the official OpenAI Go SDK and Responses API. The desktop Settings page stores the selected model in local preferences and the API key in the system credential store. The CLI reads its key from `OPENAI_API_KEY`.
+The desktop Settings page supports three real connection modes: OpenAI through the official Go SDK and Responses API, OpenRouter through the SDK's OpenAI-compatible Chat Completions API, and a custom OpenAI-compatible endpoint. Each provider keeps its own model selection; changing providers does not modify Dot profiles or saved conversation messages. OpenRouter defaults to `openai/gpt-6.1-sol`. OpenRouter and custom endpoints can request AETHER's two allow-listed local functions: current time and basic arithmetic. These functions cannot access files, apps, accounts, or the network. Custom endpoints must support Chat Completions tool calls for these functions to work.
+
+Desktop API keys are stored separately per provider in the system credential store (macOS Keychain on macOS). Provider settings and the custom endpoint URL are stored in local preferences; secrets are never written to preferences, Dot data, or logs. Remote custom endpoints must use HTTPS. Cleartext HTTP is accepted only for loopback endpoints such as localhost.
+
+The CLI chooses a provider with environment variables and uses the same provider adapters:
 
 ```sh
+export AETHER_MODEL_PROVIDER="openai" # openai, openrouter, or openai-compatible
 export AETHER_MODEL_NAME="gpt-6.1-sol"
 export OPENAI_API_KEY="..."
+export OPENROUTER_API_KEY="..."
+export AETHER_MODEL_BASE_URL="https://api.example.com/v1" # custom provider only
+export AETHER_COMPATIBLE_API_KEY="..." # optional for local endpoints
+# These two controls apply to the OpenAI Responses provider.
 export AETHER_REASONING_EFFORT="medium"
 export AETHER_TEXT_VERBOSITY="medium"
 export AETHER_MAX_OUTPUT_TOKENS="8192"
@@ -39,7 +48,7 @@ export AETHER_MAX_RETRIES="2"
 export AETHER_MODEL_TIMEOUT_SECONDS="90"
 ```
 
-The desktop Settings page includes model selection, a secure API-key field, reasoning effort, response detail, output-token limit, retry count, timeout, appearance mode, seven color palettes, and a connection check. The API key is never written to the chat store or preferences file. Requests use the OpenAI Responses API with response storage disabled. Each reply includes the Dot profile, the newest user message, any explicitly selected skill, and up to 12 recent chat messages within a 24 KiB context budget; older messages may be omitted and long entries excerpted.
+The desktop Settings page includes provider selection, provider-specific model settings, custom endpoint configuration, a masked API-key field, generation controls, and a connection check. OpenAI Responses requests disable response storage. Each reply includes the Dot profile, the newest user message, any explicitly selected skill, and up to 12 recent chat messages within a 24 KiB context budget; older messages may be omitted and long entries excerpted.
 
 ## Skills and routines
 

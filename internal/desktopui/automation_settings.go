@@ -248,7 +248,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 					}
 					ui.Text(c, status).FontSize(10).TextColor(theme.TextMuted).FillWidth()
 					if ui.Button(c.Key("routine-test-"+routine.ID), "Run now").Padding(6, 9).
-						Tooltip("Run once now. This sends a request to OpenAI and may use your plan.").
+						Tooltip("Run once now. This sends a request to your selected provider and may use your plan.").
 						Disabled(a.cancelRun != nil).Clicked() {
 						a.testRoutine(routine.ID)
 					}
@@ -314,7 +314,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 				ui.TextArea(c.Key("routine-prompt"), &a.routinePromptDraft).MinHeight(74).MaxHeight(180).FillWidth().
 					Placeholder("Review the current conversation, note anything missing, and return a concise summary.")
 			})
-			ui.Text(c, "Intervals start after you create or resume a routine (minimum 5 minutes). Run now sends a request to OpenAI and may use your plan. Schedules run while the desktop app is open; missed intervals are skipped.").
+			ui.Text(c, "Intervals start after you create or resume a routine (minimum 5 minutes). Runs send requests to your selected provider and may use your plan. Schedules run while the desktop app is open; missed intervals are skipped.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		}
 	})
@@ -491,11 +491,11 @@ func (a *app) testRoutine(id string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelRun = cancel
 	toastID := "routine-run-" + id
-	a.adt.Loading(toastID, "Routine is running", "This one-time run sends a request to OpenAI and may use your plan.")
+	a.adt.Loading(toastID, "Routine is running", "This one-time run sends a request to your selected provider and may use your plan.")
 	prefs := a.prefs
 	win := a.win
 	go func() {
-		err := engine.RunRoutineOnce(ctx, a.db, id, openAIGeneratorWithPreferences(prefs), func() {
+		err := engine.RunRoutineOnce(ctx, a.db, id, generatorForPreferences(prefs), func() {
 			if win != nil {
 				win.Update(func() { a.refresh() })
 			}
@@ -533,9 +533,9 @@ func (a *app) startRoutineScheduler() {
 		err := engine.RunRoutineLoop(context.Background(), a.db, func() engine.Generator {
 			current := a.routinePreferences.Load()
 			if current == nil {
-				return openAIGeneratorWithPreferences(prefs)
+				return generatorForPreferences(prefs)
 			}
-			return openAIGeneratorWithPreferences(*current)
+			return generatorForPreferences(*current)
 		}, 30*time.Second, func() {
 			if win != nil {
 				win.Update(func() { a.refresh() })

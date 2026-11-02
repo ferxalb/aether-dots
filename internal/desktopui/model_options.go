@@ -3,6 +3,7 @@ package desktopui
 import (
 	"strconv"
 
+	"aether-dots/internal/model"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -15,12 +16,17 @@ func (a *app) modelOptionsSettings(c *ui.Context, theme *ui.Theme) {
 			ui.Text(c, "Most people can leave these at their defaults. Changes apply to chat and scheduled replies.").
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
-		ui.Row(c).FillWidth().Gap(12).Children(func() {
-			modelChoice(c, theme, "settings-reasoning", "Thinking effort", &a.prefs.ReasoningEffort,
-				[]string{"none", "minimal", "low", "medium", "high", "xhigh", "max"})
-			modelChoice(c, theme, "settings-verbosity", "Reply detail", &a.prefs.TextVerbosity,
-				[]string{"low", "medium", "high"})
-		})
+		if a.prefs.Provider == string(model.ProviderOpenAI) {
+			ui.Row(c).FillWidth().Gap(12).Children(func() {
+				modelChoice(c, theme, "settings-reasoning", "Thinking effort", &a.prefs.ReasoningEffort,
+					[]string{"none", "minimal", "low", "medium", "high", "xhigh", "max"})
+				modelChoice(c, theme, "settings-verbosity", "Reply detail", &a.prefs.TextVerbosity,
+					[]string{"low", "medium", "high"})
+			})
+		} else {
+			ui.Text(c, "Thinking effort and reply detail are controlled by this provider's model and are not sent as unsupported settings.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		}
 		ui.Row(c).FillWidth().Gap(12).Children(func() {
 			modelChoice(c, theme, "settings-output-tokens", "Maximum reply length", &a.prefs.MaxOutputTokens,
 				[]string{"256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536"})

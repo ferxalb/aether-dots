@@ -69,6 +69,8 @@ type app struct {
 	chatScroll          ui.ScrollState
 	conversationError   string
 	apiKeyDraft         string
+	apiKeyDrafts        map[string]string
+	providerSelection   string
 	live                string
 	runningDotID        string
 	cancelRun           context.CancelFunc
@@ -77,6 +79,7 @@ type app struct {
 	credentialLoading       bool
 	credentialSaved         bool
 	credentialError         string
+	credentialProvider      string
 	settingsSaving          bool
 	modelConnection         string
 	routineSchedulerStarted bool
@@ -95,7 +98,7 @@ func Run(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	a := &app{db: db, dataDir: dataDir, prefs: prefs}
+	a := &app{db: db, dataDir: dataDir, prefs: prefs, providerSelection: providerSelectionLabel(prefs.Provider)}
 	a.refresh()
 	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.WhenReady(func() {

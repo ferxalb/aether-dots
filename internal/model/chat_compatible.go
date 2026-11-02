@@ -1,0 +1,258 @@
+package model
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"sort"
+	"strings"
+	"time"
+
+	openai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/shared"
+)
+
+const (
+	maxNativeToolCalls = 8
+	maxToolRounds      = 4
+	maxToolArguments   = 1024
+)
+
+// CompatibleGenerator uses the official OpenAI Go SDK against providers that
+// implement the Chat Completions wire format. Provider identity affects only
+// endpoint selection; the persisted chat transcript remains provider-neutral.
+type CompatibleGenerator struct {
+	Config Config
+}
+
+func (g CompatibleGenerator) Readiness() (bool, string) {
+	config := normalizeConfig(g.Config)
+	if config.Provider != ProviderOpenRouter && config.Provider != ProviderCompatible {
+		return false, "the compatible chat adapter requires OpenRouter or a custom OpenAI-compatible provider"
+	}
+	if strings.TrimSpace(config.Model) == "" {
+		return false, "model name is required"
+	}
+	if config.Provider == ProviderOpenRouter {
+		if strings.TrimSpace(config.APIKey) == "" {
+			return false, "OpenRouter API key is missing; add one in Settings or set OPENROUTER_API_KEY."
+		}
+	} else {
+		if _, err := ValidateBaseURL(config.BaseURL); err != nil {
+			return false, err.Error()
+		}
+		if strings.TrimSpace(config.APIKey) == "" && !localEndpoint(config.BaseURL) {
+			return false, "API key is required for a remote custom endpoint"
+		}
+	}
+	if config.MaxOutputTokens < 256 || config.MaxOutputTokens > 65536 {
+		return false, "maximum output tokens must be between 256 and 65536."
+	}
+	if config.MaxRetries < 0 || config.MaxRetries > 5 {
+		return false, "maximum retries must be between 0 and 5."
+	}
+	if config.Timeout < 0 {
+		return false, "model timeout must be greater than zero."
+	}
+	return true, ""
+}
+
+func (g CompatibleGenerator) Description() string {
+	name := "OpenRouter"
+	if g.Config.Provider == ProviderCompatible {
+		name = "OpenAI-compatible endpoint"
+	}
+	return name + " (" + strings.TrimSpace(g.Config.Model) + ")"
+}
+
+func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onDelta func(string)) (string, error) {
+	if ready, reason := g.Readiness(); !ready {
+		return "", errors.New(reason)
+	}
+	config := normalizeConfig(g.Config)
+	client := g.client(config)
+	messages := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage("You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and conversation context. You have no access to the user's files, folders, apps, or accounts, and cannot take actions outside this chat. AETHER provides only the explicitly listed, local read-only functions. Never claim to access other tools or perform external actions."),
+		openai.UserMessage(objective),
+	}
+	toolCallsUsed := 0
+	for round := 0; round < maxToolRounds; round++ {
+		params := openai.ChatCompletionNewParams{
+			Model:               shared.ChatModel(strings.TrimSpace(config.Model)),
+			Messages:            messages,
+			MaxCompletionTokens: param.NewOpt(config.MaxOutputTokens),
+			Tools:               nativeToolDefinitions(),
+		}
+		stream := client.Chat.Completions.NewStreaming(ctx, params)
+		var content strings.Builder
+		calls := make(map[int64]*streamedToolCall)
+		for stream.Next() {
+			chunk := stream.Current()
+			for _, choice := range chunk.Choices {
+				if len(choice.Delta.Content) > 0 {
+					content.WriteString(choice.Delta.Content)
+				}
+				for _, delta := range choice.Delta.ToolCalls {
+					call := calls[delta.Index]
+					if call == nil {
+						if len(calls) >= maxNativeToolCalls {
+							_ = stream.Close()
+							return "", errors.New("the model exceeded the 8 native function call limit")
+						}
+						call = &streamedToolCall{}
+						calls[delta.Index] = call
+					}
+					if delta.ID != "" {
+						if len(delta.ID) > 256 {
+							_ = stream.Close()
+							return "", errors.New("native function call ID exceeded the 256-byte limit")
+						}
+						call.id = delta.ID
+					}
+					call.name += delta.Function.Name
+					if len(call.name) > 64 {
+						_ = stream.Close()
+						return "", errors.New("native function name exceeded the 64-byte limit")
+					}
+					call.arguments.WriteString(delta.Function.Arguments)
+					if call.arguments.Len() > maxToolArguments {
+						_ = stream.Close()
+						return "", errors.New("native function arguments exceeded the 1 KiB limit")
+					}
+				}
+				if content.Len() > 2*1024*1024 {
+					_ = stream.Close()
+					return "", errors.New("model response exceeded the 2 MiB limit")
+				}
+			}
+		}
+		streamErr := stream.Err()
+		_ = stream.Close()
+		if streamErr != nil {
+			return "", fmt.Errorf("%s response stream: %w", providerName(config.Provider), redactProviderError(streamErr, config.APIKey))
+		}
+		if len(calls) == 0 {
+			result := strings.TrimSpace(redactProviderText(content.String(), config.APIKey))
+			if result == "" {
+				return "", fmt.Errorf("%s returned an empty response", providerName(config.Provider))
+			}
+			if onDelta != nil {
+				onDelta(result)
+			}
+			return result, nil
+		}
+		toolCallsUsed += len(calls)
+		if toolCallsUsed > maxNativeToolCalls {
+			return "", errors.New("the model exceeded the 8 native function call limit")
+		}
+		indices := make([]int64, 0, len(calls))
+		for index := range calls {
+			indices = append(indices, index)
+		}
+		sort.Slice(indices, func(i, j int) bool { return indices[i] < indices[j] })
+		assistant := openai.ChatCompletionAssistantMessageParam{}
+		if content.Len() > 0 {
+			assistant.Content.OfString = param.NewOpt(content.String())
+		}
+		for _, index := range indices {
+			call := calls[index]
+			if call.id == "" {
+				call.id = fmt.Sprintf("aether-call-%d-%d", round, index)
+			}
+			assistant.ToolCalls = append(assistant.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
+				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+					ID: call.id,
+					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+						Name: call.name, Arguments: call.arguments.String(),
+					},
+				},
+			})
+		}
+		messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &assistant})
+		for _, index := range indices {
+			call := calls[index]
+			result, err := executeNativeTool(call.name, call.arguments.String())
+			if err != nil {
+				result = "Function error: " + err.Error()
+			}
+			if len(result) > 4096 {
+				result = strings.ToValidUTF8(result[:4096], "")
+			}
+			toolMessage := openai.ChatCompletionToolMessageParam{
+				Content:    openai.ChatCompletionToolMessageParamContentUnion{OfString: param.NewOpt(result)},
+				ToolCallID: call.id,
+			}
+			messages = append(messages, openai.ChatCompletionMessageParamUnion{OfTool: &toolMessage})
+		}
+	}
+	return "", errors.New("the model exceeded the 4 native function rounds limit")
+}
+
+func (g CompatibleGenerator) Test(ctx context.Context) error {
+	text, err := g.Generate(ctx, "Reply with the exact text AETHER_OK. Do not use any functions.", nil)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(text, "AETHER_OK") {
+		return errors.New("the provider replied, but did not return the expected test marker")
+	}
+	return nil
+}
+
+type streamedToolCall struct {
+	id        string
+	name      string
+	arguments strings.Builder
+}
+
+func (g CompatibleGenerator) client(config Config) openai.Client {
+	baseURL := DefaultOpenRouterURL
+	if config.Provider == ProviderCompatible {
+		baseURL, _ = ValidateBaseURL(config.BaseURL)
+	}
+	httpClient := config.HTTPClient
+	if httpClient == nil {
+		httpClient = newProviderHTTPClient(config.Timeout)
+	}
+	options := []option.RequestOption{
+		option.WithBaseURL(baseURL),
+		option.WithHTTPClient(httpClient),
+		option.WithMaxRetries(config.MaxRetries),
+	}
+	if strings.TrimSpace(config.APIKey) != "" {
+		options = append(options, option.WithAPIKey(strings.TrimSpace(config.APIKey)))
+	}
+	if config.Provider == ProviderOpenRouter {
+		options = append(options, option.WithHeader("X-Title", "AETHER Dots"))
+	}
+	return openai.NewClient(options...)
+}
+
+func newProviderHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func localEndpoint(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && u != nil && isLoopbackHost(u.Hostname())
+}
+
+func providerName(provider ProviderID) string {
+	switch provider {
+	case ProviderOpenRouter:
+		return "OpenRouter"
+	case ProviderCompatible:
+		return "custom provider"
+	default:
+		return "OpenAI"
+	}
+}

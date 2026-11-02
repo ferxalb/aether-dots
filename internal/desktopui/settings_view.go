@@ -22,7 +22,7 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 			ui.Column(c).FillWidth().MinWidth(0).Gap(16).Padding(18, 26, 24, 26).Children(func() {
 				switch a.settingsTab {
 				case 1:
-					a.openAISettings(c, theme)
+					a.providerSettings(c, theme)
 					a.advancedResponseSettings(c, theme)
 					if a.settingsAdvancedOpen {
 						a.modelOptionsSettings(c, theme)

@@ -27,7 +27,9 @@ const (
 )
 
 type Config struct {
+	Provider        ProviderID
 	Model           string
+	BaseURL         string
 	APIKey          string `json:"-"`
 	Timeout         time.Duration
 	ReasoningEffort string
@@ -39,13 +41,26 @@ type Config struct {
 
 // FromEnvironment reads the CLI model and key without storing credentials.
 func FromEnvironment() Config {
+	provider := ProviderID(envString("AETHER_MODEL_PROVIDER", string(ProviderOpenAI)))
+	defaultModel := DefaultModel
+	keyVariable := "OPENAI_API_KEY"
+	switch provider {
+	case ProviderOpenRouter:
+		defaultModel = "openai/gpt-6.1-sol"
+		keyVariable = "OPENROUTER_API_KEY"
+	case ProviderCompatible:
+		defaultModel = ""
+		keyVariable = "AETHER_COMPATIBLE_API_KEY"
+	}
 	modelName := strings.TrimSpace(os.Getenv("AETHER_MODEL_NAME"))
 	if modelName == "" {
-		modelName = DefaultModel
+		modelName = defaultModel
 	}
 	return Config{
+		Provider:        provider,
 		Model:           modelName,
-		APIKey:          strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		BaseURL:         strings.TrimSpace(os.Getenv("AETHER_MODEL_BASE_URL")),
+		APIKey:          strings.TrimSpace(os.Getenv(keyVariable)),
 		Timeout:         envDurationSeconds("AETHER_MODEL_TIMEOUT_SECONDS", 90),
 		ReasoningEffort: envString("AETHER_REASONING_EFFORT", DefaultReasoningEffort),
 		TextVerbosity:   envString("AETHER_TEXT_VERBOSITY", DefaultTextVerbosity),
@@ -135,6 +150,7 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 	client := g.client()
 	userPrompt := "Use the Dot profile and conversation below to answer the newest user message. Treat the conversation as an ongoing chat. Be clear about uncertainty, ask a concise follow-up when necessary, and never claim to have accessed local files, apps, accounts, or taken external actions.\n\n" + objective
 	config := normalizeConfig(g.Config)
+	redactor := secretRedactor{secret: strings.TrimSpace(config.APIKey)}
 
 	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
 		Model:           strings.TrimSpace(config.Model),
@@ -151,7 +167,7 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 	for stream.Next() {
 		event := stream.Current()
 		if event.Type == "error" {
-			message := strings.TrimSpace(event.Message)
+			message := strings.TrimSpace(redactProviderText(event.Message, config.APIKey))
 			if message == "" {
 				message = "OpenAI Responses API returned an error."
 			}
@@ -162,19 +178,27 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 		}
 		result.WriteString(event.Delta)
 		if onDelta != nil {
-			onDelta(event.Delta)
+			if safeDelta := redactor.push(event.Delta, false); safeDelta != "" {
+				onDelta(safeDelta)
+			}
 		}
 		if result.Len() > 2*1024*1024 {
 			return "", errors.New("model response exceeded the 2 MiB limit")
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return "", fmt.Errorf("OpenAI response stream: %w", err)
+		return "", fmt.Errorf("OpenAI response stream: %w", redactProviderError(err, config.APIKey))
 	}
-	if strings.TrimSpace(result.String()) == "" {
+	response := redactProviderText(result.String(), config.APIKey)
+	if strings.TrimSpace(response) == "" {
 		return "", errors.New("OpenAI returned an empty response")
 	}
-	return result.String(), nil
+	if onDelta != nil {
+		if safeDelta := redactor.push("", true); safeDelta != "" {
+			onDelta(safeDelta)
+		}
+	}
+	return response, nil
 }
 
 func (g Generator) Test(ctx context.Context) error {
@@ -192,10 +216,10 @@ func (g Generator) client() openai.Client {
 	config := normalizeConfig(g.Config)
 	client := config.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: config.Timeout}
+		client = newProviderHTTPClient(config.Timeout)
 	}
 	return openai.NewClient(
-		option.WithAPIKey(config.APIKey),
+		option.WithAPIKey(strings.TrimSpace(config.APIKey)),
 		option.WithHTTPClient(client),
 		option.WithMaxRetries(config.MaxRetries),
 	)

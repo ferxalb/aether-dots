@@ -159,8 +159,8 @@ func sendCommand(db *store.Store, args []string) error {
 func runMessage(db *store.Store, id string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	generator := model.Generator{Config: model.FromEnvironment()}
-	if err := engine.Run(ctx, db, id, &generator, func(delta string) { fmt.Print(delta) }); err != nil {
+	generator := model.NewProvider(model.FromEnvironment())
+	if err := engine.Run(ctx, db, id, generator, func(delta string) { fmt.Print(delta) }); err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Println("\nReply paused. Retry the message when ready.")
 			return nil
@@ -214,11 +214,12 @@ func modelCommand(args []string) error {
 		return errors.New("usage: aether model test")
 	}
 	config := model.FromEnvironment()
-	fmt.Printf("Testing OpenAI Responses API with model %s (reasoning %s, verbosity %s, max output %d tokens, retries %d) using OPENAI_API_KEY…\n",
-		config.Model, config.ReasoningEffort, config.TextVerbosity, config.MaxOutputTokens, config.MaxRetries)
+	provider := model.NewProvider(config)
+	fmt.Printf("Testing %s (max output %d tokens, retries %d)…\n",
+		provider.Description(), config.MaxOutputTokens, config.MaxRetries)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := (model.Generator{Config: config}).Test(ctx); err != nil {
+	if err := provider.Test(ctx); err != nil {
 		return err
 	}
 	fmt.Println("Model test passed.")
@@ -247,7 +248,7 @@ Commands:
   inspect <dot-id>             Show a Dot profile and chat history
   run <message-id>              Retry a saved message
   spaces [list|create|rename]  Manage Spaces
-  model test                   Test the OpenAI connection
+  model test                   Test the selected model provider
   skills [list|create|update|inspect|delete]  Manage reusable playbooks
   routines [list|create|update|pause|resume|test|inspect|delete|serve]  Manage schedules
 
@@ -261,12 +262,17 @@ Profile options:
 
 Dot replies use profile and chat context. The CLI does not read or write
 user-selected files or folders. Select a saved playbook in chat with
-@skill[Skill name]. Set OPENAI_API_KEY for CLI model access.
+@skill[Skill name]. Choose a provider with AETHER_MODEL_PROVIDER.
 
 Model settings (environment):
-  AETHER_MODEL_NAME                model ID (default: gpt-6.1-sol)
-  AETHER_REASONING_EFFORT          none|minimal|low|medium|high|xhigh|max
-  AETHER_TEXT_VERBOSITY            low|medium|high
+  AETHER_MODEL_PROVIDER           openai|openrouter|openai-compatible (default: openai)
+  AETHER_MODEL_NAME                model ID (defaults per provider)
+  AETHER_MODEL_BASE_URL            custom OpenAI-compatible endpoint base URL
+  OPENAI_API_KEY                   OpenAI credential
+  OPENROUTER_API_KEY               OpenRouter credential
+  AETHER_COMPATIBLE_API_KEY        custom endpoint credential (optional on localhost)
+  AETHER_REASONING_EFFORT          none|minimal|low|medium|high|xhigh|max (OpenAI only)
+  AETHER_TEXT_VERBOSITY            low|medium|high (OpenAI only)
   AETHER_MAX_OUTPUT_TOKENS         256–65536 (default: 8192)
   AETHER_MAX_RETRIES               0–5 (default: 2)
   AETHER_MODEL_TIMEOUT_SECONDS     request timeout (default: 90)

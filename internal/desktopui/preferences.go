@@ -14,26 +14,34 @@ import (
 )
 
 const (
-	preferencesFile = "preferences.json"
-	openAIKeyName   = "openai-api-key"
-	openAIService   = "com.aetherdots.desktop"
+	preferencesFile   = "preferences.json"
+	openAIKeyName     = "openai-api-key"
+	openRouterKeyName = "openrouter-api-key"
+	compatibleKeyName = "compatible-api-key"
+	openAIService     = "com.aetherdots.desktop"
 )
 
 type preferences struct {
-	Model           string `json:"model"`
-	ReasoningEffort string `json:"reasoning_effort"`
-	TextVerbosity   string `json:"text_verbosity"`
-	MaxOutputTokens string `json:"max_output_tokens"`
-	MaxRetries      string `json:"max_retries"`
-	TimeoutSeconds  string `json:"timeout_seconds"`
-	Appearance      string `json:"appearance"`
-	Palette         string `json:"palette"`
+	Provider          string `json:"provider"`
+	Model             string `json:"model"`
+	OpenRouterModel   string `json:"openrouter_model"`
+	CompatibleModel   string `json:"compatible_model"`
+	CompatibleBaseURL string `json:"compatible_base_url"`
+	ReasoningEffort   string `json:"reasoning_effort"`
+	TextVerbosity     string `json:"text_verbosity"`
+	MaxOutputTokens   string `json:"max_output_tokens"`
+	MaxRetries        string `json:"max_retries"`
+	TimeoutSeconds    string `json:"timeout_seconds"`
+	Appearance        string `json:"appearance"`
+	Palette           string `json:"palette"`
 }
 
 func defaultPreferences() preferences {
 	config := model.FromEnvironment()
 	current := preferences{
-		Model:           config.Model,
+		Provider:        string(model.ProviderOpenAI),
+		Model:           model.DefaultModel,
+		OpenRouterModel: "openai/gpt-6.1-sol",
 		ReasoningEffort: model.DefaultReasoningEffort,
 		TextVerbosity:   model.DefaultTextVerbosity,
 		MaxOutputTokens: strconv.FormatInt(model.DefaultMaxOutputTokens, 10),
@@ -41,6 +49,9 @@ func defaultPreferences() preferences {
 		TimeoutSeconds:  "90",
 		Appearance:      "System",
 		Palette:         "obsidian",
+	}
+	if modelName := strings.TrimSpace(os.Getenv("AETHER_MODEL_NAME")); modelName != "" {
+		current.Model = modelName
 	}
 	if validReasoningEffort(config.ReasoningEffort) {
 		current.ReasoningEffort = config.ReasoningEffort
@@ -78,6 +89,12 @@ func loadPreferences(dataDir string) (preferences, error) {
 	if strings.TrimSpace(current.Model) == "" {
 		current.Model = model.DefaultModel
 	}
+	if !validProvider(current.Provider) {
+		current.Provider = string(model.ProviderOpenAI)
+	}
+	if strings.TrimSpace(current.OpenRouterModel) == "" {
+		current.OpenRouterModel = "openai/gpt-6.1-sol"
+	}
 	if !validReasoningEffort(current.ReasoningEffort) {
 		current.ReasoningEffort = model.DefaultReasoningEffort
 	}
@@ -103,9 +120,19 @@ func loadPreferences(dataDir string) (preferences, error) {
 }
 
 func savePreferences(dataDir string, current preferences) error {
-	current.Model = strings.TrimSpace(current.Model)
-	if current.Model == "" {
-		return errors.New("OpenAI model name is required")
+	if !validProvider(current.Provider) {
+		return errors.New("model provider is not supported")
+	}
+	if selected := current.selectedModel(); strings.TrimSpace(*selected) == "" {
+		return errors.New("model name is required")
+	}
+	*current.selectedModel() = strings.TrimSpace(*current.selectedModel())
+	if current.Provider == string(model.ProviderCompatible) {
+		endpoint, err := model.ValidateBaseURL(current.CompatibleBaseURL)
+		if err != nil {
+			return err
+		}
+		current.CompatibleBaseURL = endpoint
 	}
 	if !validReasoningEffort(current.ReasoningEffort) || !validTextVerbosity(current.TextVerbosity) ||
 		!validOutputTokens(current.MaxOutputTokens) || !validRetryCount(current.MaxRetries) || !validTimeout(current.TimeoutSeconds) {
@@ -143,6 +170,26 @@ func savePreferences(dataDir string, current preferences) error {
 		return fmt.Errorf("replace settings: %w", err)
 	}
 	return nil
+}
+
+func (p *preferences) selectedModel() *string {
+	switch p.Provider {
+	case string(model.ProviderOpenRouter):
+		return &p.OpenRouterModel
+	case string(model.ProviderCompatible):
+		return &p.CompatibleModel
+	default:
+		return &p.Model
+	}
+}
+
+func validProvider(provider string) bool {
+	switch provider {
+	case string(model.ProviderOpenAI), string(model.ProviderOpenRouter), string(model.ProviderCompatible):
+		return true
+	default:
+		return false
+	}
 }
 
 func validReasoningEffort(value string) bool {

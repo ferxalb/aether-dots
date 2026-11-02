@@ -28,8 +28,8 @@ func (a *app) startRun(id string) {
 	win := a.win
 	prefs := a.prefs
 	go func() {
-		generator := openAIGeneratorWithPreferences(prefs)
-		err := engine.RunWithProgress(ctx, a.db, id, &generator, func(delta string) {
+		generator := generatorForPreferences(prefs)
+		err := engine.RunWithProgress(ctx, a.db, id, generator, func(delta string) {
 			if win != nil {
 				win.Update(func() {
 					if a.runningDotID == id {
