@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown"
 
 	"aether-dots/internal/model"
 	"aether-dots/internal/store"
@@ -73,12 +74,16 @@ type app struct {
 	apiKeyDrafts        map[string]string
 	providerSelection   string
 
-	openRouterCatalog        []model.OpenRouterModel
-	openRouterSearch         string
-	openRouterCatalogError   string
-	openRouterCatalogLoading bool
-	openRouterCatalogLoaded  bool
-	openRouterCatalogRequest uint64
+	openRouterCatalog         []model.OpenRouterModel
+	openRouterSearch          string
+	openRouterCatalogError    string
+	openRouterCatalogLoading  bool
+	openRouterCatalogLoaded   bool
+	openRouterCatalogRequest  uint64
+	openRouterModelPickerOpen bool
+	openRouterModelDraft      string
+	openRouterModelList       ui.ListState
+	markdownOptions           *markdown.Options
 
 	live         string
 	runningDotID string

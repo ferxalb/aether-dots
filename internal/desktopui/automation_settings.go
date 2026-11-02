@@ -321,47 +321,16 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 }
 
 func conversationChoice(c *ui.Context, theme *ui.Theme, a *app) {
-	selectConversation := ui.SelectBase(c.Key("routine-dot"), &a.routineDotDraft)
-	selectConversation.Trigger.FillWidth().MinWidth(0).Padding(8, 10).Radius(9).
-		Background(theme.Background).Border(1, theme.Border).Children(func() {
-		name := "Choose a Dot"
-		if conversation, ok := findConversation(a.snapshot, a.routineDotDraft); ok {
-			name = conversation.Name
-		}
-		ui.Text(c, name).FontSize(12).FillWidth().SingleLine()
-		ui.Text(c, "⌄").FontSize(12).TextColor(theme.TextMuted)
-	})
-	selectConversation.Popup(func(panel ui.Element) {
-		panel.Padding(4).Radius(10).Background(theme.Surface).Border(1, theme.Border).
-			Shadow(0, 5, 16, 0, ui.RGBA(0, 0, 0, 0.22))
-		for _, conversation := range a.snapshot.Conversations {
-			item := selectConversation.Item(conversation.ID).FillWidth().Padding(9, 10).Radius(7)
-			if item.Highlighted() || conversation.ID == a.routineDotDraft {
-				item.Background(theme.Accent.Alpha(0.16)).TextColor(theme.Text)
-			}
-			item.Children(func() { ui.Text(c, conversation.Name).FontSize(12) })
-		}
-	})
+	options := make([]dropdownOption, 0, len(a.snapshot.Conversations))
+	for _, conversation := range a.snapshot.Conversations {
+		options = append(options, dropdownOption{value: conversation.ID, label: conversation.Name})
+	}
+	dropdownSelect(c, theme, "routine-dot", "Choose a Dot", &a.routineDotDraft, options, false)
 }
 
 func routineFrequencyChoice(c *ui.Context, theme *ui.Theme, a *app) {
-	selectFrequency := ui.SelectBase(c.Key("routine-every"), &a.routineEveryDraft)
-	selectFrequency.Trigger.FillWidth().MinWidth(0).Padding(8, 10).Radius(9).
-		Background(theme.Background).Border(1, theme.Border).Children(func() {
-		ui.Text(c, routineFrequencyLabel(a.routineEveryDraft)).FontSize(12).FillWidth().SingleLine()
-		ui.Text(c, "⌄").FontSize(12).TextColor(theme.TextMuted)
-	})
-	selectFrequency.Popup(func(panel ui.Element) {
-		panel.Padding(4).Radius(10).Background(theme.Surface).Border(1, theme.Border).
-			Shadow(0, 5, 16, 0, ui.RGBA(0, 0, 0, 0.22))
-		for _, value := range []string{"5m", "15m", "30m", "1h", "4h", "8h", "12h", "24h", "custom"} {
-			item := selectFrequency.Item(value).FillWidth().Padding(9, 10).Radius(7)
-			if item.Highlighted() || value == a.routineEveryDraft {
-				item.Background(theme.Accent.Alpha(0.16)).TextColor(theme.Text)
-			}
-			item.Children(func() { ui.Text(c, routineFrequencyLabel(value)).FontSize(12) })
-		}
-	})
+	dropdownSelect(c, theme, "routine-every", "Routine interval", &a.routineEveryDraft,
+		stringDropdownOptions([]string{"5m", "15m", "30m", "1h", "4h", "8h", "12h", "24h", "custom"}, routineFrequencyLabel), false)
 }
 
 func routineFrequencyLabel(value string) string {

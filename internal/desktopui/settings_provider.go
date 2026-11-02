@@ -32,8 +32,9 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 		})
 		ui.Divider(c)
 		ui.Field(c, "Provider", func() {
-			selector := ui.Select(c.Key("settings-provider-select"), &a.providerSelection, []string{"OpenAI", "OpenRouter", "Custom OpenAI-compatible"}).
-				Label("AI provider").FillWidth().Disabled(a.settingsSaving || a.modelConnection == "Checking…")
+			selector := dropdownSelect(c, theme, "settings-provider-select", "AI provider", &a.providerSelection,
+				stringDropdownOptions([]string{"OpenAI", "OpenRouter", "Custom OpenAI-compatible"}, nil),
+				a.settingsSaving || a.modelConnection == "Checking…")
 			if selector.Changed() {
 				a.switchProvider(providerFromSelection(a.providerSelection))
 			}
@@ -110,6 +111,9 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 			}
 		})
 	})
+	if a.prefs.Provider == string(model.ProviderOpenRouter) {
+		a.openRouterModelPickerModal(c, theme, modelName)
+	}
 }
 
 func providerFromSelection(selection string) string {

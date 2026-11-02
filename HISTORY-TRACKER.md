@@ -6,6 +6,25 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (17) — OpenRouter model dialog and streamed Markdown chat
+
+### Session objective
+
+Improve OpenRouter model selection and shared dropdown styling, stream responses in the chat, and render Markdown efficiently as replies arrive.
+
+### Implementation
+
+- Moved OpenRouter catalog search and model selection into a keyboard-accessible MyGo modal. All catalog matches remain searchable and are rendered in a virtualized list; users can still enter an exact model ID.
+- Added one shared `SelectBase` dropdown component and moved provider, appearance, profile, routine, and response-option selectors onto it.
+- Streamed OpenRouter and custom-compatible Chat Completions text deltas from the official OpenAI Go SDK adapter as they arrive. Kept streamed API keys redacted across chunk boundaries and capped cumulative response output at 2 MiB.
+- Batched live UI updates at 25 frames per second and used MyGo's incremental Markdown `Stream`/`View` widgets with stable assistant row identities. Saved replies now display the full bounded response as Markdown.
+- Updated README documentation for the model dialog, stream behavior, and Markdown rendering.
+
+### Verification
+
+- `gofmt`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed.
+- Automated tests were not run. No live provider request or native window preview was made; streamed runtime behavior and visual layout remain unverified against a configured provider/window.
+
 ## 2026-11-01 (16) — Provider defaults and OpenRouter model discovery
 
 ### Session objective

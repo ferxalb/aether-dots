@@ -79,6 +79,8 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 		openai.SystemMessage(compatibleSystemInstructions(config.DisableNativeTools)),
 		openai.UserMessage(objective),
 	}
+	var result strings.Builder
+	redactor := secretRedactor{secret: strings.TrimSpace(config.APIKey)}
 	toolCallsUsed := 0
 	for round := 0; round < maxToolRounds; round++ {
 		params := openai.ChatCompletionNewParams{
@@ -99,6 +101,12 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 			for _, choice := range chunk.Choices {
 				if len(choice.Delta.Content) > 0 {
 					content.WriteString(choice.Delta.Content)
+					result.WriteString(choice.Delta.Content)
+					if onDelta != nil {
+						if safeDelta := redactor.push(choice.Delta.Content, false); safeDelta != "" {
+							onDelta(safeDelta)
+						}
+					}
 				}
 				for _, delta := range choice.Delta.ToolCalls {
 					call := calls[delta.Index]
@@ -128,7 +136,7 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 						return "", errors.New("native function arguments exceeded the 1 KiB limit")
 					}
 				}
-				if content.Len() > 2*1024*1024 {
+				if result.Len() > 2*1024*1024 {
 					_ = stream.Close()
 					return "", errors.New("model response exceeded the 2 MiB limit")
 				}
@@ -140,14 +148,16 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 			return "", fmt.Errorf("%s response stream: %w", providerName(config.Provider), redactProviderError(streamErr, config.APIKey))
 		}
 		if len(calls) == 0 {
-			result := strings.TrimSpace(redactProviderText(content.String(), config.APIKey))
-			if result == "" {
+			response := strings.TrimSpace(redactProviderText(result.String(), config.APIKey))
+			if response == "" {
 				return "", fmt.Errorf("%s returned an empty response", providerName(config.Provider))
 			}
 			if onDelta != nil {
-				onDelta(result)
+				if safeDelta := redactor.push("", true); safeDelta != "" {
+					onDelta(safeDelta)
+				}
 			}
-			return result, nil
+			return response, nil
 		}
 		if config.DisableNativeTools {
 			return "", errors.New("the selected model returned a function call even though functions are disabled for this model")
@@ -163,7 +173,7 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 		sort.Slice(indices, func(i, j int) bool { return indices[i] < indices[j] })
 		assistant := openai.ChatCompletionAssistantMessageParam{}
 		if content.Len() > 0 {
-			assistant.Content.OfString = param.NewOpt(content.String())
+			assistant.Content.OfString = param.NewOpt(redactProviderText(content.String(), config.APIKey))
 		}
 		for _, index := range indices {
 			call := calls[index]

@@ -2,8 +2,11 @@ package desktopui
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"aether-dots/internal/engine"
+	"github.com/egoist/mygo"
 )
 
 func (a *app) startRun(id string) {
@@ -29,13 +32,16 @@ func (a *app) startRun(id string) {
 	prefs := a.prefs
 	go func() {
 		generator := generatorForPreferences(prefs)
+		var deltas chan string
+		var deltasDone chan struct{}
+		if win != nil {
+			deltas = make(chan string, 128)
+			deltasDone = make(chan struct{})
+			go collectRunDeltas(win, a, id, deltas, deltasDone)
+		}
 		err := engine.RunWithProgress(ctx, a.db, id, generator, func(delta string) {
-			if win != nil {
-				win.Update(func() {
-					if a.runningDotID == id {
-						a.live = tail(a.live+delta, 6000)
-					}
-				})
+			if deltas != nil {
+				deltas <- delta
 			}
 		}, func() {
 			if win != nil {
@@ -46,6 +52,10 @@ func (a *app) startRun(id string) {
 				})
 			}
 		})
+		if deltas != nil {
+			close(deltas)
+			<-deltasDone
+		}
 		cancel()
 		finish := func() {
 			a.cancelRun = nil
@@ -76,4 +86,36 @@ func (a *app) startRun(id string) {
 		}
 		win.Update(finish)
 	}()
+}
+
+func collectRunDeltas(win *mygo.Window, a *app, id string, deltas <-chan string, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(40 * time.Millisecond)
+	defer ticker.Stop()
+	var streamed strings.Builder
+	lastPublished := 0
+	publish := func() {
+		if streamed.Len() == lastPublished {
+			return
+		}
+		snapshot := streamed.String()
+		lastPublished = len(snapshot)
+		win.Update(func() {
+			if a.runningDotID == id {
+				a.live = snapshot
+			}
+		})
+	}
+	for {
+		select {
+		case delta, ok := <-deltas:
+			if !ok {
+				publish()
+				return
+			}
+			streamed.WriteString(delta)
+		case <-ticker.C:
+			publish()
+		}
+	}
 }

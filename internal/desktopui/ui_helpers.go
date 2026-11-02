@@ -57,13 +57,6 @@ func humanStatus(status task.Status) string {
 	return strings.ReplaceAll(string(status), "_", " ")
 }
 
-func tail(value string, max int) string {
-	if len(value) <= max {
-		return value
-	}
-	return "…" + value[len(value)-max+1:]
-}
-
 func errorsIsCanceled(err error) bool {
 	return err == context.Canceled
 }

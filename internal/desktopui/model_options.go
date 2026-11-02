@@ -44,24 +44,8 @@ func modelChoice(c *ui.Context, theme *ui.Theme, key, label string, value *strin
 	field := ui.Column(c).Grow(1).FillWidth().MinWidth(0).Gap(5)
 	field.Children(func() {
 		ui.Text(c, label).FontSize(11).Bold()
-		selectOption := ui.SelectBase(c.Key(key), value)
-		selectOption.Trigger.FillWidth().MinWidth(0).Padding(8, 10).Radius(9).
-			Background(theme.Background).Border(1, theme.Border).
-			Children(func() {
-				ui.Text(c, modelChoiceLabel(key, *value)).FontSize(12).FillWidth().SingleLine()
-				ui.Text(c, "⌄").FontSize(12).TextColor(theme.TextMuted)
-			})
-		selectOption.Popup(func(panel ui.Element) {
-			panel.Padding(4).Radius(10).Background(theme.Surface).Border(1, theme.Border).
-				Shadow(0, 5, 16, 0, ui.RGBA(0, 0, 0, 0.22))
-			for _, option := range options {
-				item := selectOption.Item(option).FillWidth().Padding(9, 10).Radius(7)
-				if item.Highlighted() || option == *value {
-					item.Background(theme.Accent.Alpha(0.16)).TextColor(theme.Text)
-				}
-				item.Children(func() { ui.Text(c, modelChoiceLabel(key, option)).FontSize(12) })
-			}
-		})
+		dropdownSelect(c, theme, key, label, value,
+			stringDropdownOptions(options, func(option string) string { return modelChoiceLabel(key, option) }), false)
 	})
 }
 

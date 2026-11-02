@@ -6,6 +6,7 @@ import (
 
 	"aether-dots/internal/task"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown"
 )
 
 func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
@@ -19,6 +20,12 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 	for _, dot := range dots {
 		dotsByID[dot.ID] = dot
 	}
+	assistantReplies := make(map[string]bool, len(conversation.Messages))
+	for _, message := range conversation.Messages {
+		if message.Role == "assistant" {
+			assistantReplies[message.DotID] = true
+		}
+	}
 
 	ui.Column(c).Grow(1).FillWidth().MinWidth(0).MinHeight(0).Children(func() {
 		feed := ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).TrackScroll(&a.chatScroll)
@@ -30,8 +37,8 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 			ui.Column(c).FillWidth().MinWidth(0).Gap(14).Padding(20, 24, 24, 24).Children(func() {
 				for _, message := range conversation.Messages {
 					conversationMessage(c, theme, a, conversation, message, dotsByID)
-					if message.Role == "user" && message.DotID == a.runningDotID && a.live != "" {
-						liveReplyBubble(c, theme, conversation, a.live)
+					if message.Role == "user" && message.DotID == a.runningDotID && a.live != "" && !assistantReplies[message.DotID] {
+						liveReplyBubble(c, theme, a, conversation, message.DotID, a.live)
 					}
 				}
 			})
@@ -64,12 +71,18 @@ func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation ta
 	}
 	dot := dots[message.DotID]
 	isUser := message.Role == "user"
-	row := ui.Row(c.Key("message-row-" + message.ID)).FillWidth().AlignItems(ui.Start)
+	rowKey := "message-row-" + message.ID
+	bubbleKey := "message-bubble-" + message.ID
+	if !isUser && dot.ID != "" {
+		rowKey = "assistant-reply-row-" + dot.ID
+		bubbleKey = "assistant-reply-bubble-" + dot.ID
+	}
+	row := ui.Row(c.Key(rowKey)).FillWidth().AlignItems(ui.Start)
 	row.Children(func() {
 		if isUser {
 			ui.Spacer(c)
 		}
-		bubble := ui.Column(c.Key("message-bubble-"+message.ID)).MaxWidth(720).MinWidth(0).
+		bubble := ui.Column(c.Key(bubbleKey)).MaxWidth(720).MinWidth(0).
 			Gap(7).Padding(12, 15).Radius(16)
 		if isUser {
 			bubble.Background(theme.Accent).TextColor(theme.AccentText)
@@ -83,10 +96,10 @@ func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation ta
 					ui.Text(c, conversation.Name).FontSize(10).Bold().TextColor(theme.TextMuted)
 				})
 			}
-			content, truncated := boundedConversationPreview(message.Content, 12000)
-			ui.Text(c, content).FontSize(13).FillWidth()
-			if truncated {
-				ui.Text(c, "Response preview limited to 12,000 bytes.").FontSize(10).TextColor(theme.TextMuted)
+			if isUser {
+				ui.Text(c, message.Content).FontSize(13).FillWidth()
+			} else {
+				markdown.View(c, message.Content, a.markdownDisplayOptions()).FillWidth()
 			}
 		})
 		if !isUser {
@@ -98,21 +111,30 @@ func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation ta
 	}
 }
 
-func liveReplyBubble(c *ui.Context, theme *ui.Theme, conversation task.Conversation, draft string) {
-	row := ui.Row(c.Key("live-reply-row-" + conversation.ID)).FillWidth().AlignItems(ui.Start)
+func liveReplyBubble(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conversation, dotID, draft string) {
+	row := ui.Row(c.Key("assistant-reply-row-" + dotID)).FillWidth().AlignItems(ui.Start)
 	row.Children(func() {
-		bubble := ui.Column(c.Key("live-reply-bubble-"+conversation.ID)).MaxWidth(720).MinWidth(0).
+		bubble := ui.Column(c.Key("assistant-reply-bubble-"+dotID)).MaxWidth(720).MinWidth(0).
 			Gap(7).Padding(12, 15).Radius(16).Background(theme.Surface).Border(1, theme.Border)
 		bubble.Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
 				profileAvatarForConversation(c, conversation, 20)
 				ui.Text(c, conversation.Name+" is replying").FontSize(10).Bold().TextColor(theme.TextMuted)
 			})
-			preview, _ := boundedConversationPreview(draft, 12000)
-			ui.Text(c, preview).FontSize(13).FillWidth()
+			markdown.Stream(c, draft, a.markdownDisplayOptions()).FillWidth()
 		})
 		ui.Spacer(c)
 	})
+}
+
+func (a *app) markdownDisplayOptions() *markdown.Options {
+	if a.markdownOptions == nil {
+		a.markdownOptions = &markdown.Options{
+			WrapCode: true,
+			Reveal:   &markdown.Reveal{Unit: markdown.ByWord, Fade: -1},
+		}
+	}
+	return a.markdownOptions
 }
 
 func conversationRunActivity(c *ui.Context, theme *ui.Theme, a *app, dot task.Dot, messageID string) {

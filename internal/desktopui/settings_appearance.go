@@ -12,8 +12,8 @@ func (a *app) appearanceSettings(c *ui.Context, theme *ui.Theme) {
 				ui.Text(c, "Choose a light or dark look and an accent color.").FontSize(12).TextColor(theme.TextMuted)
 			})
 			ui.Spacer(c)
-			ui.Select(c.Key("settings-appearance"), &a.prefs.Appearance, []string{"System", "Light", "Dark"}).Width(220).
-				Disabled(a.settingsSaving)
+			dropdownSelect(c, theme, "settings-appearance", "Appearance", &a.prefs.Appearance,
+				stringDropdownOptions([]string{"System", "Light", "Dark"}, nil), a.settingsSaving).Width(220)
 		})
 		ui.Divider(c)
 		ui.Column(c).Gap(9).Children(func() {

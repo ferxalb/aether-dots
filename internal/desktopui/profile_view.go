@@ -186,24 +186,11 @@ func profileAvatarForConversation(c *ui.Context, conversation task.Conversation,
 }
 
 func profileSpaceSelect(c *ui.Context, theme *ui.Theme, a *app) {
-	selectSpace := ui.SelectBase(c.Key("profile-space"), &a.profileSpaceID)
-	selectSpace.Trigger.FillWidth().Padding(8, 10).Gap(8).Radius(9).
-		Background(theme.Surface).Border(1, theme.Border).Label("Space").
-		Children(func() {
-			ui.Text(c, selectedSpaceName(a.snapshot, a.profileSpaceID)).FontSize(12).FillWidth().SingleLine()
-			ui.Text(c, "⌄").FontSize(12).TextColor(theme.TextMuted)
-		})
-	selectSpace.Popup(func(panel ui.Element) {
-		panel.Padding(4).Radius(10).Background(theme.Surface).Border(1, theme.Border).
-			Shadow(0, 5, 16, 0, ui.RGBA(0, 0, 0, 0.22))
-		for _, space := range a.snapshot.Spaces {
-			item := selectSpace.Item(space.ID).FillWidth().Padding(9, 10).Radius(7)
-			if item.Highlighted() {
-				item.Background(theme.Accent.Alpha(0.16)).TextColor(theme.Text)
-			}
-			item.Children(func() { ui.Text(c, space.Name).FontSize(12) })
-		}
-	})
+	options := make([]dropdownOption, 0, len(a.snapshot.Spaces))
+	for _, space := range a.snapshot.Spaces {
+		options = append(options, dropdownOption{value: space.ID, label: space.Name})
+	}
+	dropdownSelect(c, theme, "profile-space", "Space", &a.profileSpaceID, options, false)
 }
 
 func (a *app) workspaceWelcomeView(c *ui.Context, theme *ui.Theme) {
