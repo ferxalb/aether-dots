@@ -49,14 +49,18 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 				}
 			})
 		}
-		ui.Field(c, "Model", func() {
-			field := ui.TextInput(c.Key("settings-provider-model-"+a.prefs.Provider), modelName).
-				Placeholder(providerModelPlaceholder(a.prefs.Provider)).FillWidth().Label(providerName + " model").
-				ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
-			if field.Changed() {
-				a.modelConnection = "Not tested"
-			}
-		})
+		if a.prefs.Provider == string(model.ProviderOpenRouter) {
+			a.openRouterModelSettings(c, theme, modelName)
+		} else {
+			ui.Field(c, "Model", func() {
+				field := ui.TextInput(c.Key("settings-provider-model-"+a.prefs.Provider), modelName).
+					Placeholder(providerModelPlaceholder(a.prefs.Provider)).FillWidth().Label(providerName + " model").
+					ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
+				if field.Changed() {
+					a.modelConnection = "Not tested"
+				}
+			})
+		}
 		ui.Field(c, "API key", func() {
 			field := ui.TextInput(c.Key("settings-provider-key-"+a.prefs.Provider), &a.apiKeyDraft).
 				Placeholder(apiKeyPlaceholder(a.credentialSaved)).FillWidth().Label(providerKeyLabel(a.prefs.Provider)).
@@ -78,6 +82,12 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 			ui.Text(c, "Your data and privacy").FontSize(11).Bold()
 			ui.Text(c, providerPrivacyDescription(a.prefs.Provider)).
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			if a.prefs.Provider == string(model.ProviderOpenRouter) {
+				if selected, ok := a.selectedOpenRouterModel(); ok && !selected.SupportsTools {
+					ui.Text(c, "The selected model does not declare native function support, so AETHER omits the function definitions for it.").
+						FontSize(11).TextColor(theme.TextMuted).FillWidth()
+				}
+			}
 			ui.Text(c, "API keys are stored in the system credential store and are never written to preferences, Dot data, or logs.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		})
@@ -127,7 +137,7 @@ func providerSelectionLabel(provider string) string {
 func providerModelPlaceholder(provider string) string {
 	switch model.ProviderID(provider) {
 	case model.ProviderOpenRouter:
-		return "openai/gpt-6.1-sol"
+		return "Select from the live catalog or enter an OpenRouter model ID"
 	case model.ProviderCompatible:
 		return "Model name supported by your endpoint"
 	default:
@@ -149,11 +159,11 @@ func providerKeyLabel(provider string) string {
 func providerPrivacyDescription(provider string) string {
 	switch model.ProviderID(provider) {
 	case model.ProviderOpenRouter:
-		return "AETHER sends your message, Dot profile, recent conversation context, and any named skill to OpenRouter, which routes the request to the selected model provider. The model can request only AETHER's local time and calculator functions."
+		return "AETHER sends your message, Dot profile, saved chat history, and any named skill to OpenRouter, which routes the request to the selected model provider. The picker uses model metadata to omit native functions when a model reports that it does not support them."
 	case model.ProviderCompatible:
-		return "AETHER sends your message, Dot profile, recent conversation context, and any named skill to the endpoint you configure. The model can request only AETHER's local time and calculator functions."
+		return "AETHER sends your message, Dot profile, saved chat history, and any named skill to the endpoint you configure. The model can request only AETHER's local time and calculator functions if your endpoint supports them."
 	default:
-		return "AETHER sends your message, Dot profile, recent conversation context, and any named skill to OpenAI. Dots can't access files, folders, or other apps. AETHER asks the Responses API not to store a separate copy of each reply."
+		return "AETHER sends your message, Dot profile, saved chat history, and any named skill to OpenAI. Dots can't access files, folders, or other apps. AETHER asks the Responses API not to store a separate copy of each reply."
 	}
 }
 

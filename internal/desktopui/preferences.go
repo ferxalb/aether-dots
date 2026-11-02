@@ -22,18 +22,23 @@ const (
 )
 
 type preferences struct {
-	Provider          string `json:"provider"`
-	Model             string `json:"model"`
-	OpenRouterModel   string `json:"openrouter_model"`
-	CompatibleModel   string `json:"compatible_model"`
-	CompatibleBaseURL string `json:"compatible_base_url"`
-	ReasoningEffort   string `json:"reasoning_effort"`
-	TextVerbosity     string `json:"text_verbosity"`
-	MaxOutputTokens   string `json:"max_output_tokens"`
-	MaxRetries        string `json:"max_retries"`
-	TimeoutSeconds    string `json:"timeout_seconds"`
-	Appearance        string `json:"appearance"`
-	Palette           string `json:"palette"`
+	Provider                     string `json:"provider"`
+	Model                        string `json:"model"`
+	OpenRouterModel              string `json:"openrouter_model"`
+	OpenRouterModelSet           bool   `json:"openrouter_model_set,omitempty"`
+	OpenRouterCatalogModel       string `json:"openrouter_catalog_model,omitempty"`
+	OpenRouterModelContextLength int64  `json:"openrouter_model_context_length,omitempty"`
+	OpenRouterModelSupportsTools bool   `json:"openrouter_model_supports_tools,omitempty"`
+	CompatibleModel              string `json:"compatible_model"`
+	CompatibleBaseURL            string `json:"compatible_base_url"`
+	ReasoningEffort              string `json:"reasoning_effort"`
+	TextVerbosity                string `json:"text_verbosity"`
+	MaxOutputTokens              string `json:"max_output_tokens"`
+	MaxOutputTokensSet           bool   `json:"max_output_tokens_set,omitempty"`
+	MaxRetries                   string `json:"max_retries"`
+	TimeoutSeconds               string `json:"timeout_seconds"`
+	Appearance                   string `json:"appearance"`
+	Palette                      string `json:"palette"`
 }
 
 func defaultPreferences() preferences {
@@ -41,10 +46,8 @@ func defaultPreferences() preferences {
 	current := preferences{
 		Provider:        string(model.ProviderOpenAI),
 		Model:           model.DefaultModel,
-		OpenRouterModel: "openai/gpt-6.1-sol",
 		ReasoningEffort: model.DefaultReasoningEffort,
 		TextVerbosity:   model.DefaultTextVerbosity,
-		MaxOutputTokens: strconv.FormatInt(model.DefaultMaxOutputTokens, 10),
 		MaxRetries:      strconv.Itoa(model.DefaultMaxRetries),
 		TimeoutSeconds:  "90",
 		Appearance:      "System",
@@ -59,8 +62,9 @@ func defaultPreferences() preferences {
 	if validTextVerbosity(config.TextVerbosity) {
 		current.TextVerbosity = config.TextVerbosity
 	}
-	if validOutputTokens(strconv.FormatInt(config.MaxOutputTokens, 10)) {
+	if config.MaxOutputTokens > 0 && validOutputTokens(strconv.FormatInt(config.MaxOutputTokens, 10)) {
 		current.MaxOutputTokens = strconv.FormatInt(config.MaxOutputTokens, 10)
+		current.MaxOutputTokensSet = true
 	}
 	if config.MaxRetries >= 0 && config.MaxRetries <= 5 {
 		current.MaxRetries = strconv.Itoa(config.MaxRetries)
@@ -83,17 +87,46 @@ func loadPreferences(dataDir string) (preferences, error) {
 	if err != nil {
 		return preferences{}, fmt.Errorf("read settings: %w", err)
 	}
+	var persisted struct {
+		MaxOutputTokens    *string `json:"max_output_tokens"`
+		MaxOutputTokensSet *bool   `json:"max_output_tokens_set"`
+		OpenRouterModel    *string `json:"openrouter_model"`
+		OpenRouterModelSet *bool   `json:"openrouter_model_set"`
+	}
+	if err := json.Unmarshal(b, &persisted); err != nil {
+		return preferences{}, fmt.Errorf("decode settings: %w", err)
+	}
 	if err := json.Unmarshal(b, &current); err != nil {
 		return preferences{}, fmt.Errorf("decode settings: %w", err)
+	}
+	if persisted.MaxOutputTokens != nil {
+		if persisted.MaxOutputTokensSet == nil && *persisted.MaxOutputTokens == "8192" {
+			// 8192 was the previous app default. Migrate that implicit cap to the
+			// provider/model default; a newly chosen 8192 limit is marked explicit.
+			current.MaxOutputTokens = ""
+			current.MaxOutputTokensSet = false
+		} else if persisted.MaxOutputTokensSet != nil {
+			current.MaxOutputTokensSet = *persisted.MaxOutputTokensSet
+		} else {
+			current.MaxOutputTokensSet = *persisted.MaxOutputTokens != ""
+		}
+	}
+	if persisted.OpenRouterModel != nil {
+		if persisted.OpenRouterModelSet == nil && *persisted.OpenRouterModel == "openai/gpt-6.1-sol" {
+			// This was the previous hard-coded OpenRouter default, not a catalog choice.
+			current.OpenRouterModel = ""
+			current.OpenRouterModelSet = false
+		} else if persisted.OpenRouterModelSet != nil {
+			current.OpenRouterModelSet = *persisted.OpenRouterModelSet
+		} else {
+			current.OpenRouterModelSet = strings.TrimSpace(*persisted.OpenRouterModel) != ""
+		}
 	}
 	if strings.TrimSpace(current.Model) == "" {
 		current.Model = model.DefaultModel
 	}
 	if !validProvider(current.Provider) {
 		current.Provider = string(model.ProviderOpenAI)
-	}
-	if strings.TrimSpace(current.OpenRouterModel) == "" {
-		current.OpenRouterModel = "openai/gpt-6.1-sol"
 	}
 	if !validReasoningEffort(current.ReasoningEffort) {
 		current.ReasoningEffort = model.DefaultReasoningEffort
@@ -102,7 +135,10 @@ func loadPreferences(dataDir string) (preferences, error) {
 		current.TextVerbosity = model.DefaultTextVerbosity
 	}
 	if !validOutputTokens(current.MaxOutputTokens) {
-		current.MaxOutputTokens = "8192"
+		current.MaxOutputTokens = ""
+	}
+	if current.MaxOutputTokens == "" {
+		current.MaxOutputTokensSet = false
 	}
 	if !validRetryCount(current.MaxRetries) {
 		current.MaxRetries = "2"
@@ -120,6 +156,8 @@ func loadPreferences(dataDir string) (preferences, error) {
 }
 
 func savePreferences(dataDir string, current preferences) error {
+	current.MaxOutputTokensSet = current.MaxOutputTokens != ""
+	current.OpenRouterModelSet = strings.TrimSpace(current.OpenRouterModel) != ""
 	if !validProvider(current.Provider) {
 		return errors.New("model provider is not supported")
 	}
@@ -133,6 +171,14 @@ func savePreferences(dataDir string, current preferences) error {
 			return err
 		}
 		current.CompatibleBaseURL = endpoint
+	}
+	if current.OpenRouterCatalogModel != current.OpenRouterModel {
+		current.OpenRouterCatalogModel = ""
+		current.OpenRouterModelContextLength = 0
+		current.OpenRouterModelSupportsTools = false
+	}
+	if current.OpenRouterModelContextLength < 0 {
+		current.OpenRouterModelContextLength = 0
 	}
 	if !validReasoningEffort(current.ReasoningEffort) || !validTextVerbosity(current.TextVerbosity) ||
 		!validOutputTokens(current.MaxOutputTokens) || !validRetryCount(current.MaxRetries) || !validTimeout(current.TimeoutSeconds) {
@@ -206,6 +252,9 @@ func validTextVerbosity(value string) bool {
 }
 
 func validOutputTokens(value string) bool {
+	if value == "" {
+		return true
+	}
 	switch value {
 	case "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536":
 		return true

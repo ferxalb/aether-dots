@@ -6,6 +6,25 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (16) — Provider defaults and OpenRouter model discovery
+
+### Session objective
+
+Use the selected model's own context and reply defaults, make OpenRouter model selection provider-wide rather than OpenAI-specific, and preserve chat data when providers or models change.
+
+### Implementation
+
+- Removed the implicit 8,192-token output cap. A blank optional setting now omits the output-token parameter for both OpenAI Responses and compatible Chat Completions requests. Existing unmarked 8,192 settings migrate to the provider/model default; explicit limits remain selectable.
+- Removed the hard-coded OpenRouter model default. Settings can load and search OpenRouter's authenticated model catalog for text-input/text-output Chat Completions models, showing published context size and whether native functions are supported. Models without declared function support receive no function definitions.
+- Kept conversation messages durable and provider-neutral. New runs assemble the complete saved conversation at request time, subject to a 16 MiB local prompt safety ceiling; oversized conversations fail without truncating or deleting saved messages.
+- Kept OpenRouter catalog credentials in the system credential store, sent keys only as HTTPS authorization headers, blocked redirects, bounded catalog response sizes, and avoided logging response bodies or keys.
+- Updated Settings, CLI help, README, and this history entry to describe model defaults and catalog behavior.
+
+### Verification
+
+- `gofmt`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed.
+- Automated tests were not run. No live OpenRouter catalog request or native window preview was made; account authorization and catalog/UI behavior remain unverified against a real key.
+
 ## 2026-11-01 (15) — Provider adapters and secure model settings
 
 ### Session objective

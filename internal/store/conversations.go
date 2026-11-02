@@ -117,7 +117,7 @@ func validateProfileStyle(icon, color string) error {
 }
 
 // CreateConversationRun atomically records a user request and the Dot run that
-// will answer it using the saved profile and recent chat context.
+// will answer it using the saved profile and conversation history.
 func (s *Store) CreateConversationRun(conversationID, content string) (task.Dot, task.ConversationMessage, error) {
 	var dot task.Dot
 	var message task.ConversationMessage
@@ -175,13 +175,15 @@ func createConversationRun(db *task.Database, conversationID, content, routineID
 		break
 	}
 	selected, hasSkill := selectSkill(db.Skills, content)
-	objective := conversationObjectiveWithSkill(*conversation, content, selected, hasSkill)
+	// Keep the durable Dot record compact and provider-neutral. The engine
+	// assembles the complete conversation from saved messages when it runs.
+	objective := conversationObjectiveBase(*conversation, content, selected, hasSkill)
 	if len(objective) > task.MaxConversationObjectiveBytes {
 		return task.Dot{}, task.ConversationMessage{}, errors.New("combined Dot purpose, skill, and message exceed the objective limit")
 	}
 	dot = task.Dot{
 		ID: dotID, SpaceID: conversation.SpaceID,
-		ConversationID: conversation.ID, ParentDotID: parentDotID,
+		ConversationID: conversation.ID, ConversationContextDeferred: true, ParentDotID: parentDotID,
 		Name: shortName(content), Objective: objective,
 		Status: task.Ready, CreatedAt: now, UpdatedAt: now,
 		Events: []task.Event{}, RoutineID: routineID,
@@ -296,6 +298,15 @@ func conversationObjective(conversation task.Conversation, message string) strin
 }
 
 func conversationObjectiveWithSkill(conversation task.Conversation, message string, skill task.Skill, hasSkill bool) string {
+	return conversationObjectiveWithContext(conversation, message, skill, hasSkill,
+		boundedConversationContext(conversation.Messages))
+}
+
+func conversationObjectiveBase(conversation task.Conversation, message string, skill task.Skill, hasSkill bool) string {
+	return conversationObjectiveWithContext(conversation, message, skill, hasSkill, "")
+}
+
+func conversationObjectiveWithContext(conversation task.Conversation, message string, skill task.Skill, hasSkill bool, context string) string {
 	var b strings.Builder
 	b.WriteString("Dot name:\n")
 	b.WriteString(conversation.Name)
@@ -330,7 +341,6 @@ func conversationObjectiveWithSkill(conversation task.Conversation, message stri
 		b.WriteString("\nApproval boundary: ")
 		b.WriteString(skill.Approval)
 	}
-	context := boundedConversationContext(conversation.Messages)
 	if context != "" {
 		b.WriteString("\n\nRecent conversation context (up to the latest 12 messages; older messages may be omitted and long entries excerpted):\n")
 		b.WriteString(context)
@@ -338,6 +348,97 @@ func conversationObjectiveWithSkill(conversation task.Conversation, message stri
 	b.WriteString("\n\nNewest user message:\n")
 	b.WriteString(message)
 	return b.String()
+}
+
+// ConversationObjective assembles the provider prompt for a saved chat turn
+// from its durable profile and every prior conversation message. Provider
+// selection therefore never changes or truncates stored chat data.
+func (s *Store) ConversationObjective(dotID string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var dot *task.Dot
+	for i := range s.db.Dots {
+		if s.db.Dots[i].ID == dotID {
+			dot = &s.db.Dots[i]
+			break
+		}
+	}
+	if dot == nil || dot.ConversationID == "" {
+		return "", errors.New("Dot conversation not found")
+	}
+	if !dot.ConversationContextDeferred {
+		if len(dot.Objective) > task.MaxConversationObjectiveBytes {
+			return "", errors.New("saved Dot prompt exceeds the local prompt safety limit")
+		}
+		return dot.Objective, nil
+	}
+	var conversation *task.Conversation
+	for i := range s.db.Conversations {
+		if s.db.Conversations[i].ID == dot.ConversationID {
+			conversation = &s.db.Conversations[i]
+			break
+		}
+	}
+	if conversation == nil {
+		return "", errors.New("saved Dot conversation not found")
+	}
+	messageIndex := -1
+	for i := range conversation.Messages {
+		message := conversation.Messages[i]
+		if message.DotID == dotID && message.Role == "user" {
+			messageIndex = i
+			break
+		}
+	}
+	if messageIndex < 0 {
+		return "", errors.New("saved user message for this Dot is missing")
+	}
+	objective := dot.Objective
+	message := conversation.Messages[messageIndex].Content
+	suffix := "\n\nNewest user message:\n" + message
+	prefix, ok := strings.CutSuffix(objective, suffix)
+	if !ok {
+		return "", errors.New("saved Dot prompt does not match its newest user message")
+	}
+	const contextPrefix = "\n\nComplete saved conversation context:\n"
+	contextBudget := task.MaxConversationObjectiveBytes - len(objective) - len(contextPrefix)
+	if contextBudget < 0 {
+		return "", errors.New("saved Dot prompt exceeds the local prompt safety limit")
+	}
+	context, err := allConversationContext(conversation.Messages[:messageIndex], contextBudget)
+	if err != nil {
+		return "", fmt.Errorf("saved conversation is larger than the %d MiB local prompt safety limit", task.MaxConversationObjectiveBytes/(1024*1024))
+	}
+	if context != "" {
+		objective = prefix + contextPrefix + context + suffix
+	}
+	return objective, nil
+}
+
+func allConversationContext(messages []task.ConversationMessage, maxBytes int) (string, error) {
+	var context strings.Builder
+	for _, message := range messages {
+		label := ""
+		switch message.Role {
+		case "user":
+			label = "User request"
+		case "assistant":
+			label = "Assistant reply"
+		default:
+			continue
+		}
+		entry := label + ":\n" + message.Content
+		separator := ""
+		if context.Len() > 0 {
+			separator = "\n\n"
+		}
+		if context.Len()+len(separator)+len(entry) > maxBytes {
+			return "", errors.New("conversation context exceeds the prompt safety limit")
+		}
+		context.WriteString(separator)
+		context.WriteString(entry)
+	}
+	return context.String(), nil
 }
 
 func boundedConversationContext(messages []task.ConversationMessage) string {

@@ -23,7 +23,10 @@ const (
 	MaxRoutineRuns                   = 20
 	MaxRoutineRunsPerHour            = 200
 	MaxRoutineRunsTotalPerHour       = 300
-	MaxConversationObjectiveBytes    = MaxConversationPurposeBytes + MaxConversationInstructionsBytes + MaxConversationMessageBytes + MaxConversationContextBytes + MaxSkillDefinitionBytes + 2048
+	// This bounds a transient provider prompt, not the provider's context window.
+	// The complete saved conversation is sent until this local resource ceiling;
+	// it is never silently clipped to an arbitrary model-sized token count.
+	MaxConversationObjectiveBytes = 16 * 1024 * 1024
 )
 
 const MinRoutineIntervalSeconds int64 = 5 * 60
@@ -58,19 +61,20 @@ type Event struct {
 }
 
 type Dot struct {
-	ID             string    `json:"id"`
-	SpaceID        string    `json:"space_id"`
-	ConversationID string    `json:"conversation_id,omitempty"`
-	ParentDotID    string    `json:"parent_dot_id,omitempty"`
-	SkillID        string    `json:"skill_id,omitempty"`
-	RoutineID      string    `json:"routine_id,omitempty"`
-	Name           string    `json:"name"`
-	Objective      string    `json:"objective"`
-	Status         Status    `json:"status"`
-	Checkpoint     string    `json:"checkpoint,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Events         []Event   `json:"events"`
+	ID                          string    `json:"id"`
+	SpaceID                     string    `json:"space_id"`
+	ConversationID              string    `json:"conversation_id,omitempty"`
+	ConversationContextDeferred bool      `json:"conversation_context_deferred,omitempty"`
+	ParentDotID                 string    `json:"parent_dot_id,omitempty"`
+	SkillID                     string    `json:"skill_id,omitempty"`
+	RoutineID                   string    `json:"routine_id,omitempty"`
+	Name                        string    `json:"name"`
+	Objective                   string    `json:"objective"`
+	Status                      Status    `json:"status"`
+	Checkpoint                  string    `json:"checkpoint,omitempty"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
+	Events                      []Event   `json:"events"`
 }
 
 // Conversation is a durable Dot identity with its own chat history and profile.

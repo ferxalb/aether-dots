@@ -22,21 +22,23 @@ const DefaultModel = "gpt-6.1-sol"
 const (
 	DefaultReasoningEffort = "medium"
 	DefaultTextVerbosity   = "medium"
-	DefaultMaxOutputTokens = int64(8192)
+	// A zero output limit leaves generation length to the selected model/provider.
+	DefaultMaxOutputTokens = int64(0)
 	DefaultMaxRetries      = 2
 )
 
 type Config struct {
-	Provider        ProviderID
-	Model           string
-	BaseURL         string
-	APIKey          string `json:"-"`
-	Timeout         time.Duration
-	ReasoningEffort string
-	TextVerbosity   string
-	MaxOutputTokens int64
-	MaxRetries      int
-	HTTPClient      *http.Client `json:"-"`
+	Provider           ProviderID
+	Model              string
+	BaseURL            string
+	APIKey             string `json:"-"`
+	Timeout            time.Duration
+	ReasoningEffort    string
+	TextVerbosity      string
+	MaxOutputTokens    int64
+	MaxRetries         int
+	DisableNativeTools bool
+	HTTPClient         *http.Client `json:"-"`
 }
 
 // FromEnvironment reads the CLI model and key without storing credentials.
@@ -46,7 +48,7 @@ func FromEnvironment() Config {
 	keyVariable := "OPENAI_API_KEY"
 	switch provider {
 	case ProviderOpenRouter:
-		defaultModel = "openai/gpt-6.1-sol"
+		defaultModel = ""
 		keyVariable = "OPENROUTER_API_KEY"
 	case ProviderCompatible:
 		defaultModel = ""
@@ -127,7 +129,7 @@ func (g Generator) Readiness() (bool, string) {
 	if !oneOf(config.TextVerbosity, "low", "medium", "high") {
 		return false, "text verbosity must be low, medium, or high."
 	}
-	if config.MaxOutputTokens < 256 || config.MaxOutputTokens > 65536 {
+	if !validOutputTokenLimit(config.MaxOutputTokens) {
 		return false, "maximum output tokens must be between 256 and 65536."
 	}
 	if config.MaxRetries < 0 || config.MaxRetries > 5 {
@@ -152,15 +154,18 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 	config := normalizeConfig(g.Config)
 	redactor := secretRedactor{secret: strings.TrimSpace(config.APIKey)}
 
-	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
-		Model:           strings.TrimSpace(config.Model),
-		Instructions:    openai.String("You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and the conversation context. You have no access to the user's files, folders, apps, or accounts, and you cannot take actions outside this chat. Follow an explicitly selected skill's approval boundaries, and never imply its instructions gave you access or authority you do not have."),
-		Input:           responses.ResponseNewParamsInputUnion{OfString: openai.String(userPrompt)},
-		Store:           param.NewOpt(false),
-		MaxOutputTokens: param.NewOpt(config.MaxOutputTokens),
-		Reasoning:       shared.ReasoningParam{Effort: shared.ReasoningEffort(config.ReasoningEffort)},
-		Text:            responses.ResponseTextConfigParam{Verbosity: responses.ResponseTextConfigVerbosity(config.TextVerbosity)},
-	})
+	params := responses.ResponseNewParams{
+		Model:        strings.TrimSpace(config.Model),
+		Instructions: openai.String("You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and the conversation context. You have no access to the user's files, folders, apps, or accounts, and you cannot take actions outside this chat. Follow an explicitly selected skill's approval boundaries, and never imply its instructions gave you access or authority you do not have."),
+		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(userPrompt)},
+		Store:        param.NewOpt(false),
+		Reasoning:    shared.ReasoningParam{Effort: shared.ReasoningEffort(config.ReasoningEffort)},
+		Text:         responses.ResponseTextConfigParam{Verbosity: responses.ResponseTextConfigVerbosity(config.TextVerbosity)},
+	}
+	if config.MaxOutputTokens > 0 {
+		params.MaxOutputTokens = param.NewOpt(config.MaxOutputTokens)
+	}
+	stream := client.Responses.NewStreaming(ctx, params)
 	defer func() { _ = stream.Close() }()
 
 	var result strings.Builder
@@ -232,9 +237,6 @@ func normalizeConfig(config Config) Config {
 	if strings.TrimSpace(config.TextVerbosity) == "" {
 		config.TextVerbosity = DefaultTextVerbosity
 	}
-	if config.MaxOutputTokens == 0 {
-		config.MaxOutputTokens = DefaultMaxOutputTokens
-	}
 	if config.MaxRetries == 0 && config.Timeout <= 0 {
 		// A zero Config is primarily used by embedded callers and tests. The
 		// explicit environment and settings paths can still select zero retries.
@@ -244,6 +246,10 @@ func normalizeConfig(config Config) Config {
 		config.Timeout = 90 * time.Second
 	}
 	return config
+}
+
+func validOutputTokenLimit(value int64) bool {
+	return value == 0 || value >= 256 && value <= 65536
 }
 
 func oneOf(value string, allowed ...string) bool {

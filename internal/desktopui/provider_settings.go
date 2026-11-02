@@ -29,8 +29,11 @@ func generatorForPreferences(prefs preferences, keyOverride ...string) model.Pro
 		Timeout:         secondsPreference(prefs.TimeoutSeconds, 90),
 		ReasoningEffort: prefs.ReasoningEffort,
 		TextVerbosity:   prefs.TextVerbosity,
-		MaxOutputTokens: integerPreference(prefs.MaxOutputTokens, model.DefaultMaxOutputTokens),
+		MaxOutputTokens: integerPreference(prefs.MaxOutputTokens, 0),
 		MaxRetries:      int(integerPreference(prefs.MaxRetries, int64(model.DefaultMaxRetries))),
+		DisableNativeTools: provider == model.ProviderOpenRouter &&
+			prefs.OpenRouterCatalogModel == strings.TrimSpace(prefs.OpenRouterModel) &&
+			prefs.OpenRouterCatalogModel != "" && !prefs.OpenRouterModelSupportsTools,
 	}
 	return model.NewProvider(config)
 }

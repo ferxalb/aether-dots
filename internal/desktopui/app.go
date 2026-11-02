@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"aether-dots/internal/model"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
 )
@@ -71,9 +72,17 @@ type app struct {
 	apiKeyDraft         string
 	apiKeyDrafts        map[string]string
 	providerSelection   string
-	live                string
-	runningDotID        string
-	cancelRun           context.CancelFunc
+
+	openRouterCatalog        []model.OpenRouterModel
+	openRouterSearch         string
+	openRouterCatalogError   string
+	openRouterCatalogLoading bool
+	openRouterCatalogLoaded  bool
+	openRouterCatalogRequest uint64
+
+	live         string
+	runningDotID string
+	cancelRun    context.CancelFunc
 
 	credentialChecked       bool
 	credentialLoading       bool

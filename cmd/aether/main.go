@@ -215,8 +215,12 @@ func modelCommand(args []string) error {
 	}
 	config := model.FromEnvironment()
 	provider := model.NewProvider(config)
-	fmt.Printf("Testing %s (max output %d tokens, retries %d)…\n",
-		provider.Description(), config.MaxOutputTokens, config.MaxRetries)
+	outputLimit := "provider/model default"
+	if config.MaxOutputTokens > 0 {
+		outputLimit = fmt.Sprintf("up to %d output tokens", config.MaxOutputTokens)
+	}
+	fmt.Printf("Testing %s (reply length %s, retries %d)…\n",
+		provider.Description(), outputLimit, config.MaxRetries)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := provider.Test(ctx); err != nil {
@@ -266,14 +270,14 @@ user-selected files or folders. Select a saved playbook in chat with
 
 Model settings (environment):
   AETHER_MODEL_PROVIDER           openai|openrouter|openai-compatible (default: openai)
-  AETHER_MODEL_NAME                model ID (defaults per provider)
+  AETHER_MODEL_NAME                model ID (required for OpenRouter and custom endpoints)
   AETHER_MODEL_BASE_URL            custom OpenAI-compatible endpoint base URL
   OPENAI_API_KEY                   OpenAI credential
   OPENROUTER_API_KEY               OpenRouter credential
   AETHER_COMPATIBLE_API_KEY        custom endpoint credential (optional on localhost)
   AETHER_REASONING_EFFORT          none|minimal|low|medium|high|xhigh|max (OpenAI only)
   AETHER_TEXT_VERBOSITY            low|medium|high (OpenAI only)
-  AETHER_MAX_OUTPUT_TOKENS         256–65536 (default: 8192)
+  AETHER_MAX_OUTPUT_TOKENS         optional limit: 256–65536 (unset: provider/model default)
   AETHER_MAX_RETRIES               0–5 (default: 2)
   AETHER_MODEL_TIMEOUT_SECONDS     request timeout (default: 90)
 

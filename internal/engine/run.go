@@ -49,6 +49,10 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 		}
 		return waitForInput(db, dotID, reason)
 	}
+	objective, err := db.ConversationObjective(dotID)
+	if err != nil {
+		return fail(db, dotID, err)
+	}
 	if err := db.SetStatus(dotID, task.Running, "Preparing a reply from this Dot's profile and chat history."); err != nil {
 		return err
 	}
@@ -57,7 +61,7 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 		return fail(db, dotID, err)
 	}
 	progress()
-	response, err := generator.Generate(ctx, dot.Objective, onDelta)
+	response, err := generator.Generate(ctx, objective, onDelta)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return pause(db, dotID)

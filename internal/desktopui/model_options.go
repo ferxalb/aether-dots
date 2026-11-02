@@ -28,14 +28,14 @@ func (a *app) modelOptionsSettings(c *ui.Context, theme *ui.Theme) {
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		}
 		ui.Row(c).FillWidth().Gap(12).Children(func() {
-			modelChoice(c, theme, "settings-output-tokens", "Maximum reply length", &a.prefs.MaxOutputTokens,
-				[]string{"256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536"})
+			modelChoice(c, theme, "settings-output-tokens", "Reply token limit (optional)", &a.prefs.MaxOutputTokens,
+				[]string{"", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536"})
 			modelChoice(c, theme, "settings-retries", "Retries for temporary errors", &a.prefs.MaxRetries,
 				[]string{"0", "1", "2", "3", "4", "5"})
 		})
 		modelChoice(c, theme, "settings-timeout", "Stop waiting after", &a.prefs.TimeoutSeconds,
 			[]string{"30", "45", "60", "90", "120", "180", "300"})
-		ui.Text(c, "More detailed replies can take longer and may cost more.").
+		ui.Text(c, "With no reply token limit, AETHER omits that parameter and lets the selected model use its own default. The model’s context window is provided by the model and is not set here.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 	})
 }
@@ -94,6 +94,9 @@ func modelChoiceLabel(key, value string) string {
 			return "Detailed"
 		}
 	case "settings-output-tokens":
+		if value == "" {
+			return "Use model default"
+		}
 		return value + " tokens"
 	case "settings-retries":
 		if value == "1" {

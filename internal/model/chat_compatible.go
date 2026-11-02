@@ -49,7 +49,7 @@ func (g CompatibleGenerator) Readiness() (bool, string) {
 			return false, "API key is required for a remote custom endpoint"
 		}
 	}
-	if config.MaxOutputTokens < 256 || config.MaxOutputTokens > 65536 {
+	if !validOutputTokenLimit(config.MaxOutputTokens) {
 		return false, "maximum output tokens must be between 256 and 65536."
 	}
 	if config.MaxRetries < 0 || config.MaxRetries > 5 {
@@ -76,16 +76,20 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 	config := normalizeConfig(g.Config)
 	client := g.client(config)
 	messages := []openai.ChatCompletionMessageParamUnion{
-		openai.SystemMessage("You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and conversation context. You have no access to the user's files, folders, apps, or accounts, and cannot take actions outside this chat. AETHER provides only the explicitly listed, local read-only functions. Never claim to access other tools or perform external actions."),
+		openai.SystemMessage(compatibleSystemInstructions(config.DisableNativeTools)),
 		openai.UserMessage(objective),
 	}
 	toolCallsUsed := 0
 	for round := 0; round < maxToolRounds; round++ {
 		params := openai.ChatCompletionNewParams{
-			Model:               shared.ChatModel(strings.TrimSpace(config.Model)),
-			Messages:            messages,
-			MaxCompletionTokens: param.NewOpt(config.MaxOutputTokens),
-			Tools:               nativeToolDefinitions(),
+			Model:    shared.ChatModel(strings.TrimSpace(config.Model)),
+			Messages: messages,
+		}
+		if config.MaxOutputTokens > 0 {
+			params.MaxCompletionTokens = param.NewOpt(config.MaxOutputTokens)
+		}
+		if !config.DisableNativeTools {
+			params.Tools = nativeToolDefinitions()
 		}
 		stream := client.Chat.Completions.NewStreaming(ctx, params)
 		var content strings.Builder
@@ -145,6 +149,9 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 			}
 			return result, nil
 		}
+		if config.DisableNativeTools {
+			return "", errors.New("the selected model returned a function call even though functions are disabled for this model")
+		}
 		toolCallsUsed += len(calls)
 		if toolCallsUsed > maxNativeToolCalls {
 			return "", errors.New("the model exceeded the 8 native function call limit")
@@ -190,6 +197,14 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 		}
 	}
 	return "", errors.New("the model exceeded the 4 native function rounds limit")
+}
+
+func compatibleSystemInstructions(disableTools bool) string {
+	instructions := "You are a helpful, careful AI teammate in AETHER Dots. Follow the user's Dot profile and conversation context. You have no access to the user's files, folders, apps, or accounts, and cannot take actions outside this chat. Never claim to access tools or perform external actions."
+	if !disableTools {
+		instructions += " AETHER provides only the explicitly listed, local read-only functions."
+	}
+	return instructions
 }
 
 func (g CompatibleGenerator) Test(ctx context.Context) error {
