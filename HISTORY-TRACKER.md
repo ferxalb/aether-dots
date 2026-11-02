@@ -6,6 +6,23 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (13) — ADT dynamic behavior and reusable API
+
+### Session objective
+
+Refine ADT into a reusable, animated notification component with useful behavior for real app feedback.
+
+### Implementation
+
+- Added six configurable corner and center positions, per-notice theme and icon overrides, duration and expansion controls, sticky loading states, action buttons, stable-ID updates, and dynamic loading-to-result transitions.
+- Matched the compact pill-to-card interaction with spring-driven width, height, position, and color changes; notices expand on hover and briefly on arrival, then collapse before expiring. Only one stack item auto-expands at a time, and hovering an older notice makes it the active item. Added swipe dismissal and semantic status icons.
+- Sized the pointer-pause viewport to the visible stack instead of the full window, so notices no longer pause while the pointer is elsewhere in the app.
+
+### Verification
+
+- `CGO_ENABLED=0 go build ./...`, `make bundle`, and `git diff --check` passed. Reviewed the expanded success notice in the bundled native app at the minimum window size and confirmed it responds to the active theme.
+- Tests were not run. No live model request was made.
+
 ## 2026-11-01 (12) — AETHER Dynamic Toast
 
 ### Session objective

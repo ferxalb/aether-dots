@@ -110,6 +110,8 @@ func (a *app) saveSettings() {
 		return
 	}
 	a.settingsSaving = true
+	const toastID = "settings-api-key-save"
+	a.adt.Loading(toastID, "Saving API key", "Keeping it in macOS Keychain.")
 	win := a.win
 	go func() {
 		err := openAISecrets.Set(openAIKeyName, []byte(key))
@@ -119,14 +121,14 @@ func (a *app) saveSettings() {
 		win.Update(func() {
 			a.settingsSaving = false
 			if err != nil {
-				a.adt.Error("API key wasn't saved", err.Error())
+				a.adt.Push(ADTNotice{ID: toastID, Title: "API key wasn't saved", Description: err.Error(), Level: ADTError})
 				return
 			}
 			a.apiKeyDraft = ""
 			a.credentialChecked = true
 			a.credentialSaved = true
 			a.credentialError = ""
-			a.adt.Success("Settings saved", "Your OpenAI API key is saved securely.")
+			a.adt.Push(ADTNotice{ID: toastID, Title: "API key saved", Description: "Your key is stored securely in macOS Keychain.", Level: ADTSuccess})
 		})
 	}()
 }
@@ -136,6 +138,8 @@ func (a *app) removeAPIKey() {
 		return
 	}
 	a.settingsSaving = true
+	const toastID = "settings-api-key-remove"
+	a.adt.Loading(toastID, "Removing API key", "Updating your secure credential store.")
 	win := a.win
 	go func() {
 		err := openAISecrets.Delete(openAIKeyName)
@@ -148,7 +152,7 @@ func (a *app) removeAPIKey() {
 		win.Update(func() {
 			a.settingsSaving = false
 			if err != nil {
-				a.adt.Error("Couldn't remove the API key", err.Error())
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Couldn't remove the API key", Description: err.Error(), Level: ADTError})
 				return
 			}
 			a.apiKeyDraft = ""
@@ -156,7 +160,7 @@ func (a *app) removeAPIKey() {
 			a.credentialSaved = false
 			a.credentialError = ""
 			a.modelConnection = "Not tested"
-			a.adt.Success("API key removed", "The saved key was removed from macOS Keychain.")
+			a.adt.Push(ADTNotice{ID: toastID, Title: "API key removed", Description: "The saved key was removed from macOS Keychain.", Level: ADTSuccess})
 		})
 	}()
 }
@@ -183,7 +187,8 @@ func (a *app) testModel() {
 		return
 	}
 	a.modelConnection = "Checking…"
-	a.adt.Info("Checking connection", "AETHER is testing the selected OpenAI model.")
+	const toastID = "settings-openai-connection"
+	a.adt.Loading(toastID, "Checking connection", "Testing the selected OpenAI model.")
 	prefs := a.prefs
 	keyDraft := a.apiKeyDraft
 	win := a.win
@@ -195,10 +200,10 @@ func (a *app) testModel() {
 			win.Update(func() {
 				if err != nil {
 					a.modelConnection = "Connection failed"
-					a.adt.Error("Connection failed", err.Error())
+					a.adt.Push(ADTNotice{ID: toastID, Title: "Connection failed", Description: err.Error(), Level: ADTError})
 				} else {
 					a.modelConnection = "Connected"
-					a.adt.Success("Connection verified", "The selected model is ready for your Dots.")
+					a.adt.Push(ADTNotice{ID: toastID, Title: "Connection verified", Description: "The selected model is ready for your Dots.", Level: ADTSuccess})
 				}
 			})
 		}

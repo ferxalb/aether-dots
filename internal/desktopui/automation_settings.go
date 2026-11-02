@@ -490,7 +490,8 @@ func (a *app) testRoutine(id string) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelRun = cancel
-	a.adt.Info("Routine started", "This one-time run sends a request to OpenAI and may use your plan.")
+	toastID := "routine-run-" + id
+	a.adt.Loading(toastID, "Routine is running", "This one-time run sends a request to OpenAI and may use your plan.")
 	prefs := a.prefs
 	win := a.win
 	go func() {
@@ -504,9 +505,9 @@ func (a *app) testRoutine(id string) {
 			a.cancelRun = nil
 			a.refresh()
 			if err != nil {
-				a.adt.Error("Routine didn't finish", err.Error())
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Routine didn't finish", Description: err.Error(), Level: ADTError})
 			} else {
-				a.adt.Success("Routine completed", "See the Dot conversation for its response.")
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Routine completed", Description: "See the Dot conversation for its response.", Level: ADTSuccess})
 			}
 		}
 		if win == nil {

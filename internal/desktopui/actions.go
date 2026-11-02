@@ -20,7 +20,8 @@ func (a *app) startRun(id string) {
 	a.cancelRun = cancel
 	a.runningDotID = id
 	a.live = ""
-	a.adt.Info("Your Dot is working", "A reply is being prepared for this conversation.")
+	toastID := "dot-run-" + id
+	a.adt.Loading(toastID, "Your Dot is working", "A reply is being prepared.")
 	if conversationID == a.selectedConversationID {
 		a.conversationError = ""
 	}
@@ -52,11 +53,11 @@ func (a *app) startRun(id string) {
 			a.live = ""
 			a.refresh()
 			if err == nil {
-				a.adt.Success("Reply saved", "Your Dot’s response is in the conversation.")
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply saved", Description: "Your Dot’s response is in the conversation.", Level: ADTSuccess})
 			} else if errorsIsCanceled(err) {
-				a.adt.Info("Reply paused", "You can ask your Dot to try again when you’re ready.")
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply paused", Description: "You can ask your Dot to try again when you’re ready.", Level: ADTInfo})
 			} else {
-				a.adt.Error("Reply failed", err.Error())
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply failed", Description: err.Error(), Level: ADTError})
 			}
 			if conversationID != "" && conversationID == a.selectedConversationID {
 				if errorsIsCanceled(err) {
