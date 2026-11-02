@@ -4,22 +4,19 @@ import (
 	"math"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 )
 
 const (
 	adtDefaultDuration = 6 * time.Second
-	adtExpandDelay     = 150 * time.Millisecond
-	adtCollapseBuffer  = 2 * time.Second
 	adtPillHeight      = float32(40)
 	adtStackGap        = float32(9)
 )
 
 var (
-	adtSpring = ui.Animation{Spring: ui.SpringOptions{Duration: 600 * time.Millisecond, Bounce: 0.25}}
-	adtLoader = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>`))
+	adtAnimation     = ui.Animation{Duration: 100 * time.Millisecond, Ease: ui.EaseOut}
+	adtDragAnimation = ui.Animation{Duration: 110 * time.Millisecond, Ease: ui.EaseOut}
 )
 
 // ADTLevel gives a notice its semantic color and icon.
@@ -42,10 +39,7 @@ type ADTNotice struct {
 	Description string   // Optional detail revealed by the dynamic expansion.
 	Level       ADTLevel // Semantic level selects the icon and theme accent.
 
-	Duration       time.Duration // Zero uses the default; negative keeps it until dismissed.
-	ExpandAfter    time.Duration // Zero uses the default automatic expansion delay.
-	CollapseBefore time.Duration // Zero collapses this long before dismissal.
-	ManualExpand   bool          // Disable automatic expansion while keeping hover expansion.
+	Duration time.Duration // Zero uses the default; negative keeps it until dismissed.
 
 	Action    string
 	OnAction  func()
@@ -53,8 +47,6 @@ type ADTNotice struct {
 	Fill      ui.Color
 	TextColor ui.Color
 	Roundness float32
-
-	createdAt time.Time
 }
 
 // ADTConfig places the stack within its window. Insets leave room for
@@ -137,8 +129,8 @@ func (a *ADT) Loading(id, title, description string) string {
 	return a.Push(ADTNotice{ID: id, Title: title, Description: description, Level: ADTLoading, Duration: -1})
 }
 
-// Render adds queued notices to MyGo's accessible toast lifecycle, then draws
-// collapsed pills that spring open for details and close before they expire.
+// Render adds queued notices to MyGo's accessible toast lifecycle. The newest
+// toast stays expanded so its detail and action remain immediately usable.
 func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig) {
 	if a == nil {
 		return
@@ -162,7 +154,6 @@ func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig) {
 		if notice.Duration == 0 {
 			notice.Duration = adtDefaultDuration
 		}
-		notice.createdAt = c.Now()
 		c.AddToast(ui.Toast{
 			ID: notice.ID, Title: notice.Title, Description: notice.Description,
 			Type: string(notice.Level), Timeout: notice.Duration,
@@ -207,35 +198,31 @@ func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig) {
 		if adtPositionIsBottom(config.Position) {
 			for i := range toasts {
 				id := toasts[i].ID
-				addHeight(adtToastCard(a, c, theme, config, toasts[i], i == len(toasts)-1, previousHoveredID == "" || previousHoveredID == id))
+				selected := previousHoveredID == id || (previousHoveredID == "" && i == len(toasts)-1)
+				addHeight(adtToastCard(a, c, theme, config, toasts[i], selected))
 			}
 		} else {
 			for i := len(toasts) - 1; i >= 0; i-- {
 				id := toasts[i].ID
-				addHeight(adtToastCard(a, c, theme, config, toasts[i], i == len(toasts)-1, previousHoveredID == "" || previousHoveredID == id))
+				selected := previousHoveredID == id || (previousHoveredID == "" && i == len(toasts)-1)
+				addHeight(adtToastCard(a, c, theme, config, toasts[i], selected))
 			}
 		}
 		viewport.Margin(topMargin, rightMargin, bottomMargin, leftMargin).
 			Height(max(stackHeight, adtPillHeight))
-		if previousHoveredID != "" && a.hoveredID == "" {
+		if previousHoveredID != a.hoveredID {
 			c.After(time.Second / 60)
 		}
 	})
 }
 
-func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toast ui.Toast, active, canAutoExpand bool) float32 {
+func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toast ui.Toast, selected bool) float32 {
 	notice, ok := toast.Data.(ADTNotice)
 	if !ok {
-		notice = ADTNotice{Level: ADTInfo, Duration: adtDefaultDuration, createdAt: c.Now()}
+		notice = ADTNotice{Level: ADTInfo, Duration: adtDefaultDuration}
 	}
 	if notice.Duration == 0 {
 		notice.Duration = adtDefaultDuration
-	}
-	if notice.ExpandAfter <= 0 {
-		notice.ExpandAfter = adtExpandDelay
-	}
-	if notice.CollapseBefore <= 0 {
-		notice.CollapseBefore = adtCollapseBuffer
 	}
 	if notice.Roundness <= 0 {
 		notice.Roundness = 16
@@ -254,59 +241,38 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 	}
 
 	parts := ui.ToastBase(c, toast)
-	left := parts.Left()
-	age := notice.Duration - left
-	if notice.Duration < 0 {
-		age = c.Now().Sub(notice.createdAt)
-	}
-	if age < 0 {
-		age = 0
-	}
 	hovered := parts.Root.Hovered() || parts.Root.FocusWithin()
 	if hovered && a != nil {
 		a.hoveredID = toast.ID
 	}
-	loading := notice.Level == ADTLoading
 	hasDetails := notice.Description != "" || notice.Action != ""
-	collapseAt := notice.Duration - notice.CollapseBefore
-	if notice.Duration > 0 && collapseAt < notice.ExpandAfter {
-		collapseAt = notice.Duration
-	}
-	autoExpanded := active && canAutoExpand && !notice.ManualExpand && age >= notice.ExpandAfter &&
-		(notice.Duration < 0 || age < collapseAt)
-	expanded := hasDetails && !loading && (hovered || autoExpanded)
-	if active && canAutoExpand && !hovered && hasDetails && !loading && !notice.ManualExpand {
-		switch {
-		case age < notice.ExpandAfter:
-			c.After(notice.ExpandAfter - age)
-		case notice.Duration > 0 && age < collapseAt:
-			c.After(collapseAt - age)
-		}
-	}
+	expanded := hasDetails && selected
 
-	width := adtPillWidth(toast.Title, config.MaxWidth)
+	closeVisible := expanded || hovered || notice.Duration < 0
+	compactWidth := adtPillWidth(c, toast.Title, config.MaxWidth, closeVisible)
+	width := compactWidth
 	if expanded {
 		width = config.MaxWidth
 	}
 	cardHeight := adtPillHeight
 	if expanded {
-		cardHeight += adtExpandedBodyHeight(notice, width)
+		cardHeight += adtExpandedBodyHeight(c, notice, width)
 	}
-	entryY := float32(-9)
+	entryY := float32(-4)
 	if adtPositionIsBottom(config.Position) {
-		entryY = 9
+		entryY = 4
 	}
 	root := parts.Root.Draggable(nil, ui.DraggableOptions{
-		Axis: ui.Vertical, Animation: adtSpring,
+		Axis: ui.Vertical, Animation: adtDragAnimation,
 		Snap: func(ui.Point) ui.Point { return ui.Point{} },
-	}).Column().Width(width).MaxWidth(config.MaxWidth).MinWidth(adtPillWidth(toast.Title, config.MaxWidth)).
+	}).Column().Width(width).MaxWidth(config.MaxWidth).MinWidth(compactWidth).
 		Gap(0).Radius(notice.Roundness).Background(fill).
 		Border(1, theme.Border.Alpha(0.18).Mix(accent, 0.25)).
 		Shadow(0, 9, 24, 0, ui.RGBA(0, 0, 0, 0.23))
 	root.Transition(ui.ElementTransition{
-		Animation: adtTransition(), Position: true, Size: true, Colors: true,
-		Enter: &ui.Motion{Y: entryY, Scale: 0.92, Opacity: 0, Collapse: true},
-		Exit:  &ui.Motion{Y: entryY, Scale: 0.96, Opacity: 0, Collapse: true},
+		Animation: adtTransition(), Position: true, Colors: true,
+		Enter: &ui.Motion{Y: entryY, Scale: 0.985, Opacity: 0},
+		Exit:  &ui.Motion{Y: entryY, Scale: 0.985, Opacity: 0},
 	})
 	if _, velocityY, ended := root.DragEnded(); ended {
 		offset := root.DragOffset()
@@ -314,22 +280,23 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 			c.CloseToast(toast.ID)
 		}
 	}
-	root.Children(func() {
-		ui.Row(c).FillWidth().Height(40).AlignItems(ui.Center).Gap(8).Padding(7, 11).Children(func() {
+	buildHeader := func() {
+		header := ui.Row(c).Key("adt-header-"+toast.ID).FillWidth().Height(40).
+			AlignItems(ui.Center).Gap(8).Padding(7, 11)
+		header.Children(func() {
 			badge := ui.Row(c).Size(25, 25).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).
 				Radius(13).Background(accent.Alpha(0.14)).TextColor(accent)
 			badge.Children(func() {
-				glyph := ui.Icon(c, icon).Size(15, 15).
-					ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
-				if loading {
-					turn := float32(c.Now().Sub(notice.createdAt).Seconds() * 360)
-					c.AnimationFrame()
-					glyph.AnimatePose(ui.Pose{Rotate: turn}, ui.Animation{Duration: 25 * time.Millisecond, Ease: ui.Linear})
+				if notice.Level == ADTLoading && notice.Icon == nil {
+					ui.Spinner(c).Size(15, 15).TextColor(accent).Label("Working")
+				} else {
+					ui.Icon(c, icon).Size(15, 15).
+						ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
 				}
 			})
 			ui.Text(c, toast.Title).FontSize(12).FontWeight(500).TextColor(accent).
 				FillWidth().SingleLine().ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
-			if expanded || hovered {
+			if closeVisible {
 				close := parts.CloseButton().Size(24, 24).Shrink(0).Padding(0).Radius(12).
 					TextColor(text.Alpha(0.62)).Label("Dismiss notification")
 				if close.Hovered() {
@@ -338,22 +305,45 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 				close.Children(func() { ui.Text(c, "×").FontSize(16).TextColor(accent) })
 			}
 		})
-		if expanded {
-			ui.Column(c).FillWidth().Gap(9).Padding(1, 15, 13, 44).Children(func() {
-				if toast.Description != "" {
-					ui.Text(c, toast.Description).FontSize(12).TextColor(text.Alpha(0.68)).
-						FillWidth().MaxHeight(80).ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
-				}
-				if toast.Action != "" {
-					button := parts.ActionButton().Padding(7, 10).Radius(10).
-						Background(accent.Alpha(0.13)).TextColor(accent).Label(toast.Action)
-					if button.Hovered() {
-						button.Background(accent.Alpha(0.22))
-					}
-					button.Children(func() { ui.Text(c, toast.Action).FontSize(11).FontWeight(600) })
-				}
-			})
+	}
+	buildBody := func() {
+		if !expanded {
+			return
 		}
+		bodyTop, bodyBottom := float32(1), float32(13)
+		if adtPositionIsBottom(config.Position) {
+			bodyTop, bodyBottom = bodyBottom, bodyTop
+		}
+		body := ui.Column(c).Key("adt-body-"+toast.ID).FillWidth().Gap(9).
+			Padding(bodyTop, 15, bodyBottom, 44)
+		body.Transition(ui.ElementTransition{
+			Duration: 75 * time.Millisecond, Ease: ui.EaseOut, Position: true,
+			Enter: &ui.Motion{Opacity: 0},
+			Exit:  &ui.Motion{Opacity: 0},
+		})
+		body.Children(func() {
+			if toast.Description != "" {
+				ui.Text(c, toast.Description).FontSize(12).TextColor(text.Alpha(0.68)).
+					FillWidth().MaxHeight(80).ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
+			}
+			if toast.Action != "" {
+				button := parts.ActionButton().Padding(7, 10).Radius(10).
+					Background(accent.Alpha(0.13)).TextColor(accent).Label(toast.Action)
+				if button.Hovered() {
+					button.Background(accent.Alpha(0.22))
+				}
+				button.Children(func() { ui.Text(c, toast.Action).FontSize(11).FontWeight(600) })
+			}
+		})
+	}
+	root.Children(func() {
+		if adtPositionIsBottom(config.Position) {
+			buildBody()
+			buildHeader()
+			return
+		}
+		buildHeader()
+		buildBody()
 	})
 	return cardHeight
 }
@@ -370,14 +360,14 @@ func adtPositionIsCenter(position ADTPosition) bool {
 	return position == ADTTopCenter || position == ADTBottomCenter
 }
 
-func adtExpandedBodyHeight(notice ADTNotice, width float32) float32 {
+func adtExpandedBodyHeight(c *ui.Context, notice ADTNotice, width float32) float32 {
 	// Keep the invisible pause area close to the rendered toast so it does
 	// not pause the queue while the pointer is elsewhere in the window.
 	height := float32(14) // body padding
 	if notice.Description != "" {
 		contentWidth := max(width-59, 80)
-		lineCount := max(1, int(math.Ceil(float64(utf8.RuneCountInString(notice.Description)*7)/float64(contentWidth))))
-		descriptionHeight := min(float32(lineCount)*16+2, 80)
+		_, measuredHeight := c.MeasureText(contentWidth, ui.Span{Text: notice.Description, Size: 12})
+		descriptionHeight := min(measuredHeight, 80)
 		height += descriptionHeight
 	}
 	if notice.Action != "" {
@@ -389,8 +379,12 @@ func adtExpandedBodyHeight(notice ADTNotice, width float32) float32 {
 	return height
 }
 
-func adtPillWidth(title string, maxWidth float32) float32 {
-	width := float32(utf8.RuneCountInString(title))*7 + 25 + 8 + 22
+func adtPillWidth(c *ui.Context, title string, maxWidth float32, closeVisible bool) float32 {
+	textWidth, _ := c.MeasureText(0, ui.Span{Text: title, Size: 12, Weight: 500})
+	width := textWidth + 25 + 8 + 22 // badge, gap and horizontal padding
+	if closeVisible {
+		width += 24 + 8 // dismiss button and its gap
+	}
 	return min(max(width, 142), maxWidth)
 }
 
@@ -405,11 +399,15 @@ func adtFill(theme *ui.Theme) (ui.Color, ui.Color) {
 	return fill, text
 }
 
-func adtTransition() *ui.Animation { return &adtSpring }
+func adtTransition() *ui.Animation { return &adtAnimation }
 
 func contentAnimation() *ui.Animation {
-	animation := ui.Animation{Duration: 220 * time.Millisecond, Ease: ui.EaseOut}
+	animation := contentMotion()
 	return &animation
+}
+
+func contentMotion() ui.Animation {
+	return ui.Animation{Duration: 75 * time.Millisecond, Ease: ui.EaseOut}
 }
 
 func adtLevelStyle(theme *ui.Theme, level ADTLevel) (ui.Color, *ui.SVG) {
@@ -421,7 +419,7 @@ func adtLevelStyle(theme *ui.Theme, level ADTLevel) (ui.Color, *ui.SVG) {
 	case ADTError:
 		return theme.Danger, iconAlert
 	case ADTLoading:
-		return theme.Accent, adtLoader
+		return theme.Accent, nil
 	case ADTAction:
 		return theme.Accent, iconPlay
 	default:

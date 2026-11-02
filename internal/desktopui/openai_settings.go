@@ -10,6 +10,7 @@ import (
 
 	"aether-dots/internal/model"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 var openAISecrets = mygo.Secrets.Service(openAIService)
@@ -99,14 +100,26 @@ func (a *app) saveSettings() {
 	key := strings.TrimSpace(a.apiKeyDraft)
 	if key == "" {
 		description := "Your preferences are ready to use."
-		if a.credentialSaved {
+		switch {
+		case a.credentialLoading:
+			description = "Your preferences are ready. Checking for a saved API key."
+		case a.credentialSaved:
 			description = "Your OpenAI API key remains saved securely."
-		} else if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "" {
+		case strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "":
 			description = "OpenAI will use the key provided by your environment."
-		} else {
+		default:
 			description = "Add an API key when you're ready to use model tasks."
 		}
-		a.adt.Success("Settings saved", description)
+		notice := ADTNotice{Title: "Settings saved", Description: description, Level: ADTSuccess}
+		if !a.credentialLoading && !a.credentialSaved && strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
+			notice.Action = "Add API key"
+			notice.OnAction = func() {
+				a.settingsOpen = true
+				a.settingsTab = 1
+				a.settingsScroll[1] = ui.ScrollState{}
+			}
+		}
+		a.adt.Push(notice)
 		return
 	}
 	a.settingsSaving = true

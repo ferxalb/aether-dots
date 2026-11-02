@@ -6,6 +6,24 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (14) — ADT full-component adaptation and responsive feedback
+
+### Session objective
+
+Adapt the full native ADT interaction and layout to feel more responsive, accurate, and usable.
+
+### Implementation
+
+- Traced the slow morph to MyGo's `ElementTransition.Size` and `Motion.Collapse`: size transitions lay out the element at every intermediate size. Removed animated size and collapse from ADT, made the newest notice's details and actions available immediately, and kept at most one stack item expanded as hover moves between notices.
+- Kept entry, exit, stack-position, color, and drag-return motion short (75–110 ms). Entry and exit now fade and move without collapsing; expansion changes geometry once instead of animating every frame. Bottom notices place the header at the bottom and details above it; top notices place details below the header.
+- Replaced the hand-rotated loading icon, whose `Context.AnimationFrame` requested a full view build on every display refresh, with MyGo's native accessible spinner that schedules paint-only updates at its own cadence.
+- Replaced rune-count layout estimates with MyGo text measurement for pill width and expanded description height, including actual font metrics and wrapping. Kept a close control visible on persistent loading notices so they can be dismissed without a pointer gesture.
+- Added an “Add API key” action to the Settings saved notice when neither Keychain nor the environment has a key; activating it opens AI & responses and resets that section to the top.
+
+### Verification
+
+- `gofmt`, `git diff --check`, and `CGO_ENABLED=0 go build ./...` passed; the APIs were checked against pinned MyGo v0.7.3. Automated tests and native visual review remain unverified in this session.
+
 ## 2026-11-01 (13) — ADT dynamic behavior and reusable API
 
 ### Session objective
