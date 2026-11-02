@@ -1,6 +1,15 @@
 package desktopui
 
-import "aether-dots/internal/task"
+import (
+	"time"
+
+	"aether-dots/internal/task"
+)
+
+type conversationStatusSummary struct {
+	status    task.Status
+	updatedAt time.Time
+}
 
 func findConversation(db task.Database, id string) (task.Conversation, bool) {
 	for _, conversation := range db.Conversations {
@@ -19,6 +28,23 @@ func conversationDots(db task.Database, conversationID string) []task.Dot {
 		}
 	}
 	return dots
+}
+
+// latestConversationDots finds the newest task per conversation in one pass.
+// The sidebar and header reuse the result instead of filtering and sorting all
+// tasks once for every visible conversation.
+func latestConversationDots(db task.Database) map[string]conversationStatusSummary {
+	latest := make(map[string]conversationStatusSummary, min(len(db.Dots), len(db.Conversations)))
+	for _, dot := range db.Dots {
+		if dot.ConversationID == "" {
+			continue
+		}
+		current, ok := latest[dot.ConversationID]
+		if !ok || dot.UpdatedAt.After(current.updatedAt) {
+			latest[dot.ConversationID] = conversationStatusSummary{status: dot.Status, updatedAt: dot.UpdatedAt}
+		}
+	}
+	return latest
 }
 
 func findConversationDot(db task.Database, conversationID, dotID string) (task.Dot, bool) {

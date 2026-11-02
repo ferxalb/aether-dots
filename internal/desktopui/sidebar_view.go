@@ -12,7 +12,7 @@ import (
 
 var iconSearch = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg>`))
 
-func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top float32, vibrant bool) {
+func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top float32, vibrant bool, latestDots map[string]conversationStatusSummary) {
 	panel := ui.Column(c).Width(272).FillHeight().Gap(11).
 		Padding(top, 12, 12, 12).Background(sidebarColor(theme, vibrant, a.prefs.Palette))
 	panel.Children(func() {
@@ -47,7 +47,7 @@ func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top float32, vibrant bool)
 		ui.Text(c, "YOUR DOTS").FontSize(9).Bold().TextColor(theme.TextMuted).Padding(1, 4)
 		ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).Children(func() {
 			ui.Column(c).FillWidth().MinWidth(0).Gap(4).Children(func() {
-				a.dotList(c, theme)
+				a.dotList(c, theme, latestDots)
 			})
 		})
 
@@ -55,7 +55,7 @@ func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top float32, vibrant bool)
 	})
 }
 
-func (a *app) dotList(c *ui.Context, theme *ui.Theme) {
+func (a *app) dotList(c *ui.Context, theme *ui.Theme, latestDots map[string]conversationStatusSummary) {
 	query := strings.TrimSpace(strings.ToLower(a.searchQuery))
 	conversations := recentConversations(a.snapshot, query)
 	legacyDots := recentLegacyDots(a.snapshot, query)
@@ -68,7 +68,7 @@ func (a *app) dotList(c *ui.Context, theme *ui.Theme) {
 		return
 	}
 	for _, conversation := range conversations {
-		a.conversationRow(c, theme, conversation)
+		a.conversationRow(c, theme, conversation, latestDots)
 	}
 	if len(legacyDots) > 0 {
 		if len(conversations) > 0 {
@@ -98,10 +98,16 @@ func recentConversations(db task.Database, query string) []task.Conversation {
 }
 
 func recentLegacyDots(db task.Database, query string) []task.Dot {
+	conversationIDs := make(map[string]struct{}, len(db.Conversations))
+	for _, conversation := range db.Conversations {
+		conversationIDs[conversation.ID] = struct{}{}
+	}
 	items := make([]task.Dot, 0, len(db.Dots))
 	for _, dot := range db.Dots {
-		if conversationExists(db, dot.ConversationID) {
-			continue
+		if dot.ConversationID != "" {
+			if _, exists := conversationIDs[dot.ConversationID]; exists {
+				continue
+			}
 		}
 		spaceName := selectedSpaceName(db, dot.SpaceID)
 		searchable := strings.ToLower(strings.Join([]string{
@@ -116,19 +122,7 @@ func recentLegacyDots(db task.Database, query string) []task.Dot {
 	return items
 }
 
-func conversationExists(db task.Database, id string) bool {
-	if id == "" {
-		return false
-	}
-	for _, conversation := range db.Conversations {
-		if conversation.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func (a *app) conversationRow(c *ui.Context, theme *ui.Theme, conversation task.Conversation) {
+func (a *app) conversationRow(c *ui.Context, theme *ui.Theme, conversation task.Conversation, latestDots map[string]conversationStatusSummary) {
 	selected := conversation.ID == a.selectedConversationID
 	button := ui.Button(c.Key("conversation-"+conversation.ID), "").FillWidth().Height(60).
 		Padding(8, 9).Gap(10).Radius(11).Label(conversation.Name).
@@ -143,8 +137,8 @@ func (a *app) conversationRow(c *ui.Context, theme *ui.Theme, conversation task.
 					SingleLine().FontSize(9).TextColor(theme.TextMuted)
 			})
 			preview := conversationPreview(conversation)
-			if status, ok := latestConversationStatus(a.snapshot, conversation.ID); ok {
-				switch status {
+			if dot, ok := latestDots[conversation.ID]; ok {
+				switch dot.status {
 				case task.Running:
 					preview = "Working · " + preview
 				case task.Failed:
@@ -196,10 +190,12 @@ func (a *app) legacyDotRow(c *ui.Context, theme *ui.Theme, dot task.Dot) {
 }
 
 func (a *app) conversationAvatar(c *ui.Context, name, id string, size float32) {
+	background := avatarColor(id)
+	ink := contrastInk(background)
 	avatar := ui.Box(c).Size(size, size).Shrink(0).Radius(size / 2).
-		Background(avatarColor(id)).TextColor(ui.Hex("#FFFFFF"))
+		Background(background).TextColor(ink)
 	avatar.Center().Children(func() {
-		ui.Text(c, avatarInitial(name)).FontSize(13).Bold().TextColor(ui.Hex("#FFFFFF"))
+		ui.Text(c, avatarInitial(name)).FontSize(13).Bold().TextColor(ink)
 	})
 }
 
@@ -270,20 +266,6 @@ func boundedSidebarText(value string) string {
 		return strings.TrimRight(value, " .") + "…"
 	}
 	return value
-}
-
-func latestConversationStatus(db task.Database, conversationID string) (task.Status, bool) {
-	dots := make([]task.Dot, 0)
-	for _, dot := range db.Dots {
-		if dot.ConversationID == conversationID {
-			dots = append(dots, dot)
-		}
-	}
-	if len(dots) == 0 {
-		return "", false
-	}
-	sort.SliceStable(dots, func(i, j int) bool { return dots[i].UpdatedAt.After(dots[j].UpdatedAt) })
-	return dots[0].Status, true
 }
 
 func sidebarTime(at time.Time) string {

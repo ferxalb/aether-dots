@@ -20,10 +20,12 @@ Adapt the full native ADT interaction and layout to feel more responsive, accura
 - Replaced the hand-rotated loading icon, whose `Context.AnimationFrame` requested a full view build on every display refresh, with MyGo's native accessible spinner that schedules paint-only updates at its own cadence.
 - Replaced rune-count layout estimates with MyGo text measurement for pill width and expanded description height, including actual font metrics and wrapping. Kept a close control visible on persistent loading notices so they can be dismissed without a pointer gesture.
 - Added an “Add API key” action to the Settings saved notice when neither Keychain nor the environment has a key; activating it opens AI & responses and resets that section to the top.
+- Replaced MyGo's generic inverse toast fill with the active theme surface, text, muted text, border, and theme-aware shadow. Status colors stay on the icon badge; titles use readable primary text and actions use the palette accent. Removed animated card colors and text crossfades, leaving a short position/opacity entrance and a brief body fade.
+- Precomputed each conversation's latest task status once per view and reused it in the header and sidebar. Replaced legacy-task conversation checks that repeatedly scanned all conversations with a single lookup map; avatar ink now switches between light and dark for contrast.
 
 ### Verification
 
-- `gofmt`, `git diff --check`, `CGO_ENABLED=0 go build ./...`, and `make bundle` passed; APIs were checked against pinned MyGo v0.7.3. Native preview confirmed the Settings saved notice renders at the bottom-right over Preferences with its description and API-key action. Automated tests were not run.
+- `gofmt`, `git diff --check`, `CGO_ENABLED=0 go build ./...`, and `make bundle` passed; APIs were checked against pinned MyGo v0.7.3. Native preview confirmed the Settings saved notice renders over Preferences in dark Violet with a theme-matched surface, readable description, violet action, semantic success badge, and accessible dismiss control. Automated tests were not run. No frame-time recording was captured; animation changes were verified from MyGo transition behavior and the bundled native preview.
 
 ## 2026-11-01 (13) — ADT dynamic behavior and reusable API
 
@@ -267,4 +269,3 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - No live model endpoint request was made because `OPENAI_API_KEY` was unavailable in the environment. Model transport was exercised with local test servers only.
 - The app remains local-first. MCP configuration, cloud sync, device handoff, OS keychain storage, and arbitrary-app control were not implemented.
 - No production signing, notarization, DMG, or non-macOS build was verified.
-

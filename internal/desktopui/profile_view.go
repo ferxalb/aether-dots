@@ -1,6 +1,8 @@
 package desktopui
 
 import (
+	"math"
+
 	"aether-dots/internal/task"
 	"github.com/egoist/mygo/ui"
 )
@@ -157,9 +159,26 @@ func dotProfileAvatar(c *ui.Context, icon, color string, size float32) {
 	if color == "" {
 		color = "#7458D8"
 	}
+	background := ui.Hex(color)
+	ink := contrastInk(background)
 	avatar := ui.Box(c).Size(size, size).Shrink(0).Radius(size * 0.34).
-		Background(ui.Hex(color)).TextColor(ui.Hex("#FFFFFF"))
-	avatar.Center().Children(func() { ui.Text(c, icon).FontSize(size * 0.44).Bold().TextColor(ui.Hex("#FFFFFF")) })
+		Background(background).TextColor(ink)
+	avatar.Center().Children(func() { ui.Text(c, icon).FontSize(size * 0.44).Bold().TextColor(ink) })
+}
+
+func contrastInk(background ui.Color) ui.Color {
+	linear := func(channel uint8) float64 {
+		value := float64(channel) / 255
+		if value <= 0.04045 {
+			return value / 12.92
+		}
+		return math.Pow((value+0.055)/1.055, 2.4)
+	}
+	luminance := 0.2126*linear(background.R) + 0.7152*linear(background.G) + 0.0722*linear(background.B)
+	if luminance > 0.179 {
+		return ui.Hex("#171923")
+	}
+	return ui.Hex("#FFFFFF")
 }
 
 func profileAvatarForConversation(c *ui.Context, conversation task.Conversation, size float32) {

@@ -15,8 +15,8 @@ const (
 )
 
 var (
-	adtAnimation     = ui.Animation{Duration: 100 * time.Millisecond, Ease: ui.EaseOut}
-	adtDragAnimation = ui.Animation{Duration: 110 * time.Millisecond, Ease: ui.EaseOut}
+	adtAnimation     = ui.Animation{Duration: 85 * time.Millisecond, Ease: ui.EaseOut}
+	adtDragAnimation = ui.Animation{Duration: 100 * time.Millisecond, Ease: ui.EaseOut}
 )
 
 // ADTLevel gives a notice its semantic color and icon.
@@ -272,11 +272,20 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 		icon = notice.Icon
 	}
 	fill, text := adtFill(theme)
+	titleText := theme.Text
+	if titleText == ui.Transparent {
+		titleText = text
+	}
+	mutedText := theme.TextMuted
+	if mutedText == ui.Transparent {
+		mutedText = text.Alpha(0.72)
+	}
 	if notice.Fill != ui.Transparent {
 		fill = notice.Fill
 	}
 	if notice.TextColor != ui.Transparent {
-		text = notice.TextColor
+		titleText = notice.TextColor
+		mutedText = notice.TextColor.Alpha(0.72)
 	}
 
 	parts := ui.ToastBase(c, toast)
@@ -302,10 +311,10 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 		Snap: func(ui.Point) ui.Point { return ui.Point{} },
 	}).Column().Width(width).MaxWidth(config.MaxWidth).MinWidth(compactWidth).
 		Gap(0).Radius(notice.Roundness).Background(fill).
-		Border(1, theme.Border.Alpha(0.18).Mix(accent, 0.25)).
-		Shadow(0, 9, 24, 0, ui.RGBA(0, 0, 0, 0.23))
+		Border(1, theme.Border).
+		Shadow(0, 9, 24, 0, ui.RGBA(0, 0, 0, adtShadowOpacity(theme)))
 	root.Transition(ui.ElementTransition{
-		Animation: adtTransition(), Position: true, Colors: true,
+		Animation: adtTransition(), Position: true,
 		Enter: &ui.Motion{Y: entryY, Scale: 0.985, Opacity: 0},
 		Exit:  &ui.Motion{Y: entryY, Scale: 0.985, Opacity: 0},
 	})
@@ -325,19 +334,20 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 				if notice.Level == ADTLoading && notice.Icon == nil {
 					ui.Spinner(c).Size(15, 15).TextColor(accent).Label("Working")
 				} else {
-					ui.Icon(c, icon).Size(15, 15).
-						ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
+					ui.Icon(c, icon).Size(15, 15)
 				}
 			})
-			ui.Text(c, toast.Title).FontSize(12).FontWeight(500).TextColor(accent).
-				FillWidth().SingleLine().ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
+			ui.Text(c, toast.Title).FontSize(12).FontWeight(500).TextColor(titleText).
+				FillWidth().SingleLine()
 			if closeVisible {
 				close := parts.CloseButton().Size(24, 24).Shrink(0).Padding(0).Radius(12).
-					TextColor(text.Alpha(0.62)).Label("Dismiss notification")
+					TextColor(mutedText).Label("Dismiss notification")
+				closeColor := mutedText
 				if close.Hovered() {
 					close.Background(accent.Alpha(0.14)).TextColor(accent)
+					closeColor = accent
 				}
-				close.Children(func() { ui.Text(c, "×").FontSize(16).TextColor(accent) })
+				close.Children(func() { ui.Text(c, "×").FontSize(16).TextColor(closeColor) })
 			}
 		})
 	}
@@ -349,20 +359,20 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 		body := ui.Column(c).Key("adt-body-"+toast.ID).FillWidth().Gap(9).
 			Padding(bodyTop, 15, bodyBottom, 44)
 		body.Transition(ui.ElementTransition{
-			Duration: 75 * time.Millisecond, Ease: ui.EaseOut, Position: true,
+			Duration: 60 * time.Millisecond, Ease: ui.EaseOut,
 			Enter: &ui.Motion{Opacity: 0},
 			Exit:  &ui.Motion{Opacity: 0},
 		})
 		body.Children(func() {
 			if toast.Description != "" {
-				ui.Text(c, toast.Description).FontSize(12).TextColor(text.Alpha(0.68)).
-					FillWidth().MaxHeight(80).ContentTransition(ui.ContentTransition{Animation: contentAnimation()})
+				ui.Text(c, toast.Description).FontSize(12).TextColor(mutedText).
+					FillWidth().MaxHeight(80)
 			}
 			if toast.Action != "" {
 				button := parts.ActionButton().Padding(7, 10).Radius(10).
-					Background(accent.Alpha(0.13)).TextColor(accent).Label(toast.Action)
+					Background(theme.Accent.Alpha(0.12)).TextColor(theme.Accent).Label(toast.Action)
 				if button.Hovered() {
-					button.Background(accent.Alpha(0.22))
+					button.Background(theme.Accent.Alpha(0.2))
 				}
 				button.Children(func() { ui.Text(c, toast.Action).FontSize(11).FontWeight(600) })
 			}
@@ -415,9 +425,12 @@ func adtPillWidth(c *ui.Context, title string, maxWidth float32, closeVisible bo
 }
 
 func adtFill(theme *ui.Theme) (ui.Color, ui.Color) {
-	fill, text := theme.Inverse, theme.InverseText
+	fill, text := theme.Surface, theme.Text
 	if fill == ui.Transparent {
-		fill = theme.Text
+		fill = theme.Background
+	}
+	if text == ui.Transparent {
+		text = theme.InverseText
 	}
 	if text == ui.Transparent {
 		text = theme.Background
@@ -425,16 +438,14 @@ func adtFill(theme *ui.Theme) (ui.Color, ui.Color) {
 	return fill, text
 }
 
+func adtShadowOpacity(theme *ui.Theme) float32 {
+	if theme.Dark {
+		return 0.28
+	}
+	return 0.12
+}
+
 func adtTransition() *ui.Animation { return &adtAnimation }
-
-func contentAnimation() *ui.Animation {
-	animation := contentMotion()
-	return &animation
-}
-
-func contentMotion() ui.Animation {
-	return ui.Animation{Duration: 75 * time.Millisecond, Ease: ui.EaseOut}
-}
 
 func adtLevelStyle(theme *ui.Theme, level ADTLevel) (ui.Color, *ui.SVG) {
 	switch level {

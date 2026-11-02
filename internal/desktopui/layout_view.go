@@ -3,13 +3,13 @@ package desktopui
 import (
 	"math"
 
-	"aether-dots/internal/task"
 	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) view(c *ui.Context) {
 	c.OnShortcut(ui.Cmd, ui.KeyN, func() { a.startCreator() })
 	theme := a.theme(c)
+	latestDots := latestConversationDots(a.snapshot)
 	bar := c.TitleBar()
 	dragHeight := max(bar.Height, 44)
 	vibrant := c.Vibrancy() && a.prefs.Appearance == "System"
@@ -23,12 +23,12 @@ func (a *app) view(c *ui.Context) {
 
 	root := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(rootColor)
 	root.Children(func() {
-		a.sidebar(c, theme, dragHeight, vibrant)
+		a.sidebar(c, theme, dragHeight, vibrant, latestDots)
 		ui.Box(c).Width(1).FillHeight().Background(theme.Border.Alpha(0.42))
 
 		main := ui.Column(c).Grow(1).FillHeight().MinWidth(0).Background(rootColor)
 		main.Children(func() {
-			a.header(c, theme)
+			a.header(c, theme, latestDots)
 			ui.Box(c).FillWidth().Height(1).Background(theme.Border.Alpha(0.34))
 
 			switch {
@@ -85,7 +85,7 @@ func (a *app) workspaceContent(c *ui.Context, theme *ui.Theme) {
 	a.workspaceWelcomeView(c, theme)
 }
 
-func (a *app) header(c *ui.Context, theme *ui.Theme) {
+func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conversationStatusSummary) {
 	row := ui.Row(c).FillWidth().Height(52).Padding(0, 20).AlignItems(ui.Center).Gap(10).DragWindow()
 	row.Children(func() {
 		switch {
@@ -106,8 +106,8 @@ func (a *app) header(c *ui.Context, theme *ui.Theme) {
 					ui.Text(c, conversation.Name).SingleLine().FontSize(13).Bold().
 						MaxWidth(300).Shrink(1).MinWidth(0)
 					status := "Ready"
-					if dotStatus, ok := latestConversationStatus(a.snapshot, conversation.ID); ok {
-						status = humanStatus(dotStatus)
+					if dot, ok := latestDots[conversation.ID]; ok {
+						status = humanStatus(dot.status)
 					}
 					ui.Text(c, status).FontSize(10).TextColor(theme.TextMuted)
 				})
@@ -142,18 +142,4 @@ func (a *app) followChatIfAtBottom() {
 	if a.chatScroll.MaxY-a.chatScroll.Y <= 48 {
 		a.chatScroll.ScrollTo(0, math.MaxFloat32, ui.Smooth)
 	}
-}
-
-func latestConversationDot(db task.Database, conversationID string) (task.Dot, bool) {
-	var latest task.Dot
-	found := false
-	for _, dot := range db.Dots {
-		if dot.ConversationID != conversationID {
-			continue
-		}
-		if !found || dot.UpdatedAt.After(latest.UpdatedAt) {
-			latest, found = dot, true
-		}
-	}
-	return latest, found
 }
