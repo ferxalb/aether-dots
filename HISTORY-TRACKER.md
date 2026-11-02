@@ -6,6 +6,24 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (18) — Reasoning effort across model providers
+
+### Session objective
+
+Apply the thinking-effort preference to OpenAI, OpenRouter, and custom OpenAI-compatible requests, using model capability metadata where available.
+
+### Implementation
+
+- Kept OpenAI Responses effort settings and added `reasoning_effort` to streamed OpenRouter and custom-compatible Chat Completions requests through the OpenAI Go SDK.
+- Added a “Use model default” choice for compatible providers so the request can omit the effort field. The CLI accepts `AETHER_REASONING_EFFORT=default` for the same behavior.
+- Read OpenRouter's reasoning capability and supported-effort metadata. Known unsupported values are omitted; supported effort levels are reflected in Settings, while manually entered model IDs remain user-configurable with an explicit unknown-support note.
+- Kept reply verbosity provider-specific to OpenAI Responses because the compatible Chat Completions path does not guarantee that parameter.
+
+### Verification
+
+- `gofmt`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and `git diff --check` passed.
+- Automated tests and live model requests were not run; endpoint-specific reasoning support remains unverified without configured credentials.
+
 ## 2026-11-01 (17) — OpenRouter model dialog and streamed Markdown chat
 
 ### Session objective

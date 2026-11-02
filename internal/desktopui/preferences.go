@@ -22,23 +22,26 @@ const (
 )
 
 type preferences struct {
-	Provider                     string `json:"provider"`
-	Model                        string `json:"model"`
-	OpenRouterModel              string `json:"openrouter_model"`
-	OpenRouterModelSet           bool   `json:"openrouter_model_set,omitempty"`
-	OpenRouterCatalogModel       string `json:"openrouter_catalog_model,omitempty"`
-	OpenRouterModelContextLength int64  `json:"openrouter_model_context_length,omitempty"`
-	OpenRouterModelSupportsTools bool   `json:"openrouter_model_supports_tools,omitempty"`
-	CompatibleModel              string `json:"compatible_model"`
-	CompatibleBaseURL            string `json:"compatible_base_url"`
-	ReasoningEffort              string `json:"reasoning_effort"`
-	TextVerbosity                string `json:"text_verbosity"`
-	MaxOutputTokens              string `json:"max_output_tokens"`
-	MaxOutputTokensSet           bool   `json:"max_output_tokens_set,omitempty"`
-	MaxRetries                   string `json:"max_retries"`
-	TimeoutSeconds               string `json:"timeout_seconds"`
-	Appearance                   string `json:"appearance"`
-	Palette                      string `json:"palette"`
+	Provider                            string `json:"provider"`
+	Model                               string `json:"model"`
+	OpenRouterModel                     string `json:"openrouter_model"`
+	OpenRouterModelSet                  bool   `json:"openrouter_model_set,omitempty"`
+	OpenRouterCatalogModel              string `json:"openrouter_catalog_model,omitempty"`
+	OpenRouterModelContextLength        int64  `json:"openrouter_model_context_length,omitempty"`
+	OpenRouterModelSupportsTools        bool   `json:"openrouter_model_supports_tools,omitempty"`
+	OpenRouterModelSupportsReasoning    bool   `json:"openrouter_model_supports_reasoning,omitempty"`
+	OpenRouterModelSupportsReasoningSet bool   `json:"openrouter_model_supports_reasoning_set,omitempty"`
+	OpenRouterModelSupportedEfforts     string `json:"openrouter_model_supported_efforts,omitempty"`
+	CompatibleModel                     string `json:"compatible_model"`
+	CompatibleBaseURL                   string `json:"compatible_base_url"`
+	ReasoningEffort                     string `json:"reasoning_effort"`
+	TextVerbosity                       string `json:"text_verbosity"`
+	MaxOutputTokens                     string `json:"max_output_tokens"`
+	MaxOutputTokensSet                  bool   `json:"max_output_tokens_set,omitempty"`
+	MaxRetries                          string `json:"max_retries"`
+	TimeoutSeconds                      string `json:"timeout_seconds"`
+	Appearance                          string `json:"appearance"`
+	Palette                             string `json:"palette"`
 }
 
 func defaultPreferences() preferences {
@@ -128,7 +131,7 @@ func loadPreferences(dataDir string) (preferences, error) {
 	if !validProvider(current.Provider) {
 		current.Provider = string(model.ProviderOpenAI)
 	}
-	if !validReasoningEffort(current.ReasoningEffort) {
+	if !validProviderReasoningEffort(current.Provider, current.ReasoningEffort) {
 		current.ReasoningEffort = model.DefaultReasoningEffort
 	}
 	if !validTextVerbosity(current.TextVerbosity) {
@@ -176,11 +179,14 @@ func savePreferences(dataDir string, current preferences) error {
 		current.OpenRouterCatalogModel = ""
 		current.OpenRouterModelContextLength = 0
 		current.OpenRouterModelSupportsTools = false
+		current.OpenRouterModelSupportsReasoning = false
+		current.OpenRouterModelSupportsReasoningSet = false
+		current.OpenRouterModelSupportedEfforts = ""
 	}
 	if current.OpenRouterModelContextLength < 0 {
 		current.OpenRouterModelContextLength = 0
 	}
-	if !validReasoningEffort(current.ReasoningEffort) || !validTextVerbosity(current.TextVerbosity) ||
+	if !validProviderReasoningEffort(current.Provider, current.ReasoningEffort) || !validTextVerbosity(current.TextVerbosity) ||
 		!validOutputTokens(current.MaxOutputTokens) || !validRetryCount(current.MaxRetries) || !validTimeout(current.TimeoutSeconds) {
 		return errors.New("model settings contain an unsupported generation option")
 	}
@@ -245,6 +251,13 @@ func validReasoningEffort(value string) bool {
 	default:
 		return false
 	}
+}
+
+func validProviderReasoningEffort(provider, value string) bool {
+	if value == "" && provider != string(model.ProviderOpenAI) {
+		return true
+	}
+	return validReasoningEffort(value)
 }
 
 func validTextVerbosity(value string) bool {

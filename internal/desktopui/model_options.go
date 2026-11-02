@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"strconv"
+	"strings"
 
 	"aether-dots/internal/model"
 	"github.com/egoist/mygo/ui"
@@ -16,15 +17,36 @@ func (a *app) modelOptionsSettings(c *ui.Context, theme *ui.Theme) {
 			ui.Text(c, "Most people can leave these at their defaults. Changes apply to chat and scheduled replies.").
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
-		if a.prefs.Provider == string(model.ProviderOpenAI) {
+		switch model.ProviderID(a.prefs.Provider) {
+		case model.ProviderOpenAI:
 			ui.Row(c).FillWidth().Gap(12).Children(func() {
 				modelChoice(c, theme, "settings-reasoning", "Thinking effort", &a.prefs.ReasoningEffort,
 					[]string{"none", "minimal", "low", "medium", "high", "xhigh", "max"})
 				modelChoice(c, theme, "settings-verbosity", "Reply detail", &a.prefs.TextVerbosity,
 					[]string{"low", "medium", "high"})
 			})
-		} else {
-			ui.Text(c, "Thinking effort and reply detail are controlled by this provider's model and are not sent as unsupported settings.").
+		case model.ProviderOpenRouter:
+			metadata, known := a.selectedOpenRouterModel()
+			if known && metadata.ReasoningMetadataKnown && !metadata.SupportsReasoning {
+				ui.Text(c, "This OpenRouter model does not declare reasoning-effort support. AETHER omits that parameter and lets the model use its default.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			} else {
+				options := reasoningEffortOptions(metadata, known)
+				modelChoice(c, theme, "settings-reasoning", "Thinking effort", &a.prefs.ReasoningEffort, options)
+				if known && !reasoningEffortSupported(metadata, a.prefs.ReasoningEffort) {
+					ui.Text(c, "The saved effort is not listed for this model. AETHER uses the model default until you choose a supported level.").
+						FontSize(11).TextColor(theme.TextMuted).FillWidth()
+				} else if !known || !metadata.ReasoningMetadataKnown {
+					ui.Text(c, "Effort support for this model ID is unknown. OpenRouter may ignore or reject the optional reasoning_effort parameter; choose Use model default to omit it.").
+						FontSize(11).TextColor(theme.TextMuted).FillWidth()
+				}
+			}
+			ui.Text(c, "Reply detail is controlled by the selected model; Chat Completions does not receive OpenAI Responses verbosity settings.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		case model.ProviderCompatible:
+			modelChoice(c, theme, "settings-reasoning", "Thinking effort", &a.prefs.ReasoningEffort,
+				reasoningEffortOptions(model.OpenRouterModel{}, false))
+			ui.Text(c, "AETHER sends this as the optional Chat Completions reasoning_effort parameter. Use model default to omit it if your endpoint or model does not support it.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		}
 		ui.Row(c).FillWidth().Gap(12).Children(func() {
@@ -49,10 +71,38 @@ func modelChoice(c *ui.Context, theme *ui.Theme, key, label string, value *strin
 	})
 }
 
+func reasoningEffortOptions(metadata model.OpenRouterModel, known bool) []string {
+	all := []string{"", "none", "minimal", "low", "medium", "high", "xhigh", "max"}
+	if !known || !metadata.ReasoningMetadataKnown || len(metadata.SupportedReasoningEfforts) == 0 {
+		return all
+	}
+	options := []string{""}
+	for _, effort := range all[1:] {
+		if reasoningEffortSupported(metadata, effort) {
+			options = append(options, effort)
+		}
+	}
+	return options
+}
+
+func reasoningEffortSupported(metadata model.OpenRouterModel, effort string) bool {
+	if strings.TrimSpace(effort) == "" || len(metadata.SupportedReasoningEfforts) == 0 {
+		return true
+	}
+	for _, supported := range metadata.SupportedReasoningEfforts {
+		if strings.EqualFold(supported, effort) {
+			return true
+		}
+	}
+	return false
+}
+
 func modelChoiceLabel(key, value string) string {
 	switch key {
 	case "settings-reasoning":
 		switch value {
+		case "":
+			return "Use model default"
 		case "none":
 			return "Off"
 		case "minimal":

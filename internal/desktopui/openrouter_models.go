@@ -45,7 +45,13 @@ func (a *app) openRouterModelSettings(c *ui.Context, theme *ui.Theme, modelName 
 			if metadata.SupportsTools {
 				tools = "Native functions supported"
 			}
-			ui.Text(c, fmt.Sprintf("Model context: %s tokens · %s", modelContextLabel(metadata.ContextLength), tools)).
+			reasoning := "Model default reasoning"
+			if metadata.ReasoningMetadataKnown && metadata.SupportsReasoning {
+				reasoning = "Reasoning effort configurable"
+			} else if !metadata.ReasoningMetadataKnown {
+				reasoning = "Reasoning support unknown"
+			}
+			ui.Text(c, fmt.Sprintf("Model context: %s tokens · %s · %s", modelContextLabel(metadata.ContextLength), tools, reasoning)).
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		}
 		ui.Text(c, "OpenRouter’s text model catalog is available from the model picker. Replies use the model’s default token limit unless you set an optional cap.").
@@ -112,7 +118,13 @@ func (a *app) openRouterModelPickerModal(c *ui.Context, theme *ui.Theme, modelNa
 				if metadata.SupportsTools {
 					tools = "Native functions supported"
 				}
-				ui.Text(c, fmt.Sprintf("Context: %s tokens · %s", modelContextLabel(metadata.ContextLength), tools)).
+				reasoning := "Uses model default"
+				if metadata.ReasoningMetadataKnown && metadata.SupportsReasoning {
+					reasoning = "Reasoning effort supported"
+				} else if !metadata.ReasoningMetadataKnown {
+					reasoning = "Reasoning support unknown"
+				}
+				ui.Text(c, fmt.Sprintf("Context: %s tokens · %s · %s", modelContextLabel(metadata.ContextLength), tools, reasoning)).
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			}
 			ui.List(c.Key("settings-openrouter-model-list"), &a.openRouterModelList, len(results), func(i int) {
@@ -135,6 +147,13 @@ func (a *app) openRouterModelPickerModal(c *ui.Context, theme *ui.Theme, modelNa
 							capability = "Functions"
 						}
 						ui.Text(c, capability).FontSize(10).TextColor(theme.TextMuted)
+						reasoning := "Default effort"
+						if item.ReasoningMetadataKnown && item.SupportsReasoning {
+							reasoning = "Effort control"
+						} else if !item.ReasoningMetadataKnown {
+							reasoning = "Effort unknown"
+						}
+						ui.Text(c, reasoning).FontSize(10).TextColor(theme.TextMuted)
 					})
 				})
 				if row.Clicked() {
@@ -201,6 +220,9 @@ func (a *app) refreshOpenRouterModelCatalog() {
 			a.prefs.OpenRouterCatalogModel = ""
 			a.prefs.OpenRouterModelContextLength = 0
 			a.prefs.OpenRouterModelSupportsTools = false
+			a.prefs.OpenRouterModelSupportsReasoning = false
+			a.prefs.OpenRouterModelSupportsReasoningSet = false
+			a.prefs.OpenRouterModelSupportedEfforts = ""
 			for _, item := range catalog {
 				if item.ID == strings.TrimSpace(a.prefs.OpenRouterModel) {
 					a.applyOpenRouterModelMetadata(item)
@@ -227,6 +249,9 @@ func (a *app) setOpenRouterModel(id string) {
 	a.prefs.OpenRouterCatalogModel = ""
 	a.prefs.OpenRouterModelContextLength = 0
 	a.prefs.OpenRouterModelSupportsTools = false
+	a.prefs.OpenRouterModelSupportsReasoning = false
+	a.prefs.OpenRouterModelSupportsReasoningSet = false
+	a.prefs.OpenRouterModelSupportedEfforts = ""
 	for _, item := range a.openRouterCatalog {
 		if item.ID == id {
 			a.applyOpenRouterModelMetadata(item)
@@ -240,6 +265,9 @@ func (a *app) applyOpenRouterModelMetadata(item model.OpenRouterModel) {
 	a.prefs.OpenRouterCatalogModel = item.ID
 	a.prefs.OpenRouterModelContextLength = item.ContextLength
 	a.prefs.OpenRouterModelSupportsTools = item.SupportsTools
+	a.prefs.OpenRouterModelSupportsReasoning = item.SupportsReasoning
+	a.prefs.OpenRouterModelSupportsReasoningSet = item.ReasoningMetadataKnown
+	a.prefs.OpenRouterModelSupportedEfforts = strings.Join(item.SupportedReasoningEfforts, ",")
 }
 
 func (a *app) selectedOpenRouterModel() (model.OpenRouterModel, bool) {
@@ -257,9 +285,16 @@ func (a *app) openRouterModelByID(id string) (model.OpenRouterModel, bool) {
 		}
 	}
 	if a.prefs.OpenRouterCatalogModel == selected {
+		var efforts []string
+		if a.prefs.OpenRouterModelSupportedEfforts != "" {
+			efforts = strings.Split(a.prefs.OpenRouterModelSupportedEfforts, ",")
+		}
 		return model.OpenRouterModel{
 			ID: selected, ContextLength: a.prefs.OpenRouterModelContextLength,
-			SupportsTools: a.prefs.OpenRouterModelSupportsTools,
+			SupportsTools:             a.prefs.OpenRouterModelSupportsTools,
+			SupportsReasoning:         a.prefs.OpenRouterModelSupportsReasoning,
+			ReasoningMetadataKnown:    a.prefs.OpenRouterModelSupportsReasoningSet,
+			SupportedReasoningEfforts: efforts,
 		}, true
 	}
 	return model.OpenRouterModel{}, false

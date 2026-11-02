@@ -275,7 +275,7 @@ Model settings (environment):
   OPENAI_API_KEY                   OpenAI credential
   OPENROUTER_API_KEY               OpenRouter credential
   AETHER_COMPATIBLE_API_KEY        custom endpoint credential (optional on localhost)
-  AETHER_REASONING_EFFORT          none|minimal|low|medium|high|xhigh|max (OpenAI only)
+  AETHER_REASONING_EFFORT          default|none|minimal|low|medium|high|xhigh|max (OpenAI and compatible chat; default omits for compatible)
   AETHER_TEXT_VERBOSITY            low|medium|high (OpenAI only)
   AETHER_MAX_OUTPUT_TOKENS         optional limit: 256–65536 (unset: provider/model default)
   AETHER_MAX_RETRIES               0–5 (default: 2)

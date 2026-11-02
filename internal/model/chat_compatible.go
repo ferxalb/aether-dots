@@ -49,6 +49,10 @@ func (g CompatibleGenerator) Readiness() (bool, string) {
 			return false, "API key is required for a remote custom endpoint"
 		}
 	}
+	if strings.TrimSpace(config.ReasoningEffort) != "" &&
+		!oneOf(config.ReasoningEffort, "none", "minimal", "low", "medium", "high", "xhigh", "max") {
+		return false, "reasoning effort must be none, minimal, low, medium, high, xhigh, or max, or left at the model default."
+	}
 	if !validOutputTokenLimit(config.MaxOutputTokens) {
 		return false, "maximum output tokens must be between 256 and 65536."
 	}
@@ -89,6 +93,9 @@ func (g CompatibleGenerator) Generate(ctx context.Context, objective string, onD
 		}
 		if config.MaxOutputTokens > 0 {
 			params.MaxCompletionTokens = param.NewOpt(config.MaxOutputTokens)
+		}
+		if !config.DisableReasoningEffort && strings.TrimSpace(config.ReasoningEffort) != "" {
+			params.ReasoningEffort = shared.ReasoningEffort(strings.TrimSpace(config.ReasoningEffort))
 		}
 		if !config.DisableNativeTools {
 			params.Tools = nativeToolDefinitions()

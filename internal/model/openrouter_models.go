@@ -20,12 +20,15 @@ const (
 )
 
 // OpenRouterModel is the subset of live catalog metadata AETHER needs to
-// present a usable text-chat model and configure its optional native tools.
+// present text-chat models and configure optional reasoning and native tools.
 type OpenRouterModel struct {
-	ID            string
-	Name          string
-	ContextLength int64
-	SupportsTools bool
+	ID                        string
+	Name                      string
+	ContextLength             int64
+	SupportsTools             bool
+	SupportsReasoning         bool
+	ReasoningMetadataKnown    bool
+	SupportedReasoningEfforts []string
 }
 
 type openRouterModelData struct {
@@ -34,7 +37,10 @@ type openRouterModelData struct {
 	ContextLength       int64    `json:"context_length"`
 	Endpoints           []string `json:"endpoints"`
 	SupportedParameters []string `json:"supported_parameters"`
-	Architecture        struct {
+	Reasoning           struct {
+		SupportedEfforts []string `json:"supported_efforts"`
+	} `json:"reasoning"`
+	Architecture struct {
 		InputModalities  []string `json:"input_modalities"`
 		OutputModalities []string `json:"output_modalities"`
 	} `json:"architecture"`
@@ -81,7 +87,10 @@ func FetchOpenRouterModels(ctx context.Context, apiKey string) ([]OpenRouterMode
 			}
 			models = append(models, OpenRouterModel{
 				ID: item.ID, Name: name, ContextLength: item.ContextLength,
-				SupportsTools: containsString(item.SupportedParameters, "tools"),
+				SupportsTools:             containsString(item.SupportedParameters, "tools"),
+				SupportsReasoning:         containsString(item.SupportedParameters, "reasoning") || containsString(item.SupportedParameters, "reasoning_effort") || len(item.Reasoning.SupportedEfforts) > 0,
+				ReasoningMetadataKnown:    item.SupportedParameters != nil || item.Reasoning.SupportedEfforts != nil,
+				SupportedReasoningEfforts: append([]string(nil), item.Reasoning.SupportedEfforts...),
 			})
 		}
 		if len(items) < openRouterModelPageSize {

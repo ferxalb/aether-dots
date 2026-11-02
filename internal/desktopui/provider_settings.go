@@ -34,8 +34,31 @@ func generatorForPreferences(prefs preferences, keyOverride ...string) model.Pro
 		DisableNativeTools: provider == model.ProviderOpenRouter &&
 			prefs.OpenRouterCatalogModel == strings.TrimSpace(prefs.OpenRouterModel) &&
 			prefs.OpenRouterCatalogModel != "" && !prefs.OpenRouterModelSupportsTools,
+		DisableReasoningEffort: openRouterReasoningEffortDisabled(prefs),
 	}
 	return model.NewProvider(config)
+}
+
+func openRouterReasoningEffortDisabled(prefs preferences) bool {
+	if prefs.Provider != string(model.ProviderOpenRouter) ||
+		prefs.OpenRouterCatalogModel == "" ||
+		prefs.OpenRouterCatalogModel != strings.TrimSpace(prefs.OpenRouterModel) ||
+		!prefs.OpenRouterModelSupportsReasoningSet {
+		return false
+	}
+	if !prefs.OpenRouterModelSupportsReasoning {
+		return true
+	}
+	effort := strings.TrimSpace(prefs.ReasoningEffort)
+	if effort == "" || prefs.OpenRouterModelSupportedEfforts == "" {
+		return false
+	}
+	for _, supported := range strings.Split(prefs.OpenRouterModelSupportedEfforts, ",") {
+		if strings.EqualFold(effort, supported) {
+			return false
+		}
+	}
+	return true
 }
 
 func providerAPIKey(provider model.ProviderID) string {
@@ -99,6 +122,9 @@ func (a *app) switchProvider(provider string) {
 	}
 	a.apiKeyDrafts[a.prefs.Provider] = a.apiKeyDraft
 	a.prefs.Provider = provider
+	if provider == string(model.ProviderOpenAI) && strings.TrimSpace(a.prefs.ReasoningEffort) == "" {
+		a.prefs.ReasoningEffort = model.DefaultReasoningEffort
+	}
 	a.providerSelection = providerSelectionLabel(provider)
 	a.apiKeyDraft = a.apiKeyDrafts[provider]
 	a.credentialProvider = ""

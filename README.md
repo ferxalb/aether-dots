@@ -27,7 +27,7 @@ Dots use their saved profile and the conversation history before the current mes
 
 ## Model setup
 
-The desktop Settings page supports three real connection modes: OpenAI through the official Go SDK and Responses API, OpenRouter through the SDK's OpenAI-compatible Chat Completions API, and a custom OpenAI-compatible endpoint. Each provider keeps its own model selection; changing providers does not modify Dot profiles or saved conversation messages. OpenRouter loads its live text-input/text-output chat model catalog, including models from many providers, in a searchable modal; its virtualized list keeps every matching model available without building the whole catalog at once. The picker displays each model's published context size and whether it declares native function support; AETHER sends its local time and calculator functions only to models that support them. Custom endpoints may use the same functions when their API supports Chat Completions tool calls. These functions cannot access files, apps, accounts, or the network.
+The desktop Settings page supports three real connection modes: OpenAI through the official Go SDK and Responses API, OpenRouter through the SDK's OpenAI-compatible Chat Completions API, and a custom OpenAI-compatible endpoint. Each provider keeps its own model selection; changing providers does not modify Dot profiles or saved conversation messages. OpenRouter loads its live text-input/text-output chat model catalog, including models from many providers, in a searchable modal; its virtualized list keeps every matching model available without building the whole catalog at once. The picker displays each model's published context size and whether it declares native function or reasoning-effort support; AETHER sends OpenRouter capabilities only when the selected model declares support. Custom endpoints may use native functions and reasoning effort when their Chat Completions implementation supports them. These functions cannot access files, apps, accounts, or the network.
 
 Desktop API keys are stored separately per provider in the system credential store (macOS Keychain on macOS). Provider settings and the custom endpoint URL are stored in local preferences; secrets are never written to preferences, Dot data, or logs. Remote custom endpoints must use HTTPS. Cleartext HTTP is accepted only for loopback endpoints such as localhost.
 
@@ -40,8 +40,10 @@ export OPENAI_API_KEY="..."
 export OPENROUTER_API_KEY="..."
 export AETHER_MODEL_BASE_URL="https://api.example.com/v1" # custom provider only
 export AETHER_COMPATIBLE_API_KEY="..." # optional for local endpoints
-# These two controls apply to the OpenAI Responses provider.
+# Reasoning effort applies to OpenAI and compatible Chat Completions models.
+# Use "default" to omit the effort parameter for compatible providers.
 export AETHER_REASONING_EFFORT="medium"
+# Text verbosity is supported by the OpenAI Responses provider.
 export AETHER_TEXT_VERBOSITY="medium"
 # Optional. Leave unset to use the selected provider/model's reply-length default.
 # export AETHER_MAX_OUTPUT_TOKENS="16384"

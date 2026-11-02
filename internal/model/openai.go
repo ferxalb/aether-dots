@@ -28,17 +28,18 @@ const (
 )
 
 type Config struct {
-	Provider           ProviderID
-	Model              string
-	BaseURL            string
-	APIKey             string `json:"-"`
-	Timeout            time.Duration
-	ReasoningEffort    string
-	TextVerbosity      string
-	MaxOutputTokens    int64
-	MaxRetries         int
-	DisableNativeTools bool
-	HTTPClient         *http.Client `json:"-"`
+	Provider               ProviderID
+	Model                  string
+	BaseURL                string
+	APIKey                 string `json:"-"`
+	Timeout                time.Duration
+	ReasoningEffort        string
+	TextVerbosity          string
+	MaxOutputTokens        int64
+	MaxRetries             int
+	DisableNativeTools     bool
+	DisableReasoningEffort bool
+	HTTPClient             *http.Client `json:"-"`
 }
 
 // FromEnvironment reads the CLI model and key without storing credentials.
@@ -58,13 +59,17 @@ func FromEnvironment() Config {
 	if modelName == "" {
 		modelName = defaultModel
 	}
+	reasoningEffort := envString("AETHER_REASONING_EFFORT", DefaultReasoningEffort)
+	if strings.EqualFold(reasoningEffort, "default") {
+		reasoningEffort = ""
+	}
 	return Config{
 		Provider:        provider,
 		Model:           modelName,
 		BaseURL:         strings.TrimSpace(os.Getenv("AETHER_MODEL_BASE_URL")),
 		APIKey:          strings.TrimSpace(os.Getenv(keyVariable)),
 		Timeout:         envDurationSeconds("AETHER_MODEL_TIMEOUT_SECONDS", 90),
-		ReasoningEffort: envString("AETHER_REASONING_EFFORT", DefaultReasoningEffort),
+		ReasoningEffort: reasoningEffort,
 		TextVerbosity:   envString("AETHER_TEXT_VERBOSITY", DefaultTextVerbosity),
 		MaxOutputTokens: envInt64("AETHER_MAX_OUTPUT_TOKENS", DefaultMaxOutputTokens),
 		MaxRetries:      envInt("AETHER_MAX_RETRIES", DefaultMaxRetries),
@@ -231,7 +236,8 @@ func (g Generator) client() openai.Client {
 }
 
 func normalizeConfig(config Config) Config {
-	if strings.TrimSpace(config.ReasoningEffort) == "" {
+	if strings.TrimSpace(config.ReasoningEffort) == "" &&
+		config.Provider != ProviderOpenRouter && config.Provider != ProviderCompatible {
 		config.ReasoningEffort = DefaultReasoningEffort
 	}
 	if strings.TrimSpace(config.TextVerbosity) == "" {
