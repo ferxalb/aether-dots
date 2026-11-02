@@ -50,9 +50,9 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 				if a.skillDeleteID == skill.ID {
 					if ui.Button(c.Key("skill-delete-confirm-"+skill.ID), "Delete skill").Padding(7, 10).Clicked() {
 						if err := a.db.DeleteSkill(skill.ID); err != nil {
-							a.skillMessage = err.Error()
+							a.adt.Error("Couldn't remove the skill", err.Error())
 						} else {
-							a.skillMessage = "Skill deleted. Saved chat history keeps its original instructions."
+							a.adt.Success("Skill removed", "Saved chat history keeps its original instructions.")
 							a.skillEditingID, a.skillDeleteID = "", ""
 							a.skillEditorOpen = false
 							a.skillAdvancedOpen = false
@@ -85,7 +85,6 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 					a.skillEditorOpen = false
 					a.skillAdvancedOpen = false
 					a.skillDraft = task.Skill{}
-					a.skillMessage = ""
 				}
 			})
 			ui.Field(c, "Name", func() {
@@ -144,7 +143,6 @@ func (a *app) editSkill(skill task.Skill) {
 	a.skillAdvancedOpen = skill.Inputs != "" || skill.Validation != "" || skill.Approval != ""
 	a.skillDeleteID = ""
 	a.skillDraft = skill
-	a.skillMessage = ""
 }
 
 func (a *app) startSkillEditor() {
@@ -152,7 +150,6 @@ func (a *app) startSkillEditor() {
 	a.skillEditorOpen = true
 	a.skillAdvancedOpen = false
 	a.skillDraft = task.Skill{}
-	a.skillMessage = ""
 }
 
 func (a *app) saveSkill() {
@@ -165,17 +162,17 @@ func (a *app) saveSkill() {
 	if a.skillEditingID == "" {
 		skill, err := a.db.CreateSkill(in)
 		if err != nil {
-			a.skillMessage = err.Error()
+			a.adt.Error("Couldn't save the skill", err.Error())
 			return
 		}
 		a.skillEditingID, a.skillDraft = skill.ID, skill
-		a.skillMessage = "Skill saved. Use @skill[" + skill.Name + "] in a message to apply it."
+		a.adt.Success("Skill saved", "Use @skill["+skill.Name+"] in a message to apply it.")
 	} else {
 		if err := a.db.UpdateSkill(a.skillEditingID, in); err != nil {
-			a.skillMessage = err.Error()
+			a.adt.Error("Couldn't update the skill", err.Error())
 			return
 		}
-		a.skillMessage = "Skill changes saved."
+		a.adt.Success("Skill updated", "Your changes are ready to use.")
 	}
 	a.refresh()
 }
@@ -230,9 +227,13 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 					}
 					if ui.Button(c.Key("routine-toggle-"+routine.ID), label).Padding(6, 9).Clicked() {
 						if err := a.db.UpdateRoutineActive(routine.ID, !routine.Active); err != nil {
-							a.routineMessage = err.Error()
+							a.adt.Error("Couldn't update the routine", err.Error())
 						} else {
-							a.routineMessage = "Routine schedule updated."
+							if routine.Active {
+								a.adt.Info("Routine paused", "It won't run again until you resume it.")
+							} else {
+								a.adt.Success("Routine resumed", "The next run has been scheduled.")
+							}
 							a.refresh()
 						}
 					}
@@ -254,9 +255,9 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 					if a.routineDeleteID == routine.ID {
 						if ui.Button(c.Key("routine-delete-confirm-"+routine.ID), "Confirm delete").Padding(6, 9).Clicked() {
 							if err := a.db.DeleteRoutine(routine.ID); err != nil {
-								a.routineMessage = err.Error()
+								a.adt.Error("Couldn't delete the routine", err.Error())
 							} else {
-								a.routineMessage = "Routine deleted."
+								a.adt.Success("Routine deleted", "It won't run again.")
 								a.routineEditingID, a.routineDeleteID = "", ""
 								a.routineEditorOpen = false
 								a.refresh()
@@ -292,7 +293,6 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 					a.routineEditorOpen = false
 					a.routineNameDraft, a.routinePromptDraft = "", ""
 					a.routineEveryDraft, a.routineCustomDraft, a.routineDotDraft = "1h", "", a.selectedConversationID
-					a.routineMessage = ""
 				}
 			})
 			ui.Field(c, "Dot", func() { conversationChoice(c, theme, a) })
@@ -425,7 +425,6 @@ func (a *app) editRoutine(routine task.Routine) {
 	} else {
 		a.routineEveryDraft, a.routineCustomDraft = "custom", interval
 	}
-	a.routineMessage = ""
 }
 
 func (a *app) startRoutineEditor() {
@@ -433,7 +432,6 @@ func (a *app) startRoutineEditor() {
 	a.routineEditorOpen = true
 	a.routineNameDraft, a.routinePromptDraft = "", ""
 	a.routineDotDraft, a.routineEveryDraft, a.routineCustomDraft = a.selectedConversationID, "1h", ""
-	a.routineMessage = ""
 }
 
 func (a *app) saveRoutine() {
@@ -443,15 +441,15 @@ func (a *app) saveRoutine() {
 	}
 	interval, err := time.ParseDuration(strings.TrimSpace(intervalValue))
 	if err != nil {
-		a.routineMessage = "Choose a schedule or enter a valid custom interval."
+		a.adt.Warning("Choose a valid schedule", "Pick one of the listed intervals or enter a duration such as 90m or 2h.")
 		return
 	}
 	if interval < 5*time.Minute {
-		a.routineMessage = "Routines must run at least every 5 minutes."
+		a.adt.Warning("Interval is too short", "Routines can run as often as every 5 minutes.")
 		return
 	}
 	if interval > 365*24*time.Hour {
-		a.routineMessage = "The longest allowed interval is 1 year."
+		a.adt.Warning("Interval is too long", "The longest allowed schedule is one year.")
 		return
 	}
 	in := task.CreateRoutine{
@@ -461,17 +459,17 @@ func (a *app) saveRoutine() {
 	if a.routineEditingID == "" {
 		routine, err := a.db.CreateRoutine(in)
 		if err != nil {
-			a.routineMessage = err.Error()
+			a.adt.Error("Couldn't save the routine", err.Error())
 			return
 		}
 		a.routineEditingID = routine.ID
-		a.routineMessage = "Routine saved. Next run " + routine.NextRunAt.Local().Format("Jan 2, 3:04 PM")
+		a.adt.Success("Routine saved", "Next run "+routine.NextRunAt.Local().Format("Jan 2, 3:04 PM"))
 	} else {
 		if err := a.db.UpdateRoutine(a.routineEditingID, in); err != nil {
-			a.routineMessage = err.Error()
+			a.adt.Error("Couldn't update the routine", err.Error())
 			return
 		}
-		a.routineMessage = "Routine changes saved."
+		a.adt.Success("Routine updated", "Your changes are saved.")
 	}
 	a.refresh()
 }
@@ -487,13 +485,12 @@ func isPresetRoutineInterval(value string) bool {
 
 func (a *app) testRoutine(id string) {
 	if a.cancelRun != nil {
-		a.routineMessage = "Another Dot run is active. Wait for it to finish before testing a routine."
+		a.adt.Warning("A Dot is already running", "Wait for it to finish before running this routine.")
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelRun = cancel
-	a.message = "Testing routine…"
-	a.routineMessage = "Running routine now…"
+	a.adt.Info("Routine started", "This one-time run sends a request to OpenAI and may use your plan.")
 	prefs := a.prefs
 	win := a.win
 	go func() {
@@ -507,9 +504,9 @@ func (a *app) testRoutine(id string) {
 			a.cancelRun = nil
 			a.refresh()
 			if err != nil {
-				a.routineMessage = "Routine test failed: " + err.Error()
+				a.adt.Error("Routine didn't finish", err.Error())
 			} else {
-				a.routineMessage = "Routine test completed. See the Dot conversation for its response."
+				a.adt.Success("Routine completed", "See the Dot conversation for its response.")
 			}
 		}
 		if win == nil {
@@ -545,7 +542,7 @@ func (a *app) startRoutineScheduler() {
 		})
 		if err != nil && !errors.Is(err, context.Canceled) {
 			if win != nil {
-				win.Update(func() { a.message = "Routine scheduler stopped: " + err.Error() })
+				win.Update(func() { a.adt.Error("Routine scheduler stopped", err.Error()) })
 			}
 		}
 	}()

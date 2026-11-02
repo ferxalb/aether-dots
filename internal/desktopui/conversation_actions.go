@@ -16,16 +16,15 @@ func (a *app) startCreator() {
 	}
 	conversation, err := a.db.CreateConversation(task.CreateConversation{SpaceID: spaceID})
 	if err != nil {
-		a.message = err.Error()
+		a.adt.Error("Couldn't create a Dot", err.Error())
 		return
 	}
 	a.settingsOpen = false
 	a.conversationDetailsOpen = false
 	a.selectedDotID = ""
-	a.message = "Dot created. Start with a prompt, then personalize its profile whenever you like."
 	a.refresh()
 	a.selectConversation(conversation.ID)
-	a.message = "Dot created. Start with a prompt, then personalize its profile whenever you like."
+	a.adt.Success("Dot created", "Start with a prompt, then personalize its profile whenever you like.")
 }
 
 func (a *app) openConversationProfile() {
@@ -59,12 +58,13 @@ func (a *app) saveConversationProfile() {
 	)
 	if err != nil {
 		a.conversationError = err.Error()
+		a.adt.Error("Couldn't save the Dot profile", err.Error())
 		return
 	}
 	a.selectedSpaceID = a.profileSpaceID
 	a.conversationError = ""
 	a.conversationDetailsOpen = false
-	a.message = "Dot profile saved. New replies will follow these instructions."
+	a.adt.Success("Dot profile saved", "New replies will follow these instructions.")
 	a.refresh()
 }
 
@@ -86,7 +86,6 @@ func (a *app) sendConversationMessage() {
 	a.clearConversationDraft(conversation.ID)
 	a.messageDraft = ""
 	a.conversationError = ""
-	a.message = "Message sent to " + conversation.Name + "."
 	a.refresh()
 	a.chatScroll.ScrollTo(0, 1e30, ui.Smooth)
 	a.startRun(dot.ID)
@@ -97,7 +96,7 @@ func (a *app) stopConversationRun() {
 		return
 	}
 	a.cancelRun()
-	a.message = "Stopping the current reply…"
+	a.adt.Info("Stopping the reply", "Your Dot will stop as soon as it can.")
 }
 
 func (a *app) retryConversationMessage(dotID string) {

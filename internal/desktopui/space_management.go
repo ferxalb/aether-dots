@@ -26,7 +26,7 @@ func (a *app) saveSpaceDraft() {
 			return
 		}
 		a.conversationError = ""
-		a.message = "Space renamed."
+		a.adt.Success("Space renamed", "The new name is saved.")
 	} else {
 		space, err := a.db.CreateSpace(name)
 		if err != nil {
@@ -35,7 +35,7 @@ func (a *app) saveSpaceDraft() {
 		}
 		a.profileSpaceID = space.ID
 		a.conversationError = ""
-		a.message = "Space created."
+		a.adt.Success("Space created", "Your new space is ready.")
 	}
 	a.refresh()
 	a.closeSpaceManagement()

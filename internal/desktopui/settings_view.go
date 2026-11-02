@@ -17,14 +17,6 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 			})
 			ui.Tabs(c, &a.settingsTab, "General", "AI & responses", "Skills", "Routines").FillWidth()
 		})
-		if message := a.settingsFeedback(); message != "" {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Margin(10, 0, 0, 0).
-				Padding(8, 11).Radius(9).Background(theme.Accent.Alpha(0.08)).
-				Border(1, theme.Accent.Alpha(0.14)).Children(func() {
-				ui.Icon(c, iconSparkles).Size(13, 13).TextColor(theme.Accent)
-				ui.Text(c, message).FontSize(11).TextColor(theme.Text).FillWidth()
-			})
-		}
 		ui.Scroll(c.Key("settings-content-" + sectionKey)).TrackScroll(&a.settingsScroll[section]).
 			Grow(1).Shrink(1).FillWidth().MinHeight(0).Children(func() {
 			ui.Column(c).FillWidth().MinWidth(0).Gap(16).Padding(18, 26, 24, 26).Children(func() {
@@ -78,17 +70,6 @@ func (a *app) settingsAction(c *ui.Context, theme *ui.Theme) {
 				a.saveRoutine()
 			}
 		}
-	}
-}
-
-func (a *app) settingsFeedback() string {
-	switch a.settingsTab {
-	case 2:
-		return a.skillMessage
-	case 3:
-		return a.routineMessage
-	default:
-		return a.message
 	}
 }
 

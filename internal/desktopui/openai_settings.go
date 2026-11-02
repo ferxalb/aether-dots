@@ -60,7 +60,6 @@ func secondsPreference(value string, fallback int64) time.Duration {
 func (a *app) openSettings() {
 	a.settingsOpen = true
 	a.settingsTab = 0
-	a.message = ""
 	a.checkCredential()
 }
 
@@ -93,20 +92,21 @@ func (a *app) saveSettings() {
 	}
 	a.prefs.Model = strings.TrimSpace(a.prefs.Model)
 	if err := savePreferences(a.dataDir, a.prefs); err != nil {
-		a.message = err.Error()
+		a.adt.Error("Couldn’t save settings", err.Error())
 		return
 	}
 	a.publishRoutinePreferences()
 	key := strings.TrimSpace(a.apiKeyDraft)
 	if key == "" {
-		a.message = "Settings saved."
+		description := "Your preferences are ready to use."
 		if a.credentialSaved {
-			a.message = "Settings saved. Your API key remains in the system credential store."
+			description = "Your OpenAI API key remains saved securely."
 		} else if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "" {
-			a.message = "Settings saved. OpenAI will use OPENAI_API_KEY from the environment."
+			description = "OpenAI will use the key provided by your environment."
 		} else {
-			a.message = "Settings saved. Add an API key to use model tasks."
+			description = "Add an API key when you're ready to use model tasks."
 		}
+		a.adt.Success("Settings saved", description)
 		return
 	}
 	a.settingsSaving = true
@@ -119,14 +119,14 @@ func (a *app) saveSettings() {
 		win.Update(func() {
 			a.settingsSaving = false
 			if err != nil {
-				a.message = "Settings saved, but the API key could not be saved to the system credential store: " + err.Error()
+				a.adt.Error("API key wasn't saved", err.Error())
 				return
 			}
 			a.apiKeyDraft = ""
 			a.credentialChecked = true
 			a.credentialSaved = true
 			a.credentialError = ""
-			a.message = "Settings and OpenAI API key saved securely."
+			a.adt.Success("Settings saved", "Your OpenAI API key is saved securely.")
 		})
 	}()
 }
@@ -148,7 +148,7 @@ func (a *app) removeAPIKey() {
 		win.Update(func() {
 			a.settingsSaving = false
 			if err != nil {
-				a.message = "Could not remove the saved API key: " + err.Error()
+				a.adt.Error("Couldn't remove the API key", err.Error())
 				return
 			}
 			a.apiKeyDraft = ""
@@ -156,7 +156,7 @@ func (a *app) removeAPIKey() {
 			a.credentialSaved = false
 			a.credentialError = ""
 			a.modelConnection = "Not tested"
-			a.message = "Saved API key removed from the system credential store."
+			a.adt.Success("API key removed", "The saved key was removed from macOS Keychain.")
 		})
 	}()
 }
@@ -179,10 +179,11 @@ func (a *app) credentialDescription() string {
 
 func (a *app) testModel() {
 	if a.cancelRun != nil {
-		a.message = "A task is already running."
+		a.adt.Warning("A Dot is already running", "Wait for the current reply to finish before testing the connection.")
 		return
 	}
 	a.modelConnection = "Checking…"
+	a.adt.Info("Checking connection", "AETHER is testing the selected OpenAI model.")
 	prefs := a.prefs
 	keyDraft := a.apiKeyDraft
 	win := a.win
@@ -194,10 +195,10 @@ func (a *app) testModel() {
 			win.Update(func() {
 				if err != nil {
 					a.modelConnection = "Connection failed"
-					a.message = "OpenAI connection failed: " + err.Error()
+					a.adt.Error("Connection failed", err.Error())
 				} else {
 					a.modelConnection = "Connected"
-					a.message = "OpenAI connection verified with the selected model."
+					a.adt.Success("Connection verified", "The selected model is ready for your Dots.")
 				}
 			})
 		}

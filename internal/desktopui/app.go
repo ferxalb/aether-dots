@@ -50,12 +50,12 @@ type app struct {
 	spaceDraft          string
 	renameSpaceID       string
 	spaceManagementOpen bool
+	adt                 ADT
 	skillEditingID      string
 	skillEditorOpen     bool
 	skillAdvancedOpen   bool
 	skillDeleteID       string
 	skillDraft          task.Skill
-	skillMessage        string
 	routineEditingID    string
 	routineEditorOpen   bool
 	routineDeleteID     string
@@ -64,13 +64,11 @@ type app struct {
 	routineDotDraft     string
 	routineEveryDraft   string
 	routineCustomDraft  string
-	routineMessage      string
 	messageDraft        string
 	messageDrafts       map[string]string
 	chatScroll          ui.ScrollState
 	conversationError   string
 	apiKeyDraft         string
-	message             string
 	live                string
 	runningDotID        string
 	cancelRun           context.CancelFunc
@@ -126,11 +124,11 @@ func Run(dataDir string) error {
 		})
 		if _, err := mygo.NewTray(mygo.TrayOptions{ID: "aether-dots", Icon: trayIcon(), IconIsTemplate: true, ToolTip: "AETHER Dots", Menu: menu}); err != nil {
 			log.Printf("menu bar entry unavailable: %v", err)
-			a.message = "Menu bar entry unavailable: " + err.Error()
+			a.adt.Warning("Menu bar unavailable", err.Error())
 		}
 		if err := mygo.GlobalShortcut.Register("CmdOrCtrl+Shift+Space", capture); err != nil {
 			log.Printf("capture shortcut unavailable: %v", err)
-			a.message = "Capture shortcut unavailable: " + err.Error()
+			a.adt.Warning("Shortcut unavailable", err.Error())
 		}
 		show()
 		a.startRoutineScheduler()

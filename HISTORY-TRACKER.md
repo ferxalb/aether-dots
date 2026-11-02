@@ -6,6 +6,23 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-01 (12) — AETHER Dynamic Toast
+
+### Session objective
+
+Replace persistent inline status banners with reusable, contextual toast notifications.
+
+### Implementation
+
+- Added the ADT component with info, success, warning, and error variants, unique/updateable IDs, optional actions, manual dismissal, and configurable placement and width.
+- Styled cards from the active theme, with semantic colors, status icons, soft depth, and spring entry/exit motion that follows the system's reduced-motion preference.
+- Routed Settings, skills, routines, and workspace feedback through ADT. Settings notices appear at the lower right so they don't cover the heading or controls.
+
+### Verification
+
+- `CGO_ENABLED=0 go build ./...`, `make bundle`, and `git diff --check` passed. Reviewed the native Settings confirmation toast in the bundled app at the minimum window size.
+- Automated tests were not run. A live OpenAI request was not made.
+
 ## 2026-11-01 (11) — User-centered Settings redesign
 
 ### Session objective

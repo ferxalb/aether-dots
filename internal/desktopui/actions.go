@@ -12,7 +12,7 @@ func (a *app) startRun(id string) {
 	}
 	dot, ok := a.db.GetDot(id)
 	if !ok {
-		a.message = "Dot message not found."
+		a.adt.Error("Dot message not found", "This item may have been removed. Refresh the workspace and try again.")
 		return
 	}
 	conversationID := dot.ConversationID
@@ -20,7 +20,7 @@ func (a *app) startRun(id string) {
 	a.cancelRun = cancel
 	a.runningDotID = id
 	a.live = ""
-	a.message = "Preparing a reply…"
+	a.adt.Info("Your Dot is working", "A reply is being prepared for this conversation.")
 	if conversationID == a.selectedConversationID {
 		a.conversationError = ""
 	}
@@ -52,11 +52,11 @@ func (a *app) startRun(id string) {
 			a.live = ""
 			a.refresh()
 			if err == nil {
-				a.message = "Reply saved to the Dot chat."
+				a.adt.Success("Reply saved", "Your Dot’s response is in the conversation.")
 			} else if errorsIsCanceled(err) {
-				a.message = "Reply paused. Retry it when you’re ready."
+				a.adt.Info("Reply paused", "You can ask your Dot to try again when you’re ready.")
 			} else {
-				a.message = err.Error()
+				a.adt.Error("Reply failed", err.Error())
 			}
 			if conversationID != "" && conversationID == a.selectedConversationID {
 				if errorsIsCanceled(err) {

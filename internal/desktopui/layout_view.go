@@ -40,7 +40,6 @@ func (a *app) view(c *ui.Context) {
 			default:
 				ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 					ui.Column(c).FillWidth().MinWidth(0).Gap(18).Padding(22, 26, 30, 26).Children(func() {
-						a.statusMessage(c, theme)
 						a.workspaceContent(c, theme)
 					})
 				})
@@ -50,6 +49,11 @@ func (a *app) view(c *ui.Context) {
 		// sidebar's clear titlebar band without blocking its controls.
 		ui.Box(c).Absolute().Top(0).Left(0).Width(272).Height(dragHeight).DragWindow()
 	})
+	toastConfig := ADTConfig{Left: 286, MaxWidth: 320}
+	if a.settingsOpen {
+		toastConfig.Position = ADTBottomRight
+	}
+	a.adt.Render(c, theme, toastConfig)
 }
 
 func (a *app) hasConversationChat() bool {
@@ -130,18 +134,6 @@ func (a *app) header(c *ui.Context, theme *ui.Theme) {
 				a.openConversationProfile()
 			}
 		}
-	})
-}
-
-func (a *app) statusMessage(c *ui.Context, theme *ui.Theme) {
-	if a.message == "" {
-		return
-	}
-	status := ui.Row(c).AlignItems(ui.Center).Gap(8).Padding(8, 11).Radius(9).
-		Background(theme.Accent.Alpha(0.08)).Border(1, theme.Accent.Alpha(0.14))
-	status.Children(func() {
-		ui.Icon(c, iconSparkles).Size(13, 13).TextColor(theme.Accent)
-		ui.Text(c, a.message).FontSize(11).TextColor(theme.Text).FillWidth()
 	})
 }
 
