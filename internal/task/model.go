@@ -107,15 +107,15 @@ type Conversation struct {
 	DelegatedDotIDs []string `json:"delegated_dot_ids,omitempty"`
 	// GitHub access is separately granted by stable repository ID. Grants are
 	// bound to the current Space and default to empty.
-	GitHubRepositoryIDs           []int64               `json:"github_repository_ids,omitempty"`
-	GitHubGrantSpaceID            string                `json:"github_grant_space_id,omitempty"`
-	GitHubModelDisclosureAccepted bool                  `json:"github_model_disclosure_accepted,omitempty"`
-	ComputerUseScopes             []string              `json:"computer_use_scopes,omitempty"`
-	ComputerUseGrantSpaceID       string                `json:"computer_use_grant_space_id,omitempty"`
-	ComputerUseModelDisclosureAccepted bool              `json:"computer_use_model_disclosure_accepted,omitempty"`
-	CreatedAt                     time.Time             `json:"created_at"`
-	UpdatedAt                     time.Time             `json:"updated_at"`
-	Messages                      []ConversationMessage `json:"messages"`
+	GitHubRepositoryIDs                []int64               `json:"github_repository_ids,omitempty"`
+	GitHubGrantSpaceID                 string                `json:"github_grant_space_id,omitempty"`
+	GitHubModelDisclosureAccepted      bool                  `json:"github_model_disclosure_accepted,omitempty"`
+	ComputerUseScopes                  []string              `json:"computer_use_scopes,omitempty"`
+	ComputerUseGrantSpaceID            string                `json:"computer_use_grant_space_id,omitempty"`
+	ComputerUseModelDisclosureAccepted bool                  `json:"computer_use_model_disclosure_accepted,omitempty"`
+	CreatedAt                          time.Time             `json:"created_at"`
+	UpdatedAt                          time.Time             `json:"updated_at"`
+	Messages                           []ConversationMessage `json:"messages"`
 }
 
 const (

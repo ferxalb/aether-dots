@@ -21,15 +21,12 @@ func (a *app) integrationSettings(c *ui.Context, theme *ui.Theme) {
 	ui.Column(c).FillWidth().MinWidth(0).Gap(14).Children(func() {
 		a.mobileRemoteCard(c, theme)
 		a.githubIntegrationCard(c, theme)
+		a.computerUseIntegrationCard(c, theme)
 		providers := integrations.InitialProviders()
 		for _, provider := range providers[1:] {
-			icon := "◷"
-			if provider.ID == "apple-notes" {
-				icon = "✎"
-			}
-			a.upcomingIntegrationCard(c, theme, icon, provider.Name, provider.Description)
+			a.upcomingIntegrationCard(c, theme, "◷", provider.Name, provider.Description)
 		}
-		ui.Text(c, "Apple Notes and Reminders are upcoming. AETHER does not request Apple permissions for these cards.").
+		ui.Text(c, "Apple Reminders is not available yet. Computer Use needs CuaDriver enabled under System Settings → Privacy & Security → Accessibility.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 	})
 }

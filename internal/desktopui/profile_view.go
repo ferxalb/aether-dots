@@ -14,7 +14,7 @@ var dotIcons = []string{"✦", "✧", "◈", "◉", "✳", "◆", "✹", "◌"}
 var dotColors = []string{"#7458D8", "#168459", "#1D69C8", "#C33E70", "#D27C31", "#37839A"}
 
 func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
-	_, ok := findConversation(a.snapshot, a.selectedConversationID)
+	conversation, ok := findConversation(a.snapshot, a.selectedConversationID)
 	if !ok {
 		a.workspaceWelcomeView(c, theme)
 		return
@@ -273,7 +273,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		})
 
 		profilePanel(c, theme, "Computer Use access", func() {
-			ui.Text(c, "Grant this Dot access only to the macOS apps it needs. Cua Driver remains a separate install. Accessibility is requested when a Dot first uses an enabled scope; Screen Recording is not requested.").
+			ui.Text(c, "Grant this Dot access only to the macOS apps it needs. Cua Driver installs separately. If it is not listed under System Settings → Privacy & Security → Accessibility, add /Applications/CuaDriver.app and switch it on. Screen Recording is not requested.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			if !a.computerUseInstalled {
 				ui.Text(c, "Install Cua Driver in Settings → Integrations before granting a new app scope.").
@@ -292,7 +292,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			} {
 				selected := containsID(a.profileComputerUseScopes, scope.id)
 				if ui.Checkbox(c.Key("profile-computer-use-"+scope.id), &selected, scope.label).
-					Disabled(!a.computerUseInstalled || conversation.SpaceID != a.profileSpaceID).FillWidth().Changed() {
+					Disabled((!a.computerUseInstalled && !selected) || conversation.SpaceID != a.profileSpaceID).FillWidth().Changed() {
 					a.profileComputerUseScopes = toggleString(a.profileComputerUseScopes, scope.id, task.MaxComputerUseScopes)
 					if len(a.profileComputerUseScopes) == 0 {
 						a.profileComputerUseDisclosureAccepted = false
@@ -304,7 +304,9 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 				if ui.Checkbox(c.Key("profile-computer-use-disclosure"), &a.profileComputerUseDisclosureAccepted,
 					"I understand Notes text may be sent to this Dot's configured model provider").Changed() {
-					// The store commits grants only after this disclosure is accepted.
+					if !a.profileComputerUseDisclosureAccepted {
+						a.profileComputerUseScopes = nil
+					}
 				}
 			}
 			ui.Text(c, "Computer Use is unavailable to Routines, delegated Dots, and messages sent through the AETHER iOS bridge.").

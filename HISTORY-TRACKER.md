@@ -6,6 +6,20 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-03 (1) — Bounded macOS Computer Use with Cua Driver
+
+### Implementation
+
+- Added a separate, user-initiated one-click Cua Driver installer for the stable channel. The installer is pinned to the upstream HTTPS URL, requires signature verification, leaves PATH unchanged, and disables optional driver telemetry. AETHER verifies the installed app signature and keeps the driver's MCP socket and policy files in a private app-data directory.
+- Connected the installed driver through the official MCP Go SDK over its private local socket. Each runtime starts with a bounded, expiring capability manifest for Apple Notes and Apple Music plus a deny-by-default argument policy. Notes reads return bounded accessibility text from one visible window; Music exposes only play, pause, next, and previous. Screenshot capture, Screen Recording, clipboard, files, browser, shell, generic typing, and other apps remain unavailable.
+- Added per-Dot scopes, Space binding, a Notes-to-model disclosure, runtime authorization rechecks, content-free access events, and immediate session invalidation when scopes change or are revoked. Computer Use is excluded from Routines, delegated Dots, and iOS-bridge runs. Added an Integrations card to install/update Cua Driver, open Accessibility settings after first install, cancel setup, and revoke every Dot grant.
+- Replaced the old Apple-integration restriction in `AGENTS.md` with the Cua Driver permission and installation boundary, removed the Apple Notes placeholder, updated README setup/troubleshooting guidance, and migrated existing schema-v5 stores to schema v6 with no grants enabled.
+
+### Verification
+
+- Ran `gofmt`, `CGO_ENABLED=0 go build ./...`, and `git diff --check` successfully. Automated tests were not run.
+- Cua Driver installation, code-signature verification against a downloaded release, and the macOS Accessibility flow remain unverified on this machine.
+
 ## 2026-11-02 (5) — Official MCP Go SDK foundation
 
 ### Implementation

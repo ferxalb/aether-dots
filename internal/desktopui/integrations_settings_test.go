@@ -8,7 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestIntegrationsTabShowsGitHubAndDisabledUpcomingProviders(t *testing.T) {
+func TestIntegrationsTabShowsGitHubComputerUseAndDisabledUpcomingProviders(t *testing.T) {
 	a := newMessengerTestApp(t)
 	conversation := createTestConversation(t, a, a.selectedSpaceID, "Selected Dot", "Keep this Dot selected.")
 	a.selectConversation(conversation.ID)
@@ -26,17 +26,20 @@ func TestIntegrationsTabShowsGitHubAndDisabledUpcomingProviders(t *testing.T) {
 		"GitHub",
 		"Let your Dots inspect repositories, issues, pull requests, and CI activity.",
 		"Connect GitHub",
+		"Computer Use",
 		"Apple Notes",
+		"Apple Music",
 		"Apple Reminders",
+		"Install Cua Driver",
 		"Coming soon",
-		"AETHER does not request Apple permissions for these cards.",
+		"add /Applications/CuaDriver.app and switch it on",
 	} {
 		if !tester.HasText(expected) {
 			t.Fatalf("Integrations tab is missing %q: %q", expected, texts)
 		}
 	}
-	if countText(texts, "Coming soon") != 2 {
-		t.Fatalf("upcoming providers should have two honest status labels: %q", texts)
+	if countText(texts, "Coming soon") != 1 {
+		t.Fatalf("upcoming providers should have one honest status label: %q", texts)
 	}
 	for _, forbidden := range []string{"Connect Apple Notes", "Connect Apple Reminders", "Request permission"} {
 		if tester.HasText(forbidden) {
@@ -55,7 +58,7 @@ func TestIntegrationsTabShowsGitHubAndDisabledUpcomingProviders(t *testing.T) {
 	if err := tester.Click("Integrations"); err != nil {
 		t.Fatal(err)
 	}
-	if !tester.HasText("Apple Notes") || !tester.HasText("Apple Reminders") {
+	if !tester.HasText("Computer Use") || !tester.HasText("Apple Notes") || !tester.HasText("Apple Reminders") {
 		t.Fatalf("switching back did not restore the Integrations page: %q", tester.Texts())
 	}
 }

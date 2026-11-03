@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-func jsonUnmarshal(data []byte, target any) error {
-	return json.Unmarshal(data, target)
-}
-
 func findAppPID(value any, bundleID string) (int64, bool) {
 	var visit func(any) (int64, bool)
 	visit = func(current any) (int64, bool) {
@@ -63,15 +59,30 @@ func findUniqueWindow(value any) (int64, string, bool) {
 		}
 	}
 	visit(value)
-	if len(windows) != 1 {
+	visible := make([]any, 0, len(windows))
+	for _, item := range windows {
+		window, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		onScreen, ok := booleanField(window, "is_on_screen", "on_screen", "isOnScreen")
+		if !ok || !onScreen {
+			continue
+		}
+		if onCurrentSpace, exists := booleanField(window, "on_current_space", "onCurrentSpace"); exists && !onCurrentSpace {
+			continue
+		}
+		visible = append(visible, item)
+	}
+	if len(visible) != 1 {
 		return 0, "", false
 	}
-	window, ok := windows[0].(map[string]any)
+	window, ok := visible[0].(map[string]any)
 	if !ok {
 		return 0, "", false
 	}
 	id, ok := numberField(window, "window_id", "windowId", "id")
-	if !ok || id < 0 {
+	if !ok || id <= 0 {
 		return 0, "", false
 	}
 	title := stringField(window, "title", "name")
@@ -79,6 +90,15 @@ func findUniqueWindow(value any) (int64, string, bool) {
 		title = "Current window"
 	}
 	return id, compactString(title, 160), true
+}
+
+func booleanField(value map[string]any, keys ...string) (bool, bool) {
+	for _, key := range keys {
+		if enabled, ok := value[key].(bool); ok {
+			return enabled, true
+		}
+	}
+	return false, false
 }
 
 func matchingButtonTokens(value any, labels []string) []string {
@@ -98,7 +118,7 @@ func matchingButtonTokens(value any, labels []string) []string {
 		case map[string]any:
 			label := strings.ToLower(strings.TrimSpace(stringField(node, "label", "name", "title")))
 			role := strings.ToLower(strings.TrimSpace(stringField(node, "role", "type")))
-		token := stringField(node, "element_token", "elementToken")
+			token := stringField(node, "element_token", "elementToken")
 			if token != "" && wanted[label] && strings.Contains(role, "button") && !seen[token] {
 				seen[token] = true
 				result = append(result, token)
@@ -225,4 +245,3 @@ func compactString(value string, limit int) string {
 	}
 	return fmt.Sprintf("%s…", value[:end])
 }
-

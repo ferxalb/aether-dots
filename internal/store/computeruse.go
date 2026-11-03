@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"aether-dots/internal/task"
 )
@@ -10,6 +11,21 @@ import (
 // ComputerUseToolScopes returns only the current interactive Dot's explicit
 // app scopes. Routine and delegated runs never inherit this capability.
 func (s *Store) ComputerUseToolScopes(dotID string) []string {
+	return s.computerUseToolScopes(dotID, false)
+}
+
+// ComputerUseToolAuthorized rechecks the grant and active local run status at
+// the point where an app action is about to execute.
+func (s *Store) ComputerUseToolAuthorized(dotID, scope string) bool {
+	for _, granted := range s.computerUseToolScopes(dotID, true) {
+		if granted == scope {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) computerUseToolScopes(dotID string, requireRunning bool) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var dot *task.Dot
@@ -19,7 +35,10 @@ func (s *Store) ComputerUseToolScopes(dotID string) []string {
 			break
 		}
 	}
-	if dot == nil || dot.ConversationID == "" || dot.RoutineID != "" || dot.ParentDotID != "" || dot.DelegatedByDotID != "" {
+	if dot == nil || dot.ConversationID == "" || dot.RoutineID != "" || dot.DelegatedByDotID != "" {
+		return nil
+	}
+	if requireRunning && dot.Status != task.Running {
 		return nil
 	}
 	ci := conversationIndex(&s.db, dot.ConversationID)
@@ -42,11 +61,16 @@ func (s *Store) ComputerUseToolScopes(dotID string) []string {
 // used when the user disconnects the desktop integration.
 func (s *Store) RevokeAllComputerUse() error {
 	return s.change(func(db *task.Database) error {
+		now := time.Now().UTC()
 		for i := range db.Conversations {
 			conversation := &db.Conversations[i]
+			if len(conversation.ComputerUseScopes) == 0 && conversation.ComputerUseGrantSpaceID == "" && !conversation.ComputerUseModelDisclosureAccepted {
+				continue
+			}
 			conversation.ComputerUseScopes = nil
 			conversation.ComputerUseGrantSpaceID = ""
 			conversation.ComputerUseModelDisclosureAccepted = false
+			conversation.UpdatedAt = now
 		}
 		return nil
 	})

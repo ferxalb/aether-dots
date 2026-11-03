@@ -50,48 +50,48 @@ type app struct {
 	settingsAdvancedOpen    bool
 	settingsScroll          [5]ui.ScrollState
 
-	profileName                     string
-	profilePurpose                  string
-	profileInstructions             string
-	profileContextSummary           string
-	profileDelegateIDs              []string
-	profileGitHubEnabledDraft       bool
-	profileGitHubDisclosureAccepted bool
-	profileGitHubRepositorySearch   string
-	profileGitHubRepositoryLimit    int
-	profileComputerUseScopes        []string
+	profileName                          string
+	profilePurpose                       string
+	profileInstructions                  string
+	profileContextSummary                string
+	profileDelegateIDs                   []string
+	profileGitHubEnabledDraft            bool
+	profileGitHubDisclosureAccepted      bool
+	profileGitHubRepositorySearch        string
+	profileGitHubRepositoryLimit         int
+	profileComputerUseScopes             []string
 	profileComputerUseDisclosureAccepted bool
-	profileIcon                     string
-	profileColor                    string
-	profileSpaceID                  string
-	spaceDraft                      string
-	spaceContextDraft               string
-	spaceContextTargetID            string
-	renameSpaceID                   string
-	spaceManagementOpen             bool
-	adt                             ADT
-	skillEditingID                  string
-	skillEditorOpen                 bool
-	skillAdvancedOpen               bool
-	skillDeleteID                   string
-	skillDraft                      task.Skill
-	routineEditingID                string
-	routineEditorOpen               bool
-	routineDeleteID                 string
-	routineNameDraft                string
-	routinePromptDraft              string
-	routineDotDraft                 string
-	routineEveryDraft               string
-	routineCustomDraft              string
-	routineGitHubEnabledDraft       bool
-	messageDraft                    string
-	messageDrafts                   map[string]string
-	chatMessages                    ui.ListState
-	activityList                    ui.ListState
-	conversationError               string
-	apiKeyDraft                     string
-	apiKeyDrafts                    map[string]string
-	providerSelection               string
+	profileIcon                          string
+	profileColor                         string
+	profileSpaceID                       string
+	spaceDraft                           string
+	spaceContextDraft                    string
+	spaceContextTargetID                 string
+	renameSpaceID                        string
+	spaceManagementOpen                  bool
+	adt                                  ADT
+	skillEditingID                       string
+	skillEditorOpen                      bool
+	skillAdvancedOpen                    bool
+	skillDeleteID                        string
+	skillDraft                           task.Skill
+	routineEditingID                     string
+	routineEditorOpen                    bool
+	routineDeleteID                      string
+	routineNameDraft                     string
+	routinePromptDraft                   string
+	routineDotDraft                      string
+	routineEveryDraft                    string
+	routineCustomDraft                   string
+	routineGitHubEnabledDraft            bool
+	messageDraft                         string
+	messageDrafts                        map[string]string
+	chatMessages                         ui.ListState
+	activityList                         ui.ListState
+	conversationError                    string
+	apiKeyDraft                          string
+	apiKeyDrafts                         map[string]string
+	providerSelection                    string
 
 	openRouterCatalog         []model.OpenRouterModel
 	openRouterSearch          string
@@ -120,6 +120,9 @@ type app struct {
 	computerUseStatus          string
 	computerUseError           string
 	computerUseInstallCancel   context.CancelFunc
+	computerUseRequest         uint64
+	computerUseRevoking        bool
+	computerUseSettingsOpening bool
 	remoteClient               *remote.Client
 	remoteCredentialStore      *remote.KeychainStore
 	remoteReceipts             *remote.ReceiptStore
@@ -172,11 +175,11 @@ func Run(dataDir string) error {
 	}
 	a := &app{db: db, dataDir: dataDir, prefs: prefs, providerSelection: providerSelectionLabel(prefs.Provider),
 		remoteLoopMu: &sync.Mutex{}, remoteForgetMu: &sync.Mutex{},
-		githubService: github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil),
+		githubService:      github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil),
 		computerUseService: computeruse.New(dataDir)}
 	a.computerUseInstalled = a.computerUseService.Installed()
 	if a.computerUseInstalled {
-		a.computerUseStatus = "Installed · Accessibility access is requested on first use"
+		a.computerUseStatus = "Installed · bounded session ready"
 	} else {
 		a.computerUseStatus = "Not installed"
 	}
@@ -221,6 +224,11 @@ func Run(dataDir string) error {
 		a.startRoutineScheduler()
 	})
 	err = mygo.App.Run()
+	if a.computerUseInstallCancel != nil {
+		a.computerUseRequest++
+		a.computerUseInstallCancel()
+		a.computerUseInstallCancel = nil
+	}
 	if a.computerUseService != nil {
 		a.computerUseService.Stop()
 	}

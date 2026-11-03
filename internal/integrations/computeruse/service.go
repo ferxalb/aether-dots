@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	cuadriverAppPath = "/Applications/CuaDriver.app"
-	cuadriverInstall = "curl -fsSL https://cua.ai/driver/install.sh | /bin/bash -s -- --channel stable --require-signature --no-modify-path"
+	cuadriverAppPath   = "/Applications/CuaDriver.app"
+	cuadriverInstall   = "curl -fsSL https://cua.ai/driver/install.sh | /bin/bash -s -- --channel stable --require-signature --no-modify-path"
 	capabilityManifest = `version: 3
 expires_after: 8h
 idle_timeout: 30m
@@ -43,6 +43,34 @@ resources:
   desktop:
     display: false
 `
+	driverPolicy = `allow:
+  tools:
+    - start_session
+    - end_session
+    - list_apps
+    - list_windows
+  rules:
+    - tool: launch_app
+      constraints:
+        bundle_id:
+          allowed: ["com.apple.Notes", "com.apple.Music"]
+    - tool: get_window_state
+      constraints:
+        include_screenshot:
+          allowed: [false]
+        include_accessibility_tree:
+          allowed: [true]
+        max_elements:
+          max: 120
+        max_depth:
+          max: 10
+    - tool: click
+      constraints:
+        action:
+          allowed: ["press"]
+        post_action_wait:
+          allowed: ["none"]
+`
 )
 
 const (
@@ -53,8 +81,9 @@ const (
 type Service struct {
 	dataDir string
 
-	mu     sync.Mutex
-	client *mcpClient
+	mu         sync.Mutex
+	client     *mcpClient
+	generation uint64
 }
 
 func New(dataDir string) *Service {
@@ -79,17 +108,20 @@ func (s *Service) Installed() bool {
 }
 
 // Install runs only after a user clicks the integration setup button. It
-// filters installer overrides so the fixed stable, signature-checked install
-// cannot be redirected by inherited CUA_DRIVER_* variables.
+// passes a fixed stable, signature-checked install only the environment it
+// needs; shell startup and installer override variables are not inherited.
 func (s *Service) Install(ctx context.Context) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("Computer Use is available only in the macOS desktop app")
 	}
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", cuadriverInstall)
-	cmd.Env = installerEnvironment(os.Environ())
+	cmd := exec.CommandContext(ctx, "/bin/bash", "--noprofile", "--norc", "-c", cuadriverInstall)
+	cmd.Env = installerEnvironment()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return errors.New("Cua Driver could not be installed; check your connection and try again")
 	}
 	if !s.Installed() {
@@ -98,6 +130,21 @@ func (s *Service) Install(ctx context.Context) error {
 	if err := verifyAppSignature(ctx); err != nil {
 		return err
 	}
+	driver, err := s.driverPath()
+	if err != nil {
+		return err
+	}
+	telemetry := exec.CommandContext(ctx, driver, "telemetry", "disable")
+	telemetry.Env = driverEnvironment(os.Environ(), "")
+	telemetry.Stdout = io.Discard
+	telemetry.Stderr = io.Discard
+	if err := telemetry.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return errors.New("Cua Driver installed, but its optional usage telemetry could not be disabled")
+	}
+	s.Stop()
 	return nil
 }
 
@@ -105,6 +152,9 @@ func (s *Service) OpenAccessibilitySettings() error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("Accessibility settings are available only on macOS")
 	}
+	// Cua Driver must be relaunched after a TCC grant changes. Stop AETHER's
+	// bounded session before directing the user to the system settings pane.
+	s.Stop()
 	cmd := exec.Command("/usr/bin/open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -116,92 +166,137 @@ func (s *Service) OpenAccessibilitySettings() error {
 }
 
 func (s *Service) Stop() {
+	s.stopRuntime()()
+}
+
+// StopAsync invalidates active tools immediately, then stops the driver off
+// the UI thread.
+func (s *Service) StopAsync() {
+	stop := s.stopRuntime()
+	go stop()
+}
+
+func (s *Service) stopRuntime() func() {
 	s.mu.Lock()
+	s.generation++
 	client := s.client
 	s.client = nil
 	s.mu.Unlock()
-	if client != nil {
-		client.Close()
+	return func() {
+		if client != nil {
+			client.Close()
+		}
+		if runtime.GOOS != "darwin" {
+			return
+		}
+		driver, err := s.driverPath()
+		if err != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, driver, "stop", "--socket", s.socketPath())
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		_ = cmd.Run()
 	}
-	if runtime.GOOS != "darwin" {
-		return
-	}
-	driver, err := s.driverPath()
-	if err != nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "stop", "--socket", s.socketPath())
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	_ = cmd.Run()
 }
 
-func (s *Service) ObserveNotes(ctx context.Context, session string) (string, error) {
-	window, state, err := s.observeApp(ctx, session, notesBundleID)
+// Generation returns the current authorization generation. Tool handlers bind
+// to it so a revoked or stopped session cannot silently reconnect mid-run.
+func (s *Service) Generation() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.generation
+}
+
+// Prepare starts and warms the bounded MCP connection after user-requested
+// installation, reducing first-use latency without reading any app data.
+func (s *Service) Prepare(ctx context.Context) error {
+	_, err := s.ensureClient(ctx, s.Generation())
+	return err
+}
+
+func (s *Service) ObserveNotes(ctx context.Context, session string, generation uint64) (string, error) {
+	window, state, err := s.observeApp(ctx, session, notesBundleID, generation)
 	if err != nil {
 		return "", err
+	}
+	if !s.isCurrent(generation) {
+		return "", errors.New("Computer Use access was revoked during the Notes read")
 	}
 	return encodeUntrustedObservation("Apple Notes", window, state)
 }
 
-func (s *Service) ControlMusic(ctx context.Context, session, action string) (string, error) {
+func (s *Service) ControlMusic(ctx context.Context, session, action string, generation uint64) (string, error) {
 	allowed := map[string]bool{"play": true, "pause": true, "next": true, "previous": true}
 	if !allowed[action] {
 		return "", errors.New("Music action is not allow-listed")
 	}
-	window, state, err := s.observeApp(ctx, session, musicBundleID)
+	window, state, err := s.observeApp(ctx, session, musicBundleID, generation)
 	if err != nil {
 		return "", err
+	}
+	if !s.isCurrent(generation) {
+		return "", errors.New("Computer Use access was revoked before the Music action")
 	}
 	targetLabel, oppositeLabel := musicLabels(action)
 	if action == "play" || action == "pause" {
 		tokens := matchingButtonTokens(state, oppositeLabel)
 		if len(tokens) == 1 {
-			return fmt.Sprintf("Music is already %s.", oppositeLabel), nil
+			state := "playing"
+			if action == "pause" {
+				state = "paused"
+			}
+			return fmt.Sprintf("Music is already %s.", state), nil
 		}
 	}
 	tokens := matchingButtonTokens(state, targetLabel)
 	if len(tokens) != 1 {
 		return "", errors.New("Music did not expose one unambiguous playback control for that action")
 	}
-	if _, err := s.callTool(ctx, "click", map[string]any{
-		"element_token":   tokens[0],
-		"session":         session,
-		"action":          "press",
+	if !s.isCurrent(generation) {
+		return "", errors.New("Computer Use access was revoked before the Music action")
+	}
+	if _, err := s.callTool(ctx, generation, "click", map[string]any{
+		"element_token":    tokens[0],
+		"session":          session,
+		"action":           "press",
 		"post_action_wait": "none",
 	}); err != nil {
 		return "", err
 	}
+	if !s.isCurrent(generation) {
+		return "", errors.New("Computer Use access was revoked during the Music action")
+	}
 	return fmt.Sprintf("Sent the %q playback action to Music window %q.", action, window), nil
 }
 
-func (s *Service) observeApp(ctx context.Context, session, bundleID string) (string, map[string]any, error) {
+func (s *Service) observeApp(ctx context.Context, session, bundleID string, generation uint64) (string, map[string]any, error) {
 	if bundleID != notesBundleID && bundleID != musicBundleID {
 		return "", nil, errors.New("Computer Use app is not allow-listed")
 	}
 	if session == "" || len(session) > 64 {
 		return "", nil, errors.New("Computer Use session is invalid")
 	}
-	if err := s.startSession(ctx, session); err != nil {
+	if err := s.startSession(ctx, generation, session); err != nil {
 		return "", nil, err
 	}
-	appsPayload, err := s.callTool(ctx, "list_apps", map[string]any{})
+	appsPayload, err := s.callTool(ctx, generation, "list_apps", map[string]any{})
 	if err != nil {
 		return "", nil, err
 	}
 	pid, running := findAppPID(appsPayload, bundleID)
 	if !running {
-		if _, err := s.callTool(ctx, "launch_app", map[string]any{"bundle_id": bundleID, "session": session}); err != nil {
+		if _, err := s.callTool(ctx, generation, "launch_app", map[string]any{"bundle_id": bundleID, "session": session}); err != nil {
 			return "", nil, err
 		}
-		pid, running = s.waitForApp(ctx, bundleID)
+		pid, running = s.waitForApp(ctx, generation, bundleID)
 		if !running {
 			return "", nil, errors.New("the approved macOS app did not become available")
 		}
 	}
-	windowsPayload, err := s.callTool(ctx, "list_windows", map[string]any{"pid": pid, "on_screen_only": true, "session": session})
+	windowsPayload, err := s.callTool(ctx, generation, "list_windows", map[string]any{"pid": pid, "on_screen_only": true, "session": session})
 	if err != nil {
 		return "", nil, err
 	}
@@ -209,7 +304,7 @@ func (s *Service) observeApp(ctx context.Context, session, bundleID string) (str
 	if !found {
 		return "", nil, errors.New("open one visible window in the approved app and try again")
 	}
-	statePayload, err := s.callTool(ctx, "get_window_state", map[string]any{
+	statePayload, err := s.callTool(ctx, generation, "get_window_state", map[string]any{
 		"pid": pid, "window_id": windowID, "session": session,
 		"include_accessibility_tree": true, "include_screenshot": false,
 		"tree_format": "elements", "max_elements": 120, "max_depth": 10,
@@ -224,13 +319,13 @@ func (s *Service) observeApp(ctx context.Context, session, bundleID string) (str
 	return title, state, nil
 }
 
-func (s *Service) waitForApp(ctx context.Context, bundleID string) (int64, bool) {
+func (s *Service) waitForApp(ctx context.Context, generation uint64, bundleID string) (int64, bool) {
 	deadline := time.NewTimer(2 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(120 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		payload, err := s.callTool(ctx, "list_apps", map[string]any{})
+		payload, err := s.callTool(ctx, generation, "list_apps", map[string]any{})
 		if err == nil {
 			if pid, running := findAppPID(payload, bundleID); running {
 				return pid, true
@@ -246,16 +341,16 @@ func (s *Service) waitForApp(ctx context.Context, bundleID string) (int64, bool)
 	}
 }
 
-func (s *Service) startSession(ctx context.Context, session string) error {
-	_, err := s.callTool(ctx, "start_session", map[string]any{"session": session})
+func (s *Service) startSession(ctx context.Context, generation uint64, session string) error {
+	_, err := s.callTool(ctx, generation, "start_session", map[string]any{"session": session})
 	return err
 }
 
-func (s *Service) callTool(ctx context.Context, name string, args map[string]any) (any, error) {
+func (s *Service) callTool(ctx context.Context, generation uint64, name string, args map[string]any) (any, error) {
 	if !allowedDriverTool(name) {
 		return nil, errors.New("Cua Driver tool is not allow-listed")
 	}
-	client, err := s.ensureClient(ctx)
+	client, err := s.ensureClient(ctx, generation)
 	if err != nil {
 		return nil, err
 	}
@@ -263,15 +358,14 @@ func (s *Service) callTool(ctx context.Context, name string, args map[string]any
 	if err != nil {
 		return nil, err
 	}
+	if !s.isCurrent(generation) {
+		return nil, errors.New("Computer Use access was revoked during the action")
+	}
 	if result.IsError {
 		return nil, errors.New("Cua Driver refused the Computer Use action; check Accessibility access and the app's current state")
 	}
 	if result.Structured != nil {
-		var payload any
-		if err := json.Unmarshal(result.Structured, &payload); err != nil {
-			return nil, errors.New("Cua Driver returned invalid structured data")
-		}
-		return payload, nil
+		return result.Structured, nil
 	}
 	if result.Text != "" {
 		var payload any
@@ -283,12 +377,15 @@ func (s *Service) callTool(ctx context.Context, name string, args map[string]any
 	return map[string]any{}, nil
 }
 
-func (s *Service) ensureClient(ctx context.Context) (*mcpClient, error) {
+func (s *Service) ensureClient(ctx context.Context, generation uint64) (*mcpClient, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, errors.New("Computer Use is available only in the macOS desktop app")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.generation != generation {
+		return nil, errors.New("Computer Use authorization changed; start a new interactive run")
+	}
 	if s.client != nil && s.client.Alive() {
 		return s.client, nil
 	}
@@ -323,18 +420,41 @@ func (s *Service) ensureDaemon(ctx context.Context) error {
 		return err
 	}
 	if s.daemonRunning(ctx, driver) {
-		return nil
+		stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		cmd := exec.CommandContext(stopCtx, driver, "stop", "--socket", s.socketPath())
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		stopErr := cmd.Run()
+		cancel()
+		if stopErr != nil {
+			return errors.New("could not replace the existing AETHER Cua Driver session")
+		}
+		deadline := time.NewTimer(2 * time.Second)
+		defer deadline.Stop()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for s.daemonRunning(ctx, driver) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deadline.C:
+				return errors.New("the previous AETHER Cua Driver session did not stop")
+			case <-ticker.C:
+			}
+		}
 	}
 	manifestPath := s.manifestPath()
-	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
-		return errors.New("could not prepare the Computer Use capability manifest")
-	}
-	if err := os.WriteFile(manifestPath, []byte(capabilityManifest), 0o600); err != nil {
+	if err := writePrivateConfig(manifestPath, []byte(capabilityManifest)); err != nil {
 		return errors.New("could not write the Computer Use capability manifest")
+	}
+	policyPath := s.policyPath()
+	if err := writePrivateConfig(policyPath, []byte(driverPolicy)); err != nil {
+		return errors.New("could not write the Computer Use tool policy")
 	}
 	cmd := exec.CommandContext(ctx, "/usr/bin/open", "-n", "-g", cuadriverAppPath, "--args",
 		"serve", "--socket", s.socketPath(), "--permission-mode", "bounded",
-		"--capability-manifest", manifestPath, "--approve-capability-manifest")
+		"--capability-manifest", manifestPath, "--approve-capability-manifest", "--no-permissions-gate")
+	cmd.Env = driverEnvironment(os.Environ(), policyPath)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
@@ -382,7 +502,7 @@ func (s *Service) driverPath() (string, error) {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", errors.New("Cua Driver is outside its expected managed install directory")
 	}
-	return path, nil
+	return resolved, nil
 }
 
 func (s *Service) socketPath() string {
@@ -391,6 +511,10 @@ func (s *Service) socketPath() string {
 
 func (s *Service) manifestPath() string {
 	return filepath.Join(s.dataDir, "computer-use", "capability.yaml")
+}
+
+func (s *Service) policyPath() string {
+	return filepath.Join(s.dataDir, "computer-use", "policy.yaml")
 }
 
 func verifyAppSignature(ctx context.Context) error {
@@ -403,8 +527,22 @@ func verifyAppSignature(ctx context.Context) error {
 	return nil
 }
 
-func installerEnvironment(source []string) []string {
-	env := make([]string, 0, len(source))
+func installerEnvironment() []string {
+	home, _ := os.UserHomeDir()
+	env := []string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
+	if tempDir := os.TempDir(); tempDir != "" {
+		env = append(env, "TMPDIR="+tempDir)
+	}
+	for _, key := range []string{"USER", "LOGNAME", "LANG", "LC_ALL"} {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
+}
+
+func driverEnvironment(source []string, policyPath string) []string {
+	env := make([]string, 0, len(source)+1)
 	for _, item := range source {
 		key, _, ok := strings.Cut(item, "=")
 		if !ok || strings.HasPrefix(key, "CUA_DRIVER_") {
@@ -412,7 +550,52 @@ func installerEnvironment(source []string) []string {
 		}
 		env = append(env, item)
 	}
+	if policyPath != "" {
+		env = append(env, "CUA_DRIVER_POLICY_FILE="+policyPath)
+	}
 	return env
+}
+
+func writePrivateConfig(path string, content []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("Computer Use config directory is not a private directory")
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(dir, ".aether-cua-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := temp.Write(content); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
+}
+
+func (s *Service) isCurrent(generation uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.generation == generation
 }
 
 func allowedDriverTool(name string) bool {
@@ -423,4 +606,3 @@ func allowedDriverTool(name string) bool {
 		return false
 	}
 }
-

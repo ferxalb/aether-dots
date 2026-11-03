@@ -66,12 +66,12 @@ func (a *app) saveConversationProfile() {
 		githubRepositoryIDs = nil
 	}
 	computerUseDisclosureAccepted := a.profileComputerUseDisclosureAccepted
-	if a.profileSpaceID != current.SpaceID || !computerUseDisclosureAccepted {
+	if a.profileSpaceID != current.SpaceID {
 		computerUseScopes = nil
-		if a.profileSpaceID != current.SpaceID {
-			computerUseDisclosureAccepted = false
-		}
+		computerUseDisclosureAccepted = false
 	}
+	computerUseChanged := !sameComputerUseScopes(current.ComputerUseScopes, computerUseScopes) ||
+		current.ComputerUseModelDisclosureAccepted != computerUseDisclosureAccepted
 	err := a.db.UpdateConversationProfileAndIntegrations(
 		a.selectedConversationID,
 		a.profileSpaceID,
@@ -91,6 +91,9 @@ func (a *app) saveConversationProfile() {
 		a.adt.Error("Couldn't save the Dot profile", err.Error())
 		return
 	}
+	if computerUseChanged && a.computerUseService != nil {
+		a.computerUseService.StopAsync()
+	}
 	if err := a.db.SetConversationContextSummary(a.selectedConversationID, a.profileContextSummary); err != nil {
 		a.conversationError = err.Error()
 		a.adt.Error("Couldn't save chat memory", err.Error())
@@ -103,6 +106,18 @@ func (a *app) saveConversationProfile() {
 	a.activityOpen = false
 	a.adt.Success("Dot profile saved", "New replies will follow these instructions.")
 	a.refresh()
+}
+
+func sameComputerUseScopes(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for _, scope := range left {
+		if !containsID(right, scope) {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *app) sendConversationMessage() {
