@@ -3,7 +3,6 @@ package desktopui
 import (
 	"context"
 	"log"
-	"math"
 	"sync"
 	"sync/atomic"
 
@@ -35,6 +34,9 @@ type app struct {
 	dataDir  string
 	prefs    preferences
 	snapshot task.Database
+
+	dotsByConversationID      map[string]map[string]task.Dot
+	dotStatusByConversationID map[string]conversationStatusSummary
 
 	selectedSpaceID         string
 	selectedDotID           string
@@ -77,7 +79,7 @@ type app struct {
 	routineGitHubEnabledDraft       bool
 	messageDraft                    string
 	messageDrafts                   map[string]string
-	chatScroll                      ui.ScrollState
+	chatMessages                    ui.ListState
 	conversationError               string
 	apiKeyDraft                     string
 	apiKeyDrafts                    map[string]string
@@ -202,6 +204,8 @@ func Run(dataDir string) error {
 
 func (a *app) refresh() {
 	a.snapshot = a.db.Snapshot()
+	a.dotsByConversationID = conversationDotIndex(a.snapshot)
+	a.dotStatusByConversationID = latestConversationDots(a.snapshot)
 	if len(a.snapshot.Spaces) > 0 && !containsSpace(a.snapshot, a.selectedSpaceID) {
 		a.selectedSpaceID = a.snapshot.Spaces[0].ID
 	}
@@ -221,7 +225,7 @@ func (a *app) refresh() {
 		if len(conversations) > 0 {
 			a.selectedConversationID = conversations[0].ID
 			a.selectedSpaceID = conversations[0].SpaceID
-			a.chatScroll = ui.ScrollState{Y: math.MaxFloat32}
+			a.chatMessages = ui.ListState{FollowEnd: true}
 		}
 	}
 }

@@ -6,6 +6,27 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-02 (3) — Long-chat UI performance review
+
+### Chat rendering
+
+- Replaced the eagerly built chat transcript column with MyGo v0.7.3's virtualized `ui.List`, keyed by saved message ID. The list builds only visible message rows plus its small overscan, while retaining access to the complete transcript.
+- Kept the live streamed reply as a keyed list row. The list follows new content while the user is at the end, preserves the reading position when they scroll upward, and jumps to the end when they send a new message.
+- Precomputed task-to-conversation and latest-status indexes when the saved snapshot refreshes, so each streamed text update does not rescan all task records.
+- Left prompt/history semantics unchanged. Every saved conversation turn still reaches the model; this pass changes rendering cost only.
+
+### System review findings
+
+- The desktop currently has OpenAI Responses, OpenRouter Chat Completions, and a custom OpenAI-compatible Chat Completions adapter. xAI Chat Completions can use the existing custom adapter; Claude's OpenAI SDK compatibility is documented for evaluation with limitations, so full Claude support should use the native Messages API. xAI's server-side web/X search tools are not exposed through the current Chat Completions adapter.
+- Current turns assemble all prior conversation messages into each provider prompt, up to a 16 MiB local safety limit. Long conversations can increase latency and exceed a model's context window. OpenAI and xAI document in-memory WebSocket continuation while `store=false`; Anthropic's beta message threads send only new turns but are not ZDR-eligible. These transport optimizations need a per-provider opt-in, expiry/replay handling, and a clear explanation of provider-side memory before adoption. A future compaction design should preserve the full local transcript and show users what summary is sent.
+- OpenAI Dots, Claude Duet, and Grok Bot emphasize persistent work across devices, proactive progress/task views, reusable memory, schedules, and broad app connectors; all rely on cloud execution environments. AETHER already has local chats, routines, bounded specialist handoffs, and mobile/web control, while preserving a much narrower local permission model. The next product gap to explore is durable, visible task progress and reusable user-authored Space context. Any first knowledge feature should use text the user explicitly adds; local file indexing requires a separate permission design.
+
+### Verification
+
+- `gofmt` and `git diff --check` passed.
+- `CGO_ENABLED=0 go build ./...` passed.
+- Automated tests and a native UI preview were not run in this pass.
+
 ## 2026-11-02 (2) — Scoped iPhone relay and connected dashboard
 
 ### Implementation
@@ -421,3 +442,4 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - No live model endpoint request was made because `OPENAI_API_KEY` was unavailable in the environment. Model transport was exercised with local test servers only.
 - The app remains local-first. MCP configuration, cloud sync, device handoff, OS keychain storage, and arbitrary-app control were not implemented.
 - No production signing, notarization, DMG, or non-macOS build was verified.
+

@@ -1,9 +1,6 @@
 package desktopui
 
-import (
-	"aether-dots/internal/task"
-	"github.com/egoist/mygo/ui"
-)
+import "aether-dots/internal/task"
 
 func (a *app) startCreator() {
 	a.rememberCurrentConversationState()
@@ -99,7 +96,7 @@ func (a *app) sendConversationMessage() {
 	a.messageDraft = ""
 	a.conversationError = ""
 	a.refresh()
-	a.chatScroll.ScrollTo(0, 1e30, ui.Smooth)
+	a.chatMessages.ScrollToEnd()
 	a.startRun(dot.ID)
 }
 

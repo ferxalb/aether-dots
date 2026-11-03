@@ -38,14 +38,18 @@ func validProfileDelegateIDs(db task.Database, sourceID, spaceID string, selecte
 	return valid
 }
 
-func conversationDots(db task.Database, conversationID string) []task.Dot {
-	dots := make([]task.Dot, 0)
+func conversationDotIndex(db task.Database) map[string]map[string]task.Dot {
+	byConversation := make(map[string]map[string]task.Dot)
 	for _, dot := range db.Dots {
-		if dot.ConversationID == conversationID {
-			dots = append(dots, dot)
+		if dot.ConversationID == "" {
+			continue
 		}
+		if byConversation[dot.ConversationID] == nil {
+			byConversation[dot.ConversationID] = make(map[string]task.Dot)
+		}
+		byConversation[dot.ConversationID][dot.ID] = dot
 	}
-	return dots
+	return byConversation
 }
 
 // latestConversationDots finds the newest task per conversation in one pass.

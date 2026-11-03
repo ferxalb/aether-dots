@@ -2,7 +2,6 @@ package desktopui
 
 import (
 	"image/png"
-	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -150,7 +149,7 @@ func newUIPreviewApps(t *testing.T) (*app, *app, *app) {
 		db: db, dataDir: filepath.Join(root, "preferences"), prefs: defaultPreferences(),
 		selectedSpaceID: spaceID, selectedConversationID: conversation.ID,
 		runningDotID: active.ID, live: "The launch date should come first, so the review can be planned against it.",
-		cancelRun: func() {}, chatScroll: ui.ScrollState{Y: math.MaxFloat32},
+		cancelRun: func() {}, chatMessages: ui.ListState{FollowEnd: true},
 	}
 	chatApp.prefs.Model = "gpt-6.1-sol"
 	chatApp.refresh()

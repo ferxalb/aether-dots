@@ -1,15 +1,11 @@
 package desktopui
 
-import (
-	"math"
-
-	"github.com/egoist/mygo/ui"
-)
+import "github.com/egoist/mygo/ui"
 
 func (a *app) view(c *ui.Context) {
 	c.OnShortcut(ui.Cmd, ui.KeyN, func() { a.startCreator() })
 	theme := a.theme(c)
-	latestDots := latestConversationDots(a.snapshot)
+	latestDots := a.dotStatusByConversationID
 	bar := c.TitleBar()
 	dragHeight := max(bar.Height, 44)
 	vibrant := c.Vibrancy() && a.prefs.Appearance == "System"
@@ -136,10 +132,4 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 			}
 		}
 	})
-}
-
-func (a *app) followChatIfAtBottom() {
-	if a.chatScroll.MaxY-a.chatScroll.Y <= 48 {
-		a.chatScroll.ScrollTo(0, math.MaxFloat32, ui.Smooth)
-	}
 }

@@ -77,7 +77,6 @@ func (a *app) startRun(id string) {
 					a.conversationError = err.Error()
 				} else {
 					a.conversationError = ""
-					a.followChatIfAtBottom()
 				}
 			}
 		}

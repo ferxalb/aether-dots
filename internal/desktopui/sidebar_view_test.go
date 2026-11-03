@@ -1,7 +1,6 @@
 package desktopui
 
 import (
-	"math"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -38,8 +37,8 @@ func TestSidebarSelectsConversationAndPreservesSpace(t *testing.T) {
 	}
 	conversation := createTestConversation(t, a, space.ID, "Research Plan", "Prepare a research brief.")
 	a.refresh()
-	if a.selectedConversationID != conversation.ID || a.chatScroll.Y != math.MaxFloat32 {
-		t.Fatalf("startup navigation = conversation %q, scroll %v", a.selectedConversationID, a.chatScroll.Y)
+	if a.selectedConversationID != conversation.ID || !a.chatMessages.FollowEnd {
+		t.Fatalf("startup navigation = conversation %q, follows end %v", a.selectedConversationID, a.chatMessages.FollowEnd)
 	}
 	tester := ui.NewTester(a.view, 960, 720)
 	if err := tester.Click(conversation.Name); err != nil {

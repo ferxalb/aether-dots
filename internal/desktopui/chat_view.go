@@ -15,34 +15,37 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 		a.workspaceWelcomeView(c, theme)
 		return
 	}
-	dots := conversationDots(a.snapshot, conversation.ID)
-	dotsByID := make(map[string]task.Dot, len(dots))
-	for _, dot := range dots {
-		dotsByID[dot.ID] = dot
+	dotsByID := a.dotsByConversationID[conversation.ID]
+	_, liveDotInConversation := dotsByID[a.runningDotID]
+	showLiveReply := a.live != "" && liveDotInConversation
+	messageCount := len(conversation.Messages)
+	if showLiveReply {
+		messageCount++
 	}
-	assistantReplies := make(map[string]bool, len(conversation.Messages))
-	for _, message := range conversation.Messages {
-		if message.Role == "assistant" {
-			assistantReplies[message.DotID] = true
+	a.chatMessages.FollowEnd = true
+	a.chatMessages.Key = func(i int) any {
+		if i < len(conversation.Messages) {
+			return conversation.Messages[i].ID
 		}
+		return "live-reply-" + a.runningDotID
 	}
 
 	ui.Column(c).Grow(1).FillWidth().MinWidth(0).MinHeight(0).Children(func() {
-		feed := ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).TrackScroll(&a.chatScroll)
-		feed.Children(func() {
-			if len(conversation.Messages) == 0 {
+		if len(conversation.Messages) == 0 && !showLiveReply {
+			ui.Column(c).Grow(1).FillWidth().Center().Children(func() {
 				emptyConversationFeed(c, theme, a, conversation)
-				return
-			}
-			ui.Column(c).FillWidth().MinWidth(0).Gap(14).Padding(20, 24, 24, 24).Children(func() {
-				for _, message := range conversation.Messages {
-					conversationMessage(c, theme, a, conversation, message, dotsByID)
-					if message.Role == "user" && message.DotID == a.runningDotID && a.live != "" && !assistantReplies[message.DotID] {
-						liveReplyBubble(c, theme, a, conversation, message.DotID, a.live)
-					}
-				}
 			})
-		})
+		} else {
+			ui.List(c.Key("conversation-message-list"), &a.chatMessages, messageCount).
+				Grow(1).FillWidth().MinHeight(0).Padding(20, 24, 24, 24).Gap(14).
+				Rows(func(row ui.ListRow) {
+					if row.Index < len(conversation.Messages) {
+						conversationMessage(row.Context, theme, a, conversation, conversation.Messages[row.Index], dotsByID)
+						return
+					}
+					liveReplyBubble(row.Context, theme, a, conversation, a.runningDotID, a.live)
+				})
+		}
 		chatComposer(c, theme, a, conversation)
 	})
 }

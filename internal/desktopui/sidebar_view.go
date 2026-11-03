@@ -181,7 +181,7 @@ func (a *app) legacyDotRow(c *ui.Context, theme *ui.Theme, dot task.Dot) {
 		a.selectedDotID = dot.ID
 		a.selectedConversationID = ""
 		a.messageDraft = ""
-		a.chatScroll = ui.ScrollState{}
+		a.chatMessages = ui.ListState{FollowEnd: true}
 		a.conversationDetailsOpen = false
 		a.selectedSpaceID = dot.SpaceID
 		a.settingsOpen = false

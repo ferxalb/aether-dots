@@ -1,10 +1,6 @@
 package desktopui
 
-import (
-	"math"
-
-	"github.com/egoist/mygo/ui"
-)
+import "github.com/egoist/mygo/ui"
 
 func (a *app) rememberCurrentConversationState() {
 	if a.selectedConversationID == "" {
@@ -20,7 +16,7 @@ func (a *app) selectConversation(id string) {
 	if id != a.selectedConversationID {
 		a.rememberCurrentConversationState()
 		a.selectedConversationID = id
-		a.chatScroll = ui.ScrollState{Y: math.MaxFloat32}
+		a.chatMessages = ui.ListState{FollowEnd: true}
 		a.messageDraft = a.messageDrafts[id]
 	}
 	if conversation, ok := findConversation(a.snapshot, id); ok {
