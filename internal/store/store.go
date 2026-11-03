@@ -66,6 +66,15 @@ func Open(dir string) (*Store, error) {
 	}
 	store := &Store{path: path, db: db}
 	if db.SchemaVersion < task.SchemaVersion {
+		if db.SchemaVersion < 6 {
+			// Computer Use is a new, explicit opt-in. No older store receives
+			// an app grant or model-data disclosure during migration.
+			for i := range db.Conversations {
+				db.Conversations[i].ComputerUseScopes = nil
+				db.Conversations[i].ComputerUseGrantSpaceID = ""
+				db.Conversations[i].ComputerUseModelDisclosureAccepted = false
+			}
+		}
 		if db.SchemaVersion < 5 {
 			// GitHub access is opt-in. Older stores migrate with no selected
 			// repositories and no Dot or Routine grants.

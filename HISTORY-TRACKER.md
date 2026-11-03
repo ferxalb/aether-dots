@@ -6,6 +6,20 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-02 (5) — Official MCP Go SDK foundation
+
+### Implementation
+
+- Added `github.com/modelcontextprotocol/go-sdk` v1.8.0 as a direct dependency and introduced `internal/integrations/mcp.NewClient` as an inert client base. It advertises no capabilities (including the SDK's default roots capability), selects no transport or destination, and does not connect.
+- Added the SDK's upstream license text and its license notice to `resources/licenses/`.
+- Kept MCP connections and Dot-visible tools outside this change; they require separate transport and permission design under the repository's integration boundaries.
+
+### Verification
+
+- `gofmt`, `git diff --check`, and `CGO_ENABLED=0 go build ./internal/integrations/mcp` passed.
+- `CGO_ENABLED=0 go build ./...` did not pass because the existing untracked `internal/integrations/computeruse/service.go` refers to a missing `toolCallResult.Text` field at lines 276, 278, and 281. This file was not changed in this session.
+- Automated tests were not run.
+
 ## 2026-11-02 (4) — Provider SDKs, bounded memory, and visible run activity
 
 ### Implementation

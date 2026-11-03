@@ -272,8 +272,47 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			}
 		})
 
+		profilePanel(c, theme, "Computer Use access", func() {
+			ui.Text(c, "Grant this Dot access only to the macOS apps it needs. Cua Driver remains a separate install. Accessibility is requested when a Dot first uses an enabled scope; Screen Recording is not requested.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			if !a.computerUseInstalled {
+				ui.Text(c, "Install Cua Driver in Settings → Integrations before granting a new app scope.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+			}
+			if conversation.SpaceID != a.profileSpaceID {
+				ui.Text(c, "Moving a Dot to another Space clears its Computer Use grants. Save the new Space first, then grant app access again.").
+					FontSize(10).TextColor(theme.Danger).FillWidth()
+			}
+			for _, scope := range []struct {
+				id    string
+				label string
+			}{
+				{task.ComputerUseScopeNotesRead, "Apple Notes · Read the currently displayed Notes window"},
+				{task.ComputerUseScopeMusicControl, "Apple Music · Control playback only"},
+			} {
+				selected := containsID(a.profileComputerUseScopes, scope.id)
+				if ui.Checkbox(c.Key("profile-computer-use-"+scope.id), &selected, scope.label).
+					Disabled(!a.computerUseInstalled || conversation.SpaceID != a.profileSpaceID).FillWidth().Changed() {
+					a.profileComputerUseScopes = toggleString(a.profileComputerUseScopes, scope.id, task.MaxComputerUseScopes)
+					if len(a.profileComputerUseScopes) == 0 {
+						a.profileComputerUseDisclosureAccepted = false
+					}
+				}
+			}
+			if len(a.profileComputerUseScopes) > 0 {
+				ui.Text(c, "The Notes accessibility text exposed by the open window may be sent to this Dot's configured model provider. All observed UI text is untrusted. Music access is limited to play, pause, next, and previous controls. These scopes do not expose files, clipboard, browser, screenshots, or other apps.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+				if ui.Checkbox(c.Key("profile-computer-use-disclosure"), &a.profileComputerUseDisclosureAccepted,
+					"I understand Notes text may be sent to this Dot's configured model provider").Changed() {
+					// The store commits grants only after this disclosure is accepted.
+				}
+			}
+			ui.Text(c, "Computer Use is unavailable to Routines, delegated Dots, and messages sent through the AETHER iOS bridge.").
+				FontSize(10).TextColor(theme.TextMuted).FillWidth()
+		})
+
 		profilePanel(c, theme, "Privacy", func() {
-			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. It cannot access your files, folders, or apps. GitHub access is limited to the repositories explicitly granted above; other account access remains unavailable. Specialist access is limited to the Dots selected above, and each handoff is saved in both conversations.").
+			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. Computer Use stays limited to the apps and scopes explicitly granted above. It has no access to user-selected files or folders. GitHub access is limited to the repositories explicitly granted above; other account access remains unavailable. Specialist access is limited to the Dots selected above, and each handoff is saved in both conversations.").
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
 

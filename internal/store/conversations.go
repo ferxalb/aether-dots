@@ -63,7 +63,7 @@ func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversatio
 }
 
 func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs ...[]string) error {
-	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, delegatedDotIDs, nil, nil)
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, delegatedDotIDs, nil, nil, nil, nil)
 }
 
 // SetConversationContextSummary saves user-authored or user-approved memory
@@ -87,10 +87,18 @@ func (s *Store) SetConversationContextSummary(id, summary string) error {
 // UpdateConversationProfileAndGitHub saves the Dot profile and its independent
 // repository grants in one transaction.
 func (s *Store) UpdateConversationProfileAndGitHub(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs []string, githubRepositoryIDs []int64, disclosureAccepted bool) error {
-	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, [][]string{delegatedDotIDs}, &githubRepositoryIDs, &disclosureAccepted)
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, [][]string{delegatedDotIDs}, &githubRepositoryIDs, &disclosureAccepted, nil, nil)
 }
 
-func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs [][]string, githubRepositoryIDs *[]int64, disclosureAccepted *bool) error {
+// UpdateConversationProfileAndIntegrations saves a Dot profile and its
+// independent GitHub and Computer Use grants in one transaction.
+func (s *Store) UpdateConversationProfileAndIntegrations(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs []string, githubRepositoryIDs []int64, githubDisclosureAccepted bool, computerUseScopes []string, computerUseDisclosureAccepted bool) error {
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions,
+		[][]string{delegatedDotIDs}, &githubRepositoryIDs, &githubDisclosureAccepted,
+		&computerUseScopes, &computerUseDisclosureAccepted)
+}
+
+func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs [][]string, githubRepositoryIDs *[]int64, disclosureAccepted *bool, computerUseScopes *[]string, computerUseDisclosureAccepted *bool) error {
 	spaceID = strings.TrimSpace(spaceID)
 	name = strings.TrimSpace(name)
 	icon = strings.TrimSpace(icon)
@@ -130,6 +138,9 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 		if previousSpaceID != spaceID && githubRepositoryIDs != nil && len(*githubRepositoryIDs) > 0 {
 			return errors.New("save the Dot's new Space before granting GitHub repositories again")
 		}
+		if previousSpaceID != spaceID && computerUseScopes != nil && len(*computerUseScopes) > 0 {
+			return errors.New("save the Dot's new Space before granting Computer Use again")
+		}
 		if githubRepositoryIDs != nil {
 			grants, err := validateGitHubRepositoryGrants(db, *githubRepositoryIDs)
 			if err != nil {
@@ -149,6 +160,26 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 			conversation.GitHubGrantSpaceID = ""
 			conversation.GitHubModelDisclosureAccepted = false
 			disableConversationGitHubRoutines(db, conversation.ID)
+		}
+		if computerUseScopes != nil {
+			grants, err := validateComputerUseScopes(*computerUseScopes)
+			if err != nil {
+				return err
+			}
+			accepted := computerUseDisclosureAccepted != nil && *computerUseDisclosureAccepted
+			if len(grants) > 0 && !accepted {
+				return errors.New("acknowledge that Computer Use observations may be sent to the configured model before granting access")
+			}
+			conversation.ComputerUseScopes = grants
+			conversation.ComputerUseGrantSpaceID = ""
+			conversation.ComputerUseModelDisclosureAccepted = len(grants) > 0 && accepted
+			if len(grants) > 0 {
+				conversation.ComputerUseGrantSpaceID = spaceID
+			}
+		} else if previousSpaceID != spaceID {
+			conversation.ComputerUseScopes = nil
+			conversation.ComputerUseGrantSpaceID = ""
+			conversation.ComputerUseModelDisclosureAccepted = false
 		}
 		conversation.DelegatedDotIDs = grants
 		conversation.SpaceID = spaceID

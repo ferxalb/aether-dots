@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 
+	"aether-dots/internal/integrations/computeruse"
 	"aether-dots/internal/integrations/github"
 	"aether-dots/internal/integrations/remote"
 	"aether-dots/internal/model"
@@ -58,6 +59,8 @@ type app struct {
 	profileGitHubDisclosureAccepted bool
 	profileGitHubRepositorySearch   string
 	profileGitHubRepositoryLimit    int
+	profileComputerUseScopes        []string
+	profileComputerUseDisclosureAccepted bool
 	profileIcon                     string
 	profileColor                    string
 	profileSpaceID                  string
@@ -111,6 +114,12 @@ type app struct {
 	credentialError            string
 	credentialProvider         string
 	githubService              *github.Service
+	computerUseService         *computeruse.Service
+	computerUseInstalled       bool
+	computerUseLoading         bool
+	computerUseStatus          string
+	computerUseError           string
+	computerUseInstallCancel   context.CancelFunc
 	remoteClient               *remote.Client
 	remoteCredentialStore      *remote.KeychainStore
 	remoteReceipts             *remote.ReceiptStore
@@ -163,7 +172,14 @@ func Run(dataDir string) error {
 	}
 	a := &app{db: db, dataDir: dataDir, prefs: prefs, providerSelection: providerSelectionLabel(prefs.Provider),
 		remoteLoopMu: &sync.Mutex{}, remoteForgetMu: &sync.Mutex{},
-		githubService: github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil)}
+		githubService: github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil),
+		computerUseService: computeruse.New(dataDir)}
+	a.computerUseInstalled = a.computerUseService.Installed()
+	if a.computerUseInstalled {
+		a.computerUseStatus = "Installed · Accessibility access is requested on first use"
+	} else {
+		a.computerUseStatus = "Not installed"
+	}
 	a.routinePreferences = &atomic.Pointer[preferences]{}
 	a.routinePreferences.Store(&prefs)
 	a.refresh()
@@ -204,7 +220,11 @@ func Run(dataDir string) error {
 		a.initializeRemoteBridge()
 		a.startRoutineScheduler()
 	})
-	return mygo.App.Run()
+	err = mygo.App.Run()
+	if a.computerUseService != nil {
+		a.computerUseService.Stop()
+	}
+	return err
 }
 
 func (a *app) refresh() {

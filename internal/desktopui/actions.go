@@ -74,7 +74,7 @@ func (a *app) startRun(id string) {
 				win.Update(func() { a.refresh() })
 			}
 		}
-		generator := generatorForConversationRun(prefs, a.db, id, a.githubService, onProgress)
+		generator := generatorForInteractiveConversationRun(prefs, a.db, id, a.githubService, a.computerUseService, onProgress)
 		var deltas chan string
 		var deltasDone chan struct{}
 		if win != nil {

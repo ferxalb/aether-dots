@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 const (
 	MaxConversationNameBytes         = 128
@@ -21,6 +21,7 @@ const (
 	MaxDelegatedOutputBytes          = 1024
 	MaxGitHubRepositories            = 2000
 	MaxGitHubDotGrants               = 100
+	MaxComputerUseScopes             = 2
 	MaxConversationContextMessages   = 12
 	MaxConversationContextBytes      = 24 * 1024
 	MaxSkillNameBytes                = 128
@@ -109,10 +110,18 @@ type Conversation struct {
 	GitHubRepositoryIDs           []int64               `json:"github_repository_ids,omitempty"`
 	GitHubGrantSpaceID            string                `json:"github_grant_space_id,omitempty"`
 	GitHubModelDisclosureAccepted bool                  `json:"github_model_disclosure_accepted,omitempty"`
+	ComputerUseScopes             []string              `json:"computer_use_scopes,omitempty"`
+	ComputerUseGrantSpaceID       string                `json:"computer_use_grant_space_id,omitempty"`
+	ComputerUseModelDisclosureAccepted bool              `json:"computer_use_model_disclosure_accepted,omitempty"`
 	CreatedAt                     time.Time             `json:"created_at"`
 	UpdatedAt                     time.Time             `json:"updated_at"`
 	Messages                      []ConversationMessage `json:"messages"`
 }
+
+const (
+	ComputerUseScopeNotesRead    = "notes_read"
+	ComputerUseScopeMusicControl = "music_control"
+)
 
 // RunMetrics stores local, approximate generation timing and token counts.
 // Token counts are estimates because providers expose different usage formats.
