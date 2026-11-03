@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"aether-dots/internal/task"
 )
@@ -109,15 +110,23 @@ func (s *Store) Snapshot() task.Database {
 }
 
 func (s *Store) CreateSpace(name string) (task.Space, error) {
+	return s.CreateSpaceWithContext(name, "")
+}
+
+func (s *Store) CreateSpaceWithContext(name, context string) (task.Space, error) {
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return task.Space{}, errors.New("space name is empty")
+	context = strings.TrimSpace(context)
+	if name == "" || len(name) > task.MaxConversationNameBytes || !utf8.ValidString(name) {
+		return task.Space{}, fmt.Errorf("space name must be valid UTF-8 text of at most %d bytes", task.MaxConversationNameBytes)
+	}
+	if len(context) > task.MaxSpaceContextBytes || !utf8.ValidString(context) {
+		return task.Space{}, fmt.Errorf("space context must be valid UTF-8 text of at most %d bytes", task.MaxSpaceContextBytes)
 	}
 	id, err := newID()
 	if err != nil {
 		return task.Space{}, err
 	}
-	space := task.Space{ID: id, Name: name, CreatedAt: time.Now().UTC()}
+	space := task.Space{ID: id, Name: name, Context: context, CreatedAt: time.Now().UTC()}
 	err = s.change(func(db *task.Database) error {
 		for _, existing := range db.Spaces {
 			if strings.EqualFold(existing.Name, name) {
@@ -144,6 +153,33 @@ func (s *Store) RenameSpace(id, name string) error {
 		for i := range db.Spaces {
 			if db.Spaces[i].ID == id {
 				db.Spaces[i].Name = name
+				return nil
+			}
+		}
+		return errors.New("space not found")
+	})
+}
+
+// UpdateSpace saves a Space name and reusable, user-authored context.
+func (s *Store) UpdateSpace(id, name, context string) error {
+	name = strings.TrimSpace(name)
+	context = strings.TrimSpace(context)
+	if name == "" || len(name) > task.MaxConversationNameBytes || !utf8.ValidString(name) {
+		return fmt.Errorf("space name must be valid UTF-8 text of at most %d bytes", task.MaxConversationNameBytes)
+	}
+	if len(context) > task.MaxSpaceContextBytes || !utf8.ValidString(context) {
+		return fmt.Errorf("space context must be valid UTF-8 text of at most %d bytes", task.MaxSpaceContextBytes)
+	}
+	return s.change(func(db *task.Database) error {
+		for _, other := range db.Spaces {
+			if other.ID != id && strings.EqualFold(other.Name, name) {
+				return fmt.Errorf("space %q already exists", name)
+			}
+		}
+		for i := range db.Spaces {
+			if db.Spaces[i].ID == id {
+				db.Spaces[i].Name = name
+				db.Spaces[i].Context = context
 				return nil
 			}
 		}

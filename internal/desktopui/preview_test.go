@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"context"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -148,15 +149,14 @@ func newUIPreviewApps(t *testing.T) (*app, *app, *app) {
 	chatApp := &app{
 		db: db, dataDir: filepath.Join(root, "preferences"), prefs: defaultPreferences(),
 		selectedSpaceID: spaceID, selectedConversationID: conversation.ID,
-		runningDotID: active.ID, live: "The launch date should come first, so the review can be planned against it.",
-		cancelRun: func() {}, chatMessages: ui.ListState{FollowEnd: true},
+		liveReplies: map[string]string{active.ID: "The launch date should come first, so the review can be planned against it."},
+		runCancels:  map[string]context.CancelFunc{active.ID: func() {}}, chatMessages: ui.ListState{FollowEnd: true},
 	}
 	chatApp.prefs.Model = "gpt-6.1-sol"
 	chatApp.refresh()
 	profileApp := *chatApp
-	profileApp.cancelRun = nil
-	profileApp.runningDotID = ""
-	profileApp.live = ""
+	profileApp.runCancels = nil
+	profileApp.liveReplies = nil
 	profileApp.openConversationProfile()
 	welcomeDB, err := store.Open(filepath.Join(root, "welcome-store"))
 	if err != nil {

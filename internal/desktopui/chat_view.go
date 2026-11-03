@@ -16,8 +16,9 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 		return
 	}
 	dotsByID := a.dotsByConversationID[conversation.ID]
-	_, liveDotInConversation := dotsByID[a.runningDotID]
-	showLiveReply := a.live != "" && liveDotInConversation
+	liveDotID := a.activeRunDotIDForConversation(conversation.ID)
+	liveReply := a.liveReplies[liveDotID]
+	showLiveReply := liveReply != "" && dotsByID[liveDotID].ID != ""
 	messageCount := len(conversation.Messages)
 	if showLiveReply {
 		messageCount++
@@ -27,7 +28,7 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 		if i < len(conversation.Messages) {
 			return conversation.Messages[i].ID
 		}
-		return "live-reply-" + a.runningDotID
+		return "live-reply-" + liveDotID
 	}
 
 	ui.Column(c).Grow(1).FillWidth().MinWidth(0).MinHeight(0).Children(func() {
@@ -43,7 +44,7 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 						conversationMessage(row.Context, theme, a, conversation, conversation.Messages[row.Index], dotsByID)
 						return
 					}
-					liveReplyBubble(row.Context, theme, a, conversation, a.runningDotID, a.live)
+					liveReplyBubble(row.Context, theme, a, conversation, liveDotID, liveReply)
 				})
 		}
 		chatComposer(c, theme, a, conversation)
@@ -197,8 +198,8 @@ func conversationRunActivity(c *ui.Context, theme *ui.Theme, a *app, dot task.Do
 }
 
 func chatComposer(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conversation) {
-	busy := a.cancelRun != nil
-	activeDot, activeDotOK := findDot(a.snapshot, a.runningDotID)
+	activeDotID := a.activeRunDotIDForConversation(conversation.ID)
+	busy := activeDotID != ""
 	footer := ui.Column(c).FillWidth().Gap(6).Padding(8, 24, 16, 24)
 	footer.Children(func() {
 		if a.conversationError != "" {
@@ -208,9 +209,6 @@ func chatComposer(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conv
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				ui.Icon(c, iconPlay).Size(13, 13).TextColor(theme.Accent)
 				label := conversation.Name + " is replying"
-				if activeDotOK && activeDot.ConversationID != conversation.ID {
-					label = "Another Dot is replying"
-				}
 				ui.Text(c, label).FontSize(10).TextColor(theme.TextMuted).FillWidth()
 				if ui.Button(c.Key("stop-conversation-run"), "Stop").Clicked() {
 					a.stopConversationRun()

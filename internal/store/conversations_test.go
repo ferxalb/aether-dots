@@ -76,7 +76,7 @@ func TestConversationProfileAndRepliesPersistWithoutFolderGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, part := range []string{"Complete saved conversation context", "Assistant reply:\n" + reply, "Newest user message:\nMake that shorter"} {
+	for _, part := range []string{"Recent saved conversation context", "Assistant reply:\n" + reply, "Newest user message:\nMake that shorter"} {
 		if !strings.Contains(prompt, part) {
 			t.Errorf("follow-up prompt missing %q: %q", part, prompt)
 		}

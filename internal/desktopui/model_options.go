@@ -25,6 +25,16 @@ func (a *app) modelOptionsSettings(c *ui.Context, theme *ui.Theme) {
 				modelChoice(c, theme, "settings-verbosity", "Reply detail", &a.prefs.TextVerbosity,
 					[]string{"low", "medium", "high"})
 			})
+		case model.ProviderXAI:
+			modelChoice(c, theme, "settings-reasoning", "Thinking effort", &a.prefs.ReasoningEffort,
+				[]string{"low", "medium", "high", "xhigh"})
+			ui.Text(c, "Grok uses xAI's Responses API. AETHER keeps provider web and X search tools disabled.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		case model.ProviderAnthropic:
+			modelChoice(c, theme, "settings-reasoning", "Thinking effort", &a.prefs.ReasoningEffort,
+				[]string{"", "low", "medium", "high", "xhigh", "max"})
+			ui.Text(c, "AETHER enables adaptive thinking and applies this effort level on supported Claude models. Internal thinking stays out of the chat. Only explicitly listed AETHER client functions are available.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		case model.ProviderOpenRouter:
 			metadata, known := a.selectedOpenRouterModel()
 			if known && metadata.ReasoningMetadataKnown && !metadata.SupportsReasoning {
@@ -57,8 +67,13 @@ func (a *app) modelOptionsSettings(c *ui.Context, theme *ui.Theme) {
 		})
 		modelChoice(c, theme, "settings-timeout", "Stop waiting after", &a.prefs.TimeoutSeconds,
 			[]string{"30", "45", "60", "90", "120", "180", "300"})
-		ui.Text(c, "With no reply token limit, AETHER omits that parameter and lets the selected model use its own default. The model’s context window is provided by the model and is not set here.").
-			FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		if model.ProviderID(a.prefs.Provider) == model.ProviderAnthropic {
+			ui.Text(c, "Anthropic requires an output token cap; when this is blank AETHER uses 16,384. Claude reasoning tokens count toward this cap. Other providers omit an unset cap. The model’s context window is not set here.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		} else {
+			ui.Text(c, "With no reply token limit, AETHER omits that parameter and lets the selected model use its own default. The model’s context window is provided by the model and is not set here.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		}
 	})
 }
 

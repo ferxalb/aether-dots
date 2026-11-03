@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
+	"time"
 
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
@@ -61,7 +63,39 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 		return fail(db, dotID, err)
 	}
 	progress()
-	response, err := generator.Generate(ctx, objective, onDelta)
+	startedAt := time.Now().UTC()
+	var timingMu sync.Mutex
+	var firstTokenAt time.Time
+	var outputBytes int
+	trackedDelta := func(delta string) {
+		if delta != "" {
+			timingMu.Lock()
+			if firstTokenAt.IsZero() {
+				firstTokenAt = time.Now().UTC()
+			}
+			outputBytes += len(delta)
+			timingMu.Unlock()
+		}
+		if onDelta != nil {
+			onDelta(delta)
+		}
+	}
+	response, err := generator.Generate(ctx, objective, trackedDelta)
+	finishedAt := time.Now().UTC()
+	timingMu.Lock()
+	metrics := task.RunMetrics{
+		Provider:              generator.Description(),
+		StartedAt:             startedAt,
+		FinishedAt:            finishedAt,
+		DurationMillis:        finishedAt.Sub(startedAt).Milliseconds(),
+		EstimatedInputTokens:  estimatedTokens(len(objective)),
+		EstimatedOutputTokens: estimatedTokens(outputBytes),
+	}
+	if !firstTokenAt.IsZero() {
+		metrics.FirstTokenLatencyMillis = firstTokenAt.Sub(startedAt).Milliseconds()
+	}
+	timingMu.Unlock()
+	_ = db.SetRunMetrics(dotID, metrics)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return pause(db, dotID)
@@ -83,6 +117,13 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 	}
 	progress()
 	return db.SetStatus(dotID, task.Done, "Reply saved in the Dot conversation.")
+}
+
+func estimatedTokens(bytes int) int64 {
+	if bytes <= 0 {
+		return 0
+	}
+	return int64((bytes + 3) / 4)
 }
 
 func waitForInput(db *store.Store, id, message string) error {

@@ -12,6 +12,8 @@ const (
 	MaxConversationPurposeBytes      = 4096
 	MaxConversationMessageBytes      = 8192
 	MaxConversationInstructionsBytes = 4096
+	MaxConversationSummaryBytes      = 8192
+	MaxSpaceContextBytes             = 4096
 	MaxDelegatedDots                 = 12
 	MaxDelegationsPerRun             = 3
 	MaxDelegatedTaskBytes            = 3072
@@ -30,9 +32,9 @@ const (
 	MaxRoutineRuns                   = 20
 	MaxRoutineRunsPerHour            = 200
 	MaxRoutineRunsTotalPerHour       = 300
-	// This bounds a transient provider prompt, not the provider's context window.
-	// The complete saved conversation is sent until this local resource ceiling;
-	// it is never silently clipped to an arbitrary model-sized token count.
+	// This bounds transient provider prompts, not the provider's context window.
+	// The complete transcript remains local; prompts use the explicit memory note
+	// and bounded recent turns instead of silently clipping saved chat history.
 	MaxConversationObjectiveBytes = 16 * 1024 * 1024
 )
 
@@ -55,6 +57,7 @@ const (
 type Space struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	Context   string    `json:"context,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -68,21 +71,22 @@ type Event struct {
 }
 
 type Dot struct {
-	ID                          string    `json:"id"`
-	SpaceID                     string    `json:"space_id"`
-	ConversationID              string    `json:"conversation_id,omitempty"`
-	ConversationContextDeferred bool      `json:"conversation_context_deferred,omitempty"`
-	ParentDotID                 string    `json:"parent_dot_id,omitempty"`
-	DelegatedByDotID            string    `json:"delegated_by_dot_id,omitempty"`
-	SkillID                     string    `json:"skill_id,omitempty"`
-	RoutineID                   string    `json:"routine_id,omitempty"`
-	Name                        string    `json:"name"`
-	Objective                   string    `json:"objective"`
-	Status                      Status    `json:"status"`
-	Checkpoint                  string    `json:"checkpoint,omitempty"`
-	CreatedAt                   time.Time `json:"created_at"`
-	UpdatedAt                   time.Time `json:"updated_at"`
-	Events                      []Event   `json:"events"`
+	ID                          string      `json:"id"`
+	SpaceID                     string      `json:"space_id"`
+	ConversationID              string      `json:"conversation_id,omitempty"`
+	ConversationContextDeferred bool        `json:"conversation_context_deferred,omitempty"`
+	Metrics                     *RunMetrics `json:"metrics,omitempty"`
+	ParentDotID                 string      `json:"parent_dot_id,omitempty"`
+	DelegatedByDotID            string      `json:"delegated_by_dot_id,omitempty"`
+	SkillID                     string      `json:"skill_id,omitempty"`
+	RoutineID                   string      `json:"routine_id,omitempty"`
+	Name                        string      `json:"name"`
+	Objective                   string      `json:"objective"`
+	Status                      Status      `json:"status"`
+	Checkpoint                  string      `json:"checkpoint,omitempty"`
+	CreatedAt                   time.Time   `json:"created_at"`
+	UpdatedAt                   time.Time   `json:"updated_at"`
+	Events                      []Event     `json:"events"`
 }
 
 // Conversation is a durable Dot identity with its own chat history and profile.
@@ -94,6 +98,9 @@ type Conversation struct {
 	Color        string `json:"color"`
 	Purpose      string `json:"purpose"`
 	Instructions string `json:"instructions,omitempty"`
+	// ContextSummary is optional user-maintained memory. The full transcript
+	// remains in Messages; this summary only replaces older turns in provider prompts.
+	ContextSummary string `json:"context_summary,omitempty"`
 	// DelegatedDotIDs are the same-Space specialists this Dot may consult.
 	// Grants are directional and empty by default.
 	DelegatedDotIDs []string `json:"delegated_dot_ids,omitempty"`
@@ -105,6 +112,18 @@ type Conversation struct {
 	CreatedAt                     time.Time             `json:"created_at"`
 	UpdatedAt                     time.Time             `json:"updated_at"`
 	Messages                      []ConversationMessage `json:"messages"`
+}
+
+// RunMetrics stores local, approximate generation timing and token counts.
+// Token counts are estimates because providers expose different usage formats.
+type RunMetrics struct {
+	Provider                string    `json:"provider"`
+	StartedAt               time.Time `json:"started_at"`
+	FinishedAt              time.Time `json:"finished_at"`
+	FirstTokenLatencyMillis int64     `json:"first_token_latency_ms,omitempty"`
+	DurationMillis          int64     `json:"duration_ms"`
+	EstimatedInputTokens    int64     `json:"estimated_input_tokens"`
+	EstimatedOutputTokens   int64     `json:"estimated_output_tokens"`
 }
 
 // ConversationMessage is an append-only, persisted user request or verified

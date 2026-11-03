@@ -16,6 +16,8 @@ import (
 const (
 	preferencesFile   = "preferences.json"
 	openAIKeyName     = "openai-api-key"
+	anthropicKeyName  = "anthropic-api-key"
+	xAIKeyName        = "xai-api-key"
 	openRouterKeyName = "openrouter-api-key"
 	compatibleKeyName = "compatible-api-key"
 	openAIService     = "com.aetherdots.desktop"
@@ -24,6 +26,8 @@ const (
 type preferences struct {
 	Provider                            string `json:"provider"`
 	Model                               string `json:"model"`
+	AnthropicModel                      string `json:"anthropic_model"`
+	XAIModel                            string `json:"xai_model"`
 	OpenRouterModel                     string `json:"openrouter_model"`
 	OpenRouterModelSet                  bool   `json:"openrouter_model_set,omitempty"`
 	OpenRouterCatalogModel              string `json:"openrouter_catalog_model,omitempty"`
@@ -34,6 +38,7 @@ type preferences struct {
 	OpenRouterModelSupportedEfforts     string `json:"openrouter_model_supported_efforts,omitempty"`
 	CompatibleModel                     string `json:"compatible_model"`
 	CompatibleBaseURL                   string `json:"compatible_base_url"`
+	AnthropicMessageThreads             bool   `json:"anthropic_message_threads,omitempty"`
 	ReasoningEffort                     string `json:"reasoning_effort"`
 	TextVerbosity                       string `json:"text_verbosity"`
 	MaxOutputTokens                     string `json:"max_output_tokens"`
@@ -49,6 +54,8 @@ func defaultPreferences() preferences {
 	current := preferences{
 		Provider:        string(model.ProviderOpenAI),
 		Model:           model.DefaultModel,
+		AnthropicModel:  model.DefaultAnthropicModel,
+		XAIModel:        "grok-4.7",
 		ReasoningEffort: model.DefaultReasoningEffort,
 		TextVerbosity:   model.DefaultTextVerbosity,
 		MaxRetries:      strconv.Itoa(model.DefaultMaxRetries),
@@ -56,10 +63,18 @@ func defaultPreferences() preferences {
 		Appearance:      "System",
 		Palette:         "obsidian",
 	}
-	if modelName := strings.TrimSpace(os.Getenv("AETHER_MODEL_NAME")); modelName != "" {
-		current.Model = modelName
+	if validProvider(string(config.Provider)) {
+		current.Provider = string(config.Provider)
+		if selected := current.selectedModel(); strings.TrimSpace(config.Model) != "" {
+			*selected = strings.TrimSpace(config.Model)
+		}
+		if config.Provider == model.ProviderCompatible {
+			current.CompatibleBaseURL = strings.TrimSpace(config.BaseURL)
+		}
 	}
-	if validReasoningEffort(config.ReasoningEffort) {
+	if config.Provider == model.ProviderXAI && config.ReasoningEffort == model.DefaultReasoningEffort {
+		current.ReasoningEffort = "high"
+	} else if validProviderReasoningEffort(current.Provider, config.ReasoningEffort) {
 		current.ReasoningEffort = config.ReasoningEffort
 	}
 	if validTextVerbosity(config.TextVerbosity) {
@@ -226,6 +241,10 @@ func savePreferences(dataDir string, current preferences) error {
 
 func (p *preferences) selectedModel() *string {
 	switch p.Provider {
+	case string(model.ProviderAnthropic):
+		return &p.AnthropicModel
+	case string(model.ProviderXAI):
+		return &p.XAIModel
 	case string(model.ProviderOpenRouter):
 		return &p.OpenRouterModel
 	case string(model.ProviderCompatible):
@@ -237,7 +256,7 @@ func (p *preferences) selectedModel() *string {
 
 func validProvider(provider string) bool {
 	switch provider {
-	case string(model.ProviderOpenAI), string(model.ProviderOpenRouter), string(model.ProviderCompatible):
+	case string(model.ProviderOpenAI), string(model.ProviderAnthropic), string(model.ProviderXAI), string(model.ProviderOpenRouter), string(model.ProviderCompatible):
 		return true
 	default:
 		return false
@@ -256,6 +275,12 @@ func validReasoningEffort(value string) bool {
 func validProviderReasoningEffort(provider, value string) bool {
 	if value == "" && provider != string(model.ProviderOpenAI) {
 		return true
+	}
+	if provider == string(model.ProviderXAI) {
+		return value == "low" || value == "medium" || value == "high" || value == "xhigh"
+	}
+	if provider == string(model.ProviderAnthropic) {
+		return value == "" || value == "low" || value == "medium" || value == "high" || value == "xhigh" || value == "max"
 	}
 	return validReasoningEffort(value)
 }

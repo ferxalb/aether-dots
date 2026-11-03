@@ -127,7 +127,45 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 						}
 					}
 				})
+				ui.Text(c, "Shared Space notes are sent with chat context to Dots in this Space. Add only information you want those Dots to use.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+				ui.TextAreaBase(c.Key("profile-space-context"), &a.spaceContextDraft).
+					Placeholder("Shared project facts, terminology, or preferences…").
+					MinHeight(60).MaxHeight(120).FillWidth().Label("Shared Space notes")
+				if a.spaceContextTargetID != "" && a.spaceContextTargetID == a.profileSpaceID {
+					if ui.Button(c.Key("profile-space-context-save"), "Save selected Space notes").Clicked() {
+						a.saveSpaceContextDraft()
+					}
+				}
 			}
+		})
+
+		profilePanel(c, theme, "Chat memory", func() {
+			ui.Text(c, "This editable summary travels with recent messages to reduce repeated context. The complete transcript remains saved on this device.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			ui.TextAreaBase(c.Key("profile-context-summary"), &a.profileContextSummary).
+				Placeholder("Durable facts, decisions, preferences, and open work…").
+				MinHeight(90).MaxHeight(180).FillWidth().Label("Saved Dot memory")
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
+				compacting := a.summaryCompactRun[conversation.ID]
+				buttonLabel := "Update memory from recent chat"
+				if compacting {
+					buttonLabel = "Updating memory…"
+				}
+				button := ui.Button(c.Key("profile-compact-history"), buttonLabel).Padding(8, 11).
+					Tooltip("Sends recent chat context to the selected model to draft compact, editable memory.").
+					Disabled(compacting || len(conversation.Messages) == 0)
+				if button.Clicked() {
+					a.compactConversationHistory()
+				}
+				ui.Spacer(c)
+				remaining := task.MaxConversationSummaryBytes - len(a.profileContextSummary)
+				if remaining < 0 {
+					remaining = 0
+				}
+				ui.Text(c, fmt.Sprintf("%d bytes left", remaining)).FontSize(10).TextColor(theme.TextMuted)
+			})
 		})
 
 		profilePanel(c, theme, "Specialist access", func() {

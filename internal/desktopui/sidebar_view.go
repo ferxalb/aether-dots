@@ -1,6 +1,7 @@
 package desktopui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -290,6 +291,30 @@ func sidebarTime(at time.Time) string {
 func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme) {
 	footer := ui.Column(c).FillWidth().Gap(4)
 	footer.Children(func() {
+		activity := ui.Button(c.Key("open-activity"), "").FillWidth().Height(38).
+			Padding(8, 10).Gap(9).Radius(9).Label("Activity").Tooltip("Activity")
+		styleSidebarItem(activity, theme, a.activityOpen)
+		activity.Children(func() {
+			ui.Icon(c, iconClock).Size(16, 16).TextColor(theme.TextMuted)
+			ui.Text(c, "Activity").FontSize(12)
+			ui.Spacer(c)
+			activeCount := 0
+			for _, dot := range a.snapshot.Dots {
+				if dot.Status == task.Running || dot.Status == task.Ready {
+					activeCount++
+				}
+			}
+			if activeCount > 0 {
+				ui.Badge(c, fmt.Sprint(activeCount)).TextColor(theme.Accent)
+			}
+		})
+		if activity.Clicked() {
+			a.rememberCurrentConversationState()
+			a.activityOpen = true
+			a.settingsOpen = false
+			a.conversationDetailsOpen = false
+			a.selectedDotID = ""
+		}
 		settings := ui.Button(c.Key("open-settings"), "").FillWidth().Height(38).
 			Padding(8, 10).Gap(9).Radius(9).Label("Settings").Tooltip("Settings")
 		styleSidebarItem(settings, theme, a.settingsOpen)

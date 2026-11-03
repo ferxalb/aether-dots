@@ -303,6 +303,10 @@ func providerName(provider ProviderID) string {
 		return "OpenRouter"
 	case ProviderCompatible:
 		return "custom provider"
+	case ProviderAnthropic:
+		return "Anthropic"
+	case ProviderXAI:
+		return "xAI"
 	default:
 		return "OpenAI"
 	}

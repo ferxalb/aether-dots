@@ -30,6 +30,43 @@ func WithTools(provider Provider, tools ...Tool) Provider {
 	case CompatibleGenerator:
 		current.Config.Tools = append(current.Config.Tools, tools...)
 		return current
+	case AnthropicGenerator:
+		current.Config.Tools = append(current.Config.Tools, tools...)
+		return current
+	default:
+		return provider
+	}
+}
+
+// WithoutNativeTools suppresses AETHER's built-in and request-scoped functions.
+func WithoutNativeTools(provider Provider) Provider {
+	switch current := provider.(type) {
+	case Generator:
+		current.Config.DisableNativeTools = true
+		return current
+	case CompatibleGenerator:
+		current.Config.DisableNativeTools = true
+		return current
+	case AnthropicGenerator:
+		current.Config.DisableNativeTools = true
+		return current
+	default:
+		return provider
+	}
+}
+
+// WithMaxOutputTokens sets a one-off output cap for a provider request.
+func WithMaxOutputTokens(provider Provider, limit int64) Provider {
+	switch current := provider.(type) {
+	case Generator:
+		current.Config.MaxOutputTokens = limit
+		return current
+	case CompatibleGenerator:
+		current.Config.MaxOutputTokens = limit
+		return current
+	case AnthropicGenerator:
+		current.Config.MaxOutputTokens = limit
+		return current
 	default:
 		return provider
 	}

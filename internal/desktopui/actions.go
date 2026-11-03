@@ -9,8 +9,43 @@ import (
 	"github.com/egoist/mygo"
 )
 
+func (a *app) initializeRunState() {
+	if a.runCancels == nil {
+		a.runCancels = make(map[string]context.CancelFunc)
+	}
+	if a.liveReplies == nil {
+		a.liveReplies = make(map[string]string)
+	}
+}
+
+func (a *app) hasActiveRuns() bool {
+	return len(a.runCancels) > 0
+}
+
+func (a *app) activeRunDotIDForConversation(conversationID string) string {
+	for id := range a.runCancels {
+		if strings.HasPrefix(id, "routine:") {
+			continue
+		}
+		if dot, ok := a.db.GetDot(id); ok && dot.ConversationID == conversationID {
+			return id
+		}
+	}
+	return ""
+}
+
+func (a *app) cancelRunByID(id string) bool {
+	cancel := a.runCancels[id]
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
+}
+
 func (a *app) startRun(id string) {
-	if a.cancelRun != nil {
+	a.initializeRunState()
+	if a.runCancels[id] != nil {
 		return
 	}
 	dot, ok := a.db.GetDot(id)
@@ -19,10 +54,13 @@ func (a *app) startRun(id string) {
 		return
 	}
 	conversationID := dot.ConversationID
+	if conversationID != "" && a.activeRunDotIDForConversation(conversationID) != "" {
+		a.adt.Warning("This Dot is already replying", "Wait for this conversation to finish before sending another message.")
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	a.cancelRun = cancel
-	a.runningDotID = id
-	a.live = ""
+	a.runCancels[id] = cancel
+	a.liveReplies[id] = ""
 	toastID := "dot-run-" + id
 	a.adt.Loading(toastID, "Your Dot is working", "A reply is being prepared.")
 	if conversationID == a.selectedConversationID {
@@ -33,11 +71,7 @@ func (a *app) startRun(id string) {
 	go func() {
 		onProgress := func() {
 			if win != nil {
-				win.Update(func() {
-					if a.runningDotID == id {
-						a.refresh()
-					}
-				})
+				win.Update(func() { a.refresh() })
 			}
 		}
 		generator := generatorForConversationRun(prefs, a.db, id, a.githubService, onProgress)
@@ -59,9 +93,8 @@ func (a *app) startRun(id string) {
 		}
 		cancel()
 		finish := func() {
-			a.cancelRun = nil
-			a.runningDotID = ""
-			a.live = ""
+			delete(a.runCancels, id)
+			delete(a.liveReplies, id)
 			a.refresh()
 			if err == nil {
 				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply saved", Description: "Your Dot’s response is in the conversation.", Level: ADTSuccess})
@@ -71,12 +104,10 @@ func (a *app) startRun(id string) {
 				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply failed", Description: err.Error(), Level: ADTError})
 			}
 			if conversationID != "" && conversationID == a.selectedConversationID {
-				if errorsIsCanceled(err) {
+				if errorsIsCanceled(err) || err == nil {
 					a.conversationError = ""
-				} else if err != nil {
-					a.conversationError = err.Error()
 				} else {
-					a.conversationError = ""
+					a.conversationError = err.Error()
 				}
 			}
 		}
@@ -101,8 +132,8 @@ func collectRunDeltas(win *mygo.Window, a *app, id string, deltas <-chan string,
 		snapshot := streamed.String()
 		lastPublished = len(snapshot)
 		win.Update(func() {
-			if a.runningDotID == id {
-				a.live = snapshot
+			if a.runCancels[id] != nil {
+				a.liveReplies[id] = snapshot
 			}
 		})
 	}

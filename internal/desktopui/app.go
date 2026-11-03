@@ -44,6 +44,7 @@ type app struct {
 	conversationDetailsOpen bool
 	searchQuery             string
 	settingsOpen            bool
+	activityOpen            bool
 	settingsTab             int
 	settingsAdvancedOpen    bool
 	settingsScroll          [5]ui.ScrollState
@@ -51,6 +52,7 @@ type app struct {
 	profileName                     string
 	profilePurpose                  string
 	profileInstructions             string
+	profileContextSummary           string
 	profileDelegateIDs              []string
 	profileGitHubEnabledDraft       bool
 	profileGitHubDisclosureAccepted bool
@@ -60,6 +62,8 @@ type app struct {
 	profileColor                    string
 	profileSpaceID                  string
 	spaceDraft                      string
+	spaceContextDraft               string
+	spaceContextTargetID            string
 	renameSpaceID                   string
 	spaceManagementOpen             bool
 	adt                             ADT
@@ -80,6 +84,7 @@ type app struct {
 	messageDraft                    string
 	messageDrafts                   map[string]string
 	chatMessages                    ui.ListState
+	activityList                    ui.ListState
 	conversationError               string
 	apiKeyDraft                     string
 	apiKeyDrafts                    map[string]string
@@ -96,9 +101,9 @@ type app struct {
 	openRouterModelList       ui.ListState
 	markdownOptions           *markdown.Options
 
-	live         string
-	runningDotID string
-	cancelRun    context.CancelFunc
+	liveReplies       map[string]string
+	runCancels        map[string]context.CancelFunc
+	summaryCompactRun map[string]bool
 
 	credentialChecked          bool
 	credentialLoading          bool

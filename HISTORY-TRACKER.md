@@ -6,6 +6,25 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-02 (4) — Provider SDKs, bounded memory, and visible run activity
+
+### Implementation
+
+- Added Anthropic's official Go SDK and native streaming Messages adapter, with the existing bounded client-side function catalog, streamed tool loops, secret redaction, retry/timeout configuration, adaptive thinking, and model-aware effort levels. Unsupported Claude effort levels are omitted so a model is not sent an invalid setting.
+- Added optional Anthropic beta Message Threads using the official SDK helper. Threads are off by default; Settings explains server expiry, local-memory replay, lack of early deletion, billing, encryption, and Zero Data Retention eligibility. The local cache is bounded, process-only, keyed without storing raw credentials, and cleared when the option is disabled.
+- Added xAI Grok through the official OpenAI Go SDK and xAI's fixed Responses API origin. Requests set `store=false`, use conversation prompt affinity, stream text, and keep xAI-hosted web and X search tools disabled. Provider-specific keys remain in the system credential store.
+- Reduced repeated prompt payloads while preserving the complete transcript locally: active turns include a capped set of recent messages, optional editable Dot memory, and user-authored shared Space notes. Memory generation is a model-drafted local note that remains editable.
+- Added an Activity view with run controls and local approximate latency/token metrics, plus per-conversation run guards so separate Dots can reply concurrently. Lists follow stable IDs and preserve reading position while their rows change.
+- Updated provider settings, privacy copy, README, CLI configuration, and the recent-context store expectation. The earlier (3) entry describes the state before this implementation.
+
+### Verification
+
+- `gofmt`, `git diff --check`, `CGO_ENABLED=0 go build ./...`, and `CGO_ENABLED=0 go tool mygo vet .` passed after the provider, context, metrics, and UI changes.
+
+### Not verified in this session
+
+- Automated tests, native visual preview, and live model-provider requests were not run. Anthropic and xAI connections require user API credentials; optional Anthropic Message Threads also require the current beta API availability.
+
 ## 2026-11-02 (3) — Long-chat UI performance review
 
 ### Chat rendering

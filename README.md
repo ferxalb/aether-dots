@@ -23,11 +23,13 @@ CGO_ENABLED=0 go run .
 
 Choose **New Dot** or press `⌘N` to create a Dot and open its chat immediately. Start by sending a prompt. Use **Customize** to change its name, icon, color, objective, or lasting working instructions. `⌘⇧Space` opens AETHER from another app; the menu bar item can reopen it after the window closes.
 
-Dots use their saved profile and the conversation history before the current message. You can add a reusable skill to a specific turn with `@skill[Skill name]`. They cannot read or write user files or folders. Replies are saved to chat history in AETHER's local store; Dot tasks do not create output files.
+Dots use their saved profile, optional editable memory, shared Space notes, and a bounded set of recent conversation messages. The complete transcript stays in AETHER's local store. Use **Build Dot memory** in Customize to summarize recent chat into editable notes. You can add a reusable skill to a specific turn with `@skill[Skill name]`. Dots cannot read or write user files or folders. Replies are saved to local chat history; Dot tasks do not create output files.
 
 ## Model setup
 
-The desktop Settings page supports three real connection modes: OpenAI through the official Go SDK and Responses API, OpenRouter through the SDK's OpenAI-compatible Chat Completions API, and a custom OpenAI-compatible endpoint. Each provider keeps its own model selection; changing providers does not modify Dot profiles or saved conversation messages. OpenRouter loads its live text-input/text-output chat model catalog, including models from many providers, in a searchable modal; its virtualized list keeps every matching model available without building the whole catalog at once. The picker displays each model's published context size and whether it declares native function or reasoning-effort support; AETHER sends OpenRouter functions only when the selected model declares support. OpenAI, OpenRouter, and custom endpoints use one provider-neutral function catalog when the selected model supports function calls. The built-in functions provide local time and arithmetic. Custom endpoints must implement function calls to use them.
+Settings supports OpenAI, Anthropic Claude, xAI Grok, OpenRouter, and custom OpenAI-compatible endpoints. OpenAI uses the [official OpenAI Go SDK](https://github.com/openai/openai-go) and Responses API; Anthropic uses its [official Go SDK](https://github.com/anthropics/anthropic-sdk-go) and native Messages API. xAI's official quickstart shows the OpenAI SDK-compatible pattern for its documented [Responses API](https://docs.x.ai/developers/rest-api-reference/inference/responses), so AETHER uses the OpenAI Go SDK against xAI's fixed API origin. Each provider keeps its own model and credential settings; changing providers does not modify Dot profiles or saved messages. OpenRouter loads its live text-input/text-output model catalog in a searchable, virtualized modal and displays published context size and function/reasoning support. AETHER uses the same bounded local function catalog across providers when supported. Built-in functions provide local time and arithmetic. Provider-side web, X search, browser, and computer tools remain off.
+
+Anthropic's beta Message Threads are optional and off by default. While an in-memory thread is active, later turns send only new messages. Anthropic expires a thread after five minutes without use and deletes it no later than one hour after its last use; if the server copy expires, the SDK replays from the in-memory conversation. Anthropic encrypts thread data in memory, provides no early-delete API, and marks Threads ineligible for Zero Data Retention. Turning the feature off or restarting AETHER drops local references; already-sent data remains subject to Anthropic's expiry. Threads do not change input-token billing. Adaptive thinking and model-supported effort controls are used for recognized Claude model IDs; unsupported effort levels are omitted. Anthropic requires `max_tokens`, so when the output limit is blank AETHER sends a 16,384-token cap, including reasoning tokens. See Anthropic's [Message Threads](https://platform.claude.com/docs/en/build-with-claude/message-threads) and [effort controls](https://platform.claude.com/docs/en/build-with-claude/effort) documentation.
 
 Each Dot can be granted access to up to 12 specialist Dots in its Space, with at most three handoffs per run. A handoff sends a typed task, constraints, and expected output to the selected Dot; it does not send the requesting Dot's full chat history. The specialist uses its own profile and saved history. The request and result are saved in both conversations, and each decision is recorded in the task event chain. Grants start empty and are directional; moving a Dot to another Space clears old grants to it. Handoffs can make additional model requests and use the same configured provider. No function has general access to files, folders, apps, accounts, or arbitrary network destinations.
 
@@ -36,16 +38,18 @@ Desktop API keys are stored separately per provider in the system credential sto
 The CLI chooses a provider with environment variables and uses the same provider adapters:
 
 ```sh
-export AETHER_MODEL_PROVIDER="openai" # openai, openrouter, or openai-compatible
+export AETHER_MODEL_PROVIDER="openai" # openai, anthropic, xai, openrouter, or openai-compatible
 export AETHER_MODEL_NAME="gpt-6.1-sol"
 export OPENAI_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+export XAI_API_KEY="..."
 export OPENROUTER_API_KEY="..."
 export AETHER_MODEL_BASE_URL="https://api.example.com/v1" # custom provider only
 export AETHER_COMPATIBLE_API_KEY="..." # optional for local endpoints
-# Reasoning effort applies to OpenAI and compatible Chat Completions models.
+# Reasoning effort applies to OpenAI, Anthropic, xAI, and compatible models.
 # Use "default" to omit the effort parameter for compatible providers.
 export AETHER_REASONING_EFFORT="medium"
-# Text verbosity is supported by the OpenAI Responses provider.
+# Text verbosity is supported by the OpenAI and xAI Responses APIs.
 export AETHER_TEXT_VERBOSITY="medium"
 # Optional. Leave unset to use the selected provider/model's reply-length default.
 # export AETHER_MAX_OUTPUT_TOKENS="16384"
@@ -53,7 +57,9 @@ export AETHER_MAX_RETRIES="2"
 export AETHER_MODEL_TIMEOUT_SECONDS="90"
 ```
 
-The desktop Settings page includes provider selection, provider-specific model settings, the live OpenRouter catalog, custom endpoint configuration, a masked API-key field, optional generation controls, and a connection check. Both the OpenAI Responses and OpenRouter/compatible Chat Completions adapters stream text as it arrives and execute the same bounded function catalog; the chat batches UI updates and renders live and saved replies with MyGo's incremental Markdown parser. OpenAI Responses requests disable response storage. A reply receives the Dot profile, the explicitly selected skill, the newest user message, and the saved conversation history before that message. AETHER does not impose a token context window; the selected model/provider enforces its own published window. A 16 MiB local prompt safety ceiling prevents oversized requests from exhausting app memory, and an over-limit conversation fails clearly while its saved messages remain intact.
+The Settings page includes provider-specific models and credentials, the OpenRouter catalog, a custom endpoint, optional generation controls, and a connection check. All provider adapters stream text and support only AETHER's bounded local function catalog; chat batches UI updates and renders Markdown incrementally. OpenAI and xAI Responses requests disable response storage. Prompts include the Dot profile, selected skill, optional saved memory, shared Space notes, and up to 12 recent messages. The full transcript remains local. AETHER keeps prompts bounded and fails clearly if their local safety limit is exceeded.
+
+The **Activity** page shows active and recent Dot runs, per-run cancellation, first-token latency, duration, and approximate token counts. Independent conversations can run in parallel; a conversation accepts one active reply at a time. Metrics are approximate because providers expose different usage details.
 
 ## Integrations
 
@@ -100,7 +106,7 @@ In Settings → Integrations, select **Connect GitHub**, enter the one-time code
 
 Open **Customize** for a Dot, enable GitHub, select exact repositories, and accept the disclosure that retrieved repository metadata, issue/PR text, commit details, and CI results may be sent to that Dot's configured model provider. GitHub tokens never go to a model. Retrieved GitHub text is treated as untrusted evidence. Each operation checks the Dot's current Space, repository grant, local selection, current App installation access, and connection again. Specialists use their own grants. Scheduled Routines need a separate **Allow this Routine to use the Dot's GitHub grants** choice.
 
-The provider-neutral GitHub tools work with supported OpenAI, OpenRouter, and OpenAI-compatible function-calling models. If the selected model is known not to support functions, AETHER omits the GitHub tools and reports that it did not query GitHub. A Dot can request a repository health review, open issues and pull requests, commit metadata, check runs, recent workflow runs, and bounded job summaries. Results include GitHub source links and a checked-at time for CI summaries. AETHER records the read operation in the Dot's append-only event history without copying private issue or repository content there.
+The provider-neutral GitHub tools work with supported OpenAI, Anthropic, xAI, OpenRouter, and OpenAI-compatible function-calling models. If the selected model is known not to support functions, AETHER omits the GitHub tools and reports that it did not query GitHub. A Dot can request a repository health review, open issues and pull requests, commit metadata, check runs, recent workflow runs, and bounded job summaries. Results include GitHub source links and a checked-at time for CI summaries. AETHER records the read operation in the Dot's append-only event history without copying private issue or repository content there.
 
 The CLI uses the same Keychain credential store and local grants:
 

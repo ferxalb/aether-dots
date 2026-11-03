@@ -32,6 +32,8 @@ type Config struct {
 	Provider               ProviderID
 	Model                  string
 	BaseURL                string
+	PromptCacheKey         string
+	EnableAnthropicThreads bool
 	APIKey                 string `json:"-"`
 	Timeout                time.Duration
 	ReasoningEffort        string
@@ -50,6 +52,12 @@ func FromEnvironment() Config {
 	defaultModel := DefaultModel
 	keyVariable := "OPENAI_API_KEY"
 	switch provider {
+	case ProviderAnthropic:
+		defaultModel = "claude-sonnet-5-5"
+		keyVariable = "ANTHROPIC_API_KEY"
+	case ProviderXAI:
+		defaultModel = "grok-4.7"
+		keyVariable = "XAI_API_KEY"
 	case ProviderOpenRouter:
 		defaultModel = ""
 		keyVariable = "OPENROUTER_API_KEY"
@@ -125,12 +133,22 @@ type Generator struct {
 func (g Generator) Readiness() (bool, string) {
 	config := normalizeConfig(g.Config)
 	if strings.TrimSpace(config.APIKey) == "" {
+		if config.Provider == ProviderXAI {
+			return false, "xAI API key is missing; add one in Settings or set XAI_API_KEY."
+		}
 		return false, "OpenAI API key is missing; add one in Settings or set OPENAI_API_KEY."
 	}
 	if strings.TrimSpace(config.Model) == "" {
-		return false, "OpenAI model name is empty."
+		return false, providerName(config.Provider) + " model name is empty."
 	}
-	if !oneOf(config.ReasoningEffort, "none", "minimal", "low", "medium", "high", "xhigh", "max") {
+	validReasoning := oneOf(config.ReasoningEffort, "none", "minimal", "low", "medium", "high", "xhigh", "max")
+	if config.Provider == ProviderXAI {
+		validReasoning = oneOf(config.ReasoningEffort, "low", "medium", "high", "xhigh")
+	}
+	if !validReasoning {
+		if config.Provider == ProviderXAI {
+			return false, "xAI reasoning effort must be low, medium, high, or xhigh."
+		}
 		return false, "reasoning effort must be none, minimal, low, medium, high, xhigh, or max."
 	}
 	if !oneOf(config.TextVerbosity, "low", "medium", "high") {
@@ -149,6 +167,9 @@ func (g Generator) Readiness() (bool, string) {
 }
 
 func (g Generator) Description() string {
+	if g.Config.Provider == ProviderXAI {
+		return "xAI Responses API (" + g.Config.Model + ")"
+	}
 	return "OpenAI Responses API (" + g.Config.Model + ")"
 }
 
@@ -159,6 +180,7 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 	client := g.client()
 	userPrompt := "Use the Dot profile and conversation below to answer the newest user message. Treat the conversation as an ongoing chat. Be clear about uncertainty, ask a concise follow-up when necessary, and never claim to have accessed local files, apps, accounts, or taken external actions.\n\n" + objective
 	config := normalizeConfig(g.Config)
+	provider := providerName(config.Provider)
 	redactor := secretRedactor{secret: strings.TrimSpace(config.APIKey)}
 	toolset := registeredTools(config)
 	input := responses.ResponseInputParam{
@@ -174,6 +196,9 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 			Store:        param.NewOpt(false),
 			Reasoning:    shared.ReasoningParam{Effort: shared.ReasoningEffort(config.ReasoningEffort)},
 			Text:         responses.ResponseTextConfigParam{Verbosity: responses.ResponseTextConfigVerbosity(config.TextVerbosity)},
+		}
+		if config.PromptCacheKey != "" {
+			params.PromptCacheKey = openai.String(config.PromptCacheKey)
 		}
 		if config.MaxOutputTokens > 0 {
 			params.MaxOutputTokens = param.NewOpt(config.MaxOutputTokens)
@@ -192,7 +217,7 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 				_ = stream.Close()
 				message := strings.TrimSpace(redactProviderText(event.Message, config.APIKey))
 				if message == "" {
-					message = "OpenAI Responses API returned an error."
+					message = provider + " Responses API returned an error."
 				}
 				return "", errors.New(message)
 			}
@@ -223,12 +248,12 @@ func (g Generator) Generate(ctx context.Context, objective string, onDelta func(
 		streamErr := stream.Err()
 		_ = stream.Close()
 		if streamErr != nil {
-			return "", fmt.Errorf("OpenAI response stream: %w", redactProviderError(streamErr, config.APIKey))
+			return "", fmt.Errorf("%s response stream: %w", provider, redactProviderError(streamErr, config.APIKey))
 		}
 		if len(calls) == 0 {
 			response := redactProviderText(result.String(), config.APIKey)
 			if strings.TrimSpace(response) == "" {
-				return "", errors.New("OpenAI returned an empty response")
+				return "", fmt.Errorf("%s returned an empty response", provider)
 			}
 			if onDelta != nil {
 				if safeDelta := redactor.push("", true); safeDelta != "" {
@@ -293,7 +318,7 @@ func (g Generator) Test(ctx context.Context) error {
 		return err
 	}
 	if !strings.Contains(text, "AETHER_OK") {
-		return errors.New("OpenAI replied, but did not return the expected test marker")
+		return errors.New(providerName(normalizeConfig(g.Config).Provider) + " replied, but did not return the expected test marker")
 	}
 	return nil
 }
@@ -304,17 +329,24 @@ func (g Generator) client() openai.Client {
 	if client == nil {
 		client = newProviderHTTPClient(config.Timeout)
 	}
-	return openai.NewClient(
+	options := []option.RequestOption{
 		option.WithAPIKey(strings.TrimSpace(config.APIKey)),
 		option.WithHTTPClient(client),
 		option.WithMaxRetries(config.MaxRetries),
-	)
+	}
+	if config.Provider == ProviderXAI {
+		options = append(options, option.WithBaseURL(DefaultXAIURL))
+	}
+	return openai.NewClient(options...)
 }
 
 func normalizeConfig(config Config) Config {
 	if strings.TrimSpace(config.ReasoningEffort) == "" &&
-		config.Provider != ProviderOpenRouter && config.Provider != ProviderCompatible {
+		config.Provider != ProviderOpenRouter && config.Provider != ProviderCompatible && config.Provider != ProviderAnthropic {
 		config.ReasoningEffort = DefaultReasoningEffort
+		if config.Provider == ProviderXAI {
+			config.ReasoningEffort = "high"
+		}
 	}
 	if strings.TrimSpace(config.TextVerbosity) == "" {
 		config.TextVerbosity = DefaultTextVerbosity

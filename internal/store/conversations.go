@@ -66,6 +66,24 @@ func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpos
 	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, delegatedDotIDs, nil, nil)
 }
 
+// SetConversationContextSummary saves user-authored or user-approved memory
+// without changing or removing the full local transcript.
+func (s *Store) SetConversationContextSummary(id, summary string) error {
+	summary = strings.TrimSpace(summary)
+	if len(summary) > task.MaxConversationSummaryBytes || !utf8.ValidString(summary) {
+		return fmt.Errorf("conversation summary must be valid UTF-8 text of at most %d bytes", task.MaxConversationSummaryBytes)
+	}
+	return s.change(func(db *task.Database) error {
+		i := conversationIndex(db, id)
+		if i < 0 {
+			return errors.New("conversation not found")
+		}
+		db.Conversations[i].ContextSummary = summary
+		db.Conversations[i].UpdatedAt = time.Now().UTC()
+		return nil
+	})
+}
+
 // UpdateConversationProfileAndGitHub saves the Dot profile and its independent
 // repository grants in one transaction.
 func (s *Store) UpdateConversationProfileAndGitHub(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs []string, githubRepositoryIDs []int64, disclosureAccepted bool) error {
@@ -224,7 +242,7 @@ func createConversationRunFrom(db *task.Database, conversationID, content, routi
 		if existing.Status != task.Captured && existing.Status != task.Ready && existing.Status != task.Running {
 			continue
 		}
-		if existing.ConversationID == conversationID || (sourceDotID == "" && existing.DelegatedByDotID == "") {
+		if existing.ConversationID == conversationID {
 			return task.Dot{}, task.ConversationMessage{}, ErrDotAlreadyActive
 		}
 	}
@@ -422,9 +440,9 @@ func conversationObjectiveWithContext(conversation task.Conversation, message st
 	return b.String()
 }
 
-// ConversationObjective assembles the provider prompt for a saved chat turn
-// from its durable profile and every prior conversation message. Provider
-// selection therefore never changes or truncates stored chat data.
+// ConversationObjective assembles a compact provider prompt from the durable
+// profile, optional user-maintained memory, shared Space context, and recent
+// messages. The complete transcript stays saved locally.
 func (s *Store) ConversationObjective(dotID string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -454,6 +472,13 @@ func (s *Store) ConversationObjective(dotID string) (string, error) {
 	if conversation == nil {
 		return "", errors.New("saved Dot conversation not found")
 	}
+	var spaceContext string
+	for i := range s.db.Spaces {
+		if s.db.Spaces[i].ID == conversation.SpaceID {
+			spaceContext = s.db.Spaces[i].Context
+			break
+		}
+	}
 	messageIndex := -1
 	for i := range conversation.Messages {
 		message := conversation.Messages[i]
@@ -472,47 +497,33 @@ func (s *Store) ConversationObjective(dotID string) (string, error) {
 	if !ok {
 		return "", errors.New("saved Dot prompt does not match its newest user message")
 	}
-	const contextPrefix = "\n\nComplete saved conversation context:\n"
-	contextBudget := task.MaxConversationObjectiveBytes - len(objective) - len(contextPrefix)
-	if contextBudget < 0 {
+	const (
+		spacePrefix  = "\n\nShared Space context:\n"
+		memoryPrefix = "\n\nSaved conversation summary:\n"
+		recentPrefix = "\n\nRecent saved conversation context:\n"
+	)
+	if len(objective) > task.MaxConversationObjectiveBytes {
 		return "", errors.New("saved Dot prompt exceeds the local prompt safety limit")
 	}
-	context, err := allConversationContext(conversation.Messages[:messageIndex], contextBudget)
-	if err != nil {
-		return "", fmt.Errorf("saved conversation is larger than the %d MiB local prompt safety limit", task.MaxConversationObjectiveBytes/(1024*1024))
-	}
-	if context != "" {
-		objective = prefix + contextPrefix + context + suffix
-	}
-	return objective, nil
-}
-
-func allConversationContext(messages []task.ConversationMessage, maxBytes int) (string, error) {
 	var context strings.Builder
-	for _, message := range messages {
-		label := ""
-		switch message.Role {
-		case "user":
-			label = "User request"
-		case "assistant":
-			label = "Assistant reply"
-		case "handoff":
-			label = "Specialist response"
-		default:
-			continue
-		}
-		entry := label + ":\n" + message.Content
-		separator := ""
-		if context.Len() > 0 {
-			separator = "\n\n"
-		}
-		if context.Len()+len(separator)+len(entry) > maxBytes {
-			return "", errors.New("conversation context exceeds the prompt safety limit")
-		}
-		context.WriteString(separator)
-		context.WriteString(entry)
+	if strings.TrimSpace(spaceContext) != "" {
+		context.WriteString(spacePrefix)
+		context.WriteString(strings.TrimSpace(spaceContext))
 	}
-	return context.String(), nil
+	if strings.TrimSpace(conversation.ContextSummary) != "" {
+		context.WriteString(memoryPrefix)
+		context.WriteString(strings.TrimSpace(conversation.ContextSummary))
+	}
+	recent := boundedConversationContext(conversation.Messages[:messageIndex])
+	if recent != "" {
+		context.WriteString(recentPrefix)
+		context.WriteString(recent)
+	}
+	if context.Len()+len(prefix)+len(suffix) > task.MaxConversationObjectiveBytes {
+		return "", fmt.Errorf("saved conversation context exceeds the %d MiB local prompt safety limit", task.MaxConversationObjectiveBytes/(1024*1024))
+	}
+	objective = prefix + context.String() + suffix
+	return objective, nil
 }
 
 func boundedConversationContext(messages []task.ConversationMessage) string {

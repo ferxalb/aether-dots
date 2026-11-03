@@ -15,9 +15,12 @@ type ProviderID string
 
 const (
 	ProviderOpenAI       ProviderID = "openai"
+	ProviderAnthropic    ProviderID = "anthropic"
+	ProviderXAI          ProviderID = "xai"
 	ProviderOpenRouter   ProviderID = "openrouter"
 	ProviderCompatible   ProviderID = "openai-compatible"
 	DefaultOpenRouterURL            = "https://openrouter.ai/api/v1"
+	DefaultXAIURL                   = "https://api.x.ai/v1"
 )
 
 // Provider is the provider-neutral contract used by chat and scheduled runs.
@@ -38,10 +41,40 @@ func NewProvider(config Config) Provider {
 	switch config.Provider {
 	case ProviderOpenAI:
 		return Generator{Config: config}
+	case ProviderXAI:
+		if strings.TrimSpace(config.Model) == "" {
+			config.Model = "grok-4.7"
+		}
+		config.BaseURL = DefaultXAIURL
+		return Generator{Config: config}
+	case ProviderAnthropic:
+		if strings.TrimSpace(config.Model) == "" {
+			config.Model = "claude-sonnet-5-5"
+		}
+		return AnthropicGenerator{Config: config}
 	case ProviderOpenRouter, ProviderCompatible:
 		return CompatibleGenerator{Config: config}
 	default:
 		return invalidProvider{provider: config.Provider}
+	}
+}
+
+// WithPromptCacheKey configures a provider's in-memory prompt affinity key
+// where its API supports one. It does not enable server-side conversation storage.
+func WithPromptCacheKey(provider Provider, key string) Provider {
+	key = strings.TrimSpace(key)
+	switch current := provider.(type) {
+	case Generator:
+		current.Config.PromptCacheKey = key
+		return current
+	case CompatibleGenerator:
+		current.Config.PromptCacheKey = key
+		return current
+	case AnthropicGenerator:
+		current.Config.PromptCacheKey = key
+		return current
+	default:
+		return provider
 	}
 }
 

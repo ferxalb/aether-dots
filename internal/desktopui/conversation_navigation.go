@@ -25,6 +25,7 @@ func (a *app) selectConversation(id string) {
 	a.selectedDotID = ""
 	a.conversationDetailsOpen = false
 	a.settingsOpen = false
+	a.activityOpen = false
 	a.conversationError = ""
 	a.refresh()
 }

@@ -22,15 +22,16 @@ func generatorForPreferences(prefs preferences, keyOverride ...string) model.Pro
 		key = strings.TrimSpace(keyOverride[0])
 	}
 	config := model.Config{
-		Provider:        provider,
-		Model:           strings.TrimSpace(*prefs.selectedModel()),
-		BaseURL:         strings.TrimSpace(prefs.CompatibleBaseURL),
-		APIKey:          key,
-		Timeout:         secondsPreference(prefs.TimeoutSeconds, 90),
-		ReasoningEffort: prefs.ReasoningEffort,
-		TextVerbosity:   prefs.TextVerbosity,
-		MaxOutputTokens: integerPreference(prefs.MaxOutputTokens, 0),
-		MaxRetries:      int(integerPreference(prefs.MaxRetries, int64(model.DefaultMaxRetries))),
+		Provider:               provider,
+		Model:                  strings.TrimSpace(*prefs.selectedModel()),
+		BaseURL:                strings.TrimSpace(prefs.CompatibleBaseURL),
+		APIKey:                 key,
+		Timeout:                secondsPreference(prefs.TimeoutSeconds, 90),
+		ReasoningEffort:        prefs.ReasoningEffort,
+		TextVerbosity:          prefs.TextVerbosity,
+		MaxOutputTokens:        integerPreference(prefs.MaxOutputTokens, 0),
+		MaxRetries:             int(integerPreference(prefs.MaxRetries, int64(model.DefaultMaxRetries))),
+		EnableAnthropicThreads: prefs.AnthropicMessageThreads,
 		DisableNativeTools: provider == model.ProviderOpenRouter &&
 			prefs.OpenRouterCatalogModel == strings.TrimSpace(prefs.OpenRouterModel) &&
 			prefs.OpenRouterCatalogModel != "" && !prefs.OpenRouterModelSupportsTools,
@@ -78,6 +79,10 @@ func providerKeyName(provider model.ProviderID) string {
 	switch provider {
 	case model.ProviderOpenAI:
 		return openAIKeyName
+	case model.ProviderAnthropic:
+		return anthropicKeyName
+	case model.ProviderXAI:
+		return xAIKeyName
 	case model.ProviderOpenRouter:
 		return openRouterKeyName
 	case model.ProviderCompatible:
@@ -91,6 +96,10 @@ func providerEnvironmentKey(provider model.ProviderID) string {
 	switch provider {
 	case model.ProviderOpenAI:
 		return "OPENAI_API_KEY"
+	case model.ProviderAnthropic:
+		return "ANTHROPIC_API_KEY"
+	case model.ProviderXAI:
+		return "XAI_API_KEY"
 	case model.ProviderOpenRouter:
 		return "OPENROUTER_API_KEY"
 	case model.ProviderCompatible:
@@ -104,6 +113,10 @@ func providerDisplayName(provider string) string {
 	switch model.ProviderID(provider) {
 	case model.ProviderOpenAI:
 		return "OpenAI"
+	case model.ProviderAnthropic:
+		return "Anthropic Claude"
+	case model.ProviderXAI:
+		return "xAI Grok"
 	case model.ProviderOpenRouter:
 		return "OpenRouter"
 	case model.ProviderCompatible:
@@ -124,6 +137,12 @@ func (a *app) switchProvider(provider string) {
 	a.prefs.Provider = provider
 	if provider == string(model.ProviderOpenAI) && strings.TrimSpace(a.prefs.ReasoningEffort) == "" {
 		a.prefs.ReasoningEffort = model.DefaultReasoningEffort
+	}
+	if provider == string(model.ProviderXAI) && !validProviderReasoningEffort(provider, a.prefs.ReasoningEffort) {
+		a.prefs.ReasoningEffort = "high"
+	}
+	if provider == string(model.ProviderAnthropic) && !validProviderReasoningEffort(provider, a.prefs.ReasoningEffort) {
+		a.prefs.ReasoningEffort = "high"
 	}
 	a.providerSelection = providerSelectionLabel(provider)
 	a.apiKeyDraft = a.apiKeyDrafts[provider]
@@ -150,6 +169,7 @@ func secondsPreference(value string, fallback int64) time.Duration {
 
 func (a *app) openSettings() {
 	a.settingsOpen = true
+	a.activityOpen = false
 	a.settingsTab = 0
 	a.providerSelection = providerSelectionLabel(a.prefs.Provider)
 	a.checkCredential()
@@ -200,6 +220,9 @@ func (a *app) saveSettings() {
 	if err := savePreferences(a.dataDir, a.prefs); err != nil {
 		a.adt.Error("Couldn’t save settings", err.Error())
 		return
+	}
+	if !a.prefs.AnthropicMessageThreads {
+		model.ClearAnthropicThreads()
 	}
 	a.publishRoutinePreferences()
 	key := strings.TrimSpace(a.apiKeyDraft)
@@ -321,7 +344,7 @@ func (a *app) credentialDescription() string {
 }
 
 func (a *app) testModel() {
-	if a.cancelRun != nil {
+	if a.hasActiveRuns() {
 		a.adt.Warning("A Dot is already running", "Wait for the current reply to finish before testing the connection.")
 		return
 	}

@@ -252,7 +252,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 					ui.Text(c, status).FontSize(10).TextColor(theme.TextMuted).FillWidth()
 					if ui.Button(c.Key("routine-test-"+routine.ID), "Run now").Padding(6, 9).
 						Tooltip("Run once now. This sends a request to your selected provider and may use your plan.").
-						Disabled(a.cancelRun != nil).Clicked() {
+						Disabled(a.hasActiveRuns()).Clicked() {
 						a.testRoutine(routine.ID)
 					}
 					if a.routineDeleteID == routine.ID {
@@ -479,12 +479,14 @@ func isPresetRoutineInterval(value string) bool {
 }
 
 func (a *app) testRoutine(id string) {
-	if a.cancelRun != nil {
-		a.adt.Warning("A Dot is already running", "Wait for it to finish before running this routine.")
+	a.initializeRunState()
+	runKey := "routine:" + id
+	if a.runCancels[runKey] != nil {
+		a.adt.Warning("This routine is already running", "Wait for it to finish before starting it again.")
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	a.cancelRun = cancel
+	a.runCancels[runKey] = cancel
 	toastID := "routine-run-" + id
 	a.adt.Loading(toastID, "Routine is running", "This one-time run sends a request to your selected provider and may use your plan.")
 	prefs := a.prefs
@@ -500,7 +502,7 @@ func (a *app) testRoutine(id string) {
 		}, progress)
 		cancel()
 		finish := func() {
-			a.cancelRun = nil
+			delete(a.runCancels, runKey)
 			a.refresh()
 			if err != nil {
 				a.adt.Push(ADTNotice{ID: toastID, Title: "Routine didn't finish", Description: err.Error(), Level: ADTError})
