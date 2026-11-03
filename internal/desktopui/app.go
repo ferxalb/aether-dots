@@ -179,7 +179,7 @@ func Run(dataDir string) error {
 		computerUseService: computeruse.New(dataDir)}
 	a.computerUseInstalled = a.computerUseService.Installed()
 	if a.computerUseInstalled {
-		a.computerUseStatus = "Installed · bounded session ready"
+		a.computerUseStatus = "Installed · ready when granted"
 	} else {
 		a.computerUseStatus = "Not installed"
 	}
@@ -220,6 +220,11 @@ func Run(dataDir string) error {
 			a.adt.Warning("Shortcut unavailable", err.Error())
 		}
 		show()
+		if a.computerUseInstalled && a.hasComputerUseGrant() {
+			a.computerUseStatus = "Starting bounded session"
+			a.refresh()
+			a.prepareComputerUseAsync(a.computerUseRequest, false)
+		}
 		a.initializeRemoteBridge()
 		a.startRoutineScheduler()
 	})

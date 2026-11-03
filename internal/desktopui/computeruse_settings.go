@@ -39,7 +39,7 @@ func (a *app) computerUseIntegrationCard(c *ui.Context, theme *ui.Theme) {
 			})
 		}
 
-		ui.Text(c, "Cua Driver installs separately in /Applications. AETHER uses the stable release and verifies its release signature. If CuaDriver is not listed under Accessibility, add /Applications/CuaDriver.app and switch it on. Screen Recording stays off.").
+		ui.Text(c, "Cua Driver installs separately in /Applications. The installer verifies release checksums; AETHER verifies the app's macOS code signature. If CuaDriver is not listed under Accessibility, add /Applications/CuaDriver.app and switch it on. Screen Recording stays off.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		ui.Text(c, "AETHER disables Cua Driver's optional usage telemetry during setup.").
 			FontSize(10).TextColor(theme.TextMuted).FillWidth()
@@ -49,7 +49,7 @@ func (a *app) computerUseIntegrationCard(c *ui.Context, theme *ui.Theme) {
 		ui.Divider(c)
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 			if a.computerUseLoading {
-				ui.Text(c, "Installing and preparing the bounded Cua Driver session…").FontSize(11).TextColor(theme.TextMuted)
+				ui.Text(c, "Downloading and verifying Cua Driver…").FontSize(11).TextColor(theme.TextMuted)
 				if ui.Button(c.Key("computer-use-cancel-install"), "Cancel").Padding(8, 12).Clicked() {
 					a.cancelComputerUseInstall()
 				}
@@ -81,7 +81,7 @@ func computerUseStatusBadge(c *ui.Context, theme *ui.Theme, status string) {
 	switch status {
 	case "Installed · bounded session ready":
 		color = ui.Hex("#168459")
-	case "Installing", "Revoking access":
+	case "Installing", "Starting bounded session", "Revoking access":
 		color = theme.Accent
 	case "Setup failed":
 		color = theme.Danger
@@ -107,14 +107,8 @@ func (a *app) startComputerUseInstall() {
 	go func() {
 		installErr := service.Install(ctx)
 		var permissionErr error
-		if installErr == nil && !wasInstalled {
+		if installErr == nil && !wasInstalled && ctx.Err() == nil {
 			permissionErr = service.OpenAccessibilitySettings()
-		}
-		var prepareErr error
-		if installErr == nil {
-			prepareCtx, prepareCancel := context.WithTimeout(ctx, 12*time.Second)
-			prepareErr = service.Prepare(prepareCtx)
-			prepareCancel()
 		}
 		canceled := errors.Is(ctx.Err(), context.Canceled)
 		cancel()
@@ -131,19 +125,54 @@ func (a *app) startComputerUseInstall() {
 			case installErr != nil:
 				a.computerUseStatus = "Setup failed"
 				a.computerUseError = installErr.Error()
-			case prepareErr != nil:
-				a.computerUseStatus = "Installed · session will start on use"
-				a.computerUseError = "Cua Driver installed, but the fast-start session could not be prepared. It will retry when a Dot uses an enabled scope. " + prepareErr.Error()
-				if permissionErr != nil {
-					a.computerUseError += " Accessibility settings could not be opened: " + permissionErr.Error()
-				}
 			case permissionErr != nil:
 				a.computerUseStatus = "Installed · enable Accessibility access"
 				a.computerUseError = "Cua Driver installed, but macOS Accessibility settings could not be opened. Use the button below to open them. " + permissionErr.Error()
 			case !wasInstalled:
 				a.computerUseStatus = "Installed · enable CuaDriver in Accessibility settings"
 				a.computerUseError = "Add /Applications/CuaDriver.app if it is not listed, then switch it on. Screen Recording is not needed."
+			case !a.hasComputerUseGrant():
+				a.computerUseStatus = "Installed · ready when granted"
+				a.computerUseError = ""
 			default:
+				a.computerUseStatus = "Starting bounded session"
+				a.computerUseError = ""
+			}
+			a.refresh()
+			if installErr == nil && !canceled && a.hasComputerUseGrant() {
+				a.prepareComputerUseAsync(request, !wasInstalled || permissionErr != nil)
+			}
+		}
+		if win != nil {
+			win.Update(finish)
+		} else {
+			finish()
+		}
+	}()
+}
+
+func (a *app) prepareComputerUseAsync(request uint64, preserveSetupMessage bool) {
+	if a.computerUseService == nil {
+		return
+	}
+	service := a.computerUseService
+	win := a.win
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		err := service.Prepare(ctx)
+		cancel()
+		finish := func() {
+			if request != a.computerUseRequest || a.computerUseRevoking || !a.computerUseInstalled {
+				return
+			}
+			if err != nil {
+				if preserveSetupMessage && a.computerUseError != "" {
+					a.computerUseError += " Fast-start preparation failed; the next Dot run will retry. " + err.Error()
+				} else {
+					a.computerUseStatus = "Installed · starts on first use"
+					a.computerUseError = "Fast-start preparation failed; the next Dot run will retry. " + err.Error()
+				}
+			} else if !preserveSetupMessage {
 				a.computerUseStatus = "Installed · bounded session ready"
 				a.computerUseError = ""
 			}
@@ -155,6 +184,10 @@ func (a *app) startComputerUseInstall() {
 			finish()
 		}
 	}()
+}
+
+func (a *app) hasComputerUseGrant() bool {
+	return a.db != nil && a.db.HasAnyComputerUseGrant()
 }
 
 func (a *app) cancelComputerUseInstall() {
@@ -172,6 +205,7 @@ func (a *app) openComputerUseAccessibilitySettings() {
 	if a.computerUseService == nil || a.computerUseSettingsOpening || a.computerUseRevoking {
 		return
 	}
+	a.computerUseRequest++
 	a.computerUseSettingsOpening = true
 	service := a.computerUseService
 	win := a.win
@@ -200,6 +234,7 @@ func (a *app) revokeComputerUseAccess() {
 	if a.computerUseRevoking {
 		return
 	}
+	a.computerUseRequest++
 	a.computerUseRevoking = true
 	a.computerUseStatus = "Revoking access"
 	a.computerUseError = ""

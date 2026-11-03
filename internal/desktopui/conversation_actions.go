@@ -70,8 +70,12 @@ func (a *app) saveConversationProfile() {
 		computerUseScopes = nil
 		computerUseDisclosureAccepted = false
 	}
-	computerUseChanged := !sameComputerUseScopes(current.ComputerUseScopes, computerUseScopes) ||
-		current.ComputerUseModelDisclosureAccepted != computerUseDisclosureAccepted
+	accessReduced := computerUseAccessReduced(
+		current.ComputerUseScopes,
+		computerUseScopes,
+		current.ComputerUseModelDisclosureAccepted,
+		computerUseDisclosureAccepted,
+	)
 	err := a.db.UpdateConversationProfileAndIntegrations(
 		a.selectedConversationID,
 		a.profileSpaceID,
@@ -91,7 +95,7 @@ func (a *app) saveConversationProfile() {
 		a.adt.Error("Couldn't save the Dot profile", err.Error())
 		return
 	}
-	if computerUseChanged && a.computerUseService != nil {
+	if accessReduced && a.computerUseService != nil {
 		a.computerUseService.StopAsync()
 	}
 	if err := a.db.SetConversationContextSummary(a.selectedConversationID, a.profileContextSummary); err != nil {
@@ -105,19 +109,57 @@ func (a *app) saveConversationProfile() {
 	a.conversationDetailsOpen = false
 	a.activityOpen = false
 	a.adt.Success("Dot profile saved", "New replies will follow these instructions.")
+	accessAdded := computerUseAccessAdded(
+		current.ComputerUseScopes,
+		computerUseScopes,
+		current.ComputerUseModelDisclosureAccepted,
+		computerUseDisclosureAccepted,
+	)
+	prepareComputerUse := computerUseShouldPrepare(
+		accessAdded,
+		accessReduced,
+		computerUseScopes,
+		computerUseDisclosureAccepted,
+		a.computerUseService != nil && a.computerUseService.Installed(),
+	)
+	if prepareComputerUse {
+		a.computerUseStatus = "Starting bounded session"
+	}
 	a.refresh()
+	if prepareComputerUse {
+		a.prepareComputerUseAsync(a.computerUseRequest, false)
+	}
 }
 
-func sameComputerUseScopes(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for _, scope := range left {
-		if !containsID(right, scope) {
-			return false
+func computerUseScopesRemoved(previous, next []string) bool {
+	for _, previousScope := range previous {
+		if !containsID(next, previousScope) {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+func computerUseScopesAdded(previous, next []string) bool {
+	for _, nextScope := range next {
+		if !containsID(previous, nextScope) {
+			return true
+		}
+	}
+	return false
+}
+
+func computerUseAccessAdded(previousScopes, nextScopes []string, previousDisclosure, nextDisclosure bool) bool {
+	return computerUseScopesAdded(previousScopes, nextScopes) ||
+		(!previousDisclosure && nextDisclosure && len(nextScopes) > 0)
+}
+
+func computerUseAccessReduced(previousScopes, nextScopes []string, previousDisclosure, nextDisclosure bool) bool {
+	return computerUseScopesRemoved(previousScopes, nextScopes) || (previousDisclosure && !nextDisclosure)
+}
+
+func computerUseShouldPrepare(accessAdded, accessReduced bool, scopes []string, disclosureAccepted, driverInstalled bool) bool {
+	return accessAdded && !accessReduced && len(scopes) > 0 && disclosureAccepted && driverInstalled
 }
 
 func (a *app) sendConversationMessage() {

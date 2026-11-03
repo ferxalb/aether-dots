@@ -17,7 +17,8 @@ import (
 
 const (
 	cuadriverAppPath   = "/Applications/CuaDriver.app"
-	cuadriverInstall   = "curl -fsSL https://cua.ai/driver/install.sh | /bin/bash -s -- --channel stable --require-signature --no-modify-path"
+	cuadriverInstall   = "set -o pipefail; curl -fsSL https://cua.ai/driver/install.sh | /bin/bash -s -- --channel stable --no-modify-path"
+	maxInstallerOutput = 2048
 	capabilityManifest = `version: 3
 expires_after: 8h
 idle_timeout: 30m
@@ -108,21 +109,28 @@ func (s *Service) Installed() bool {
 }
 
 // Install runs only after a user clicks the integration setup button. It
-// passes a fixed stable, signature-checked install only the environment it
-// needs; shell startup and installer override variables are not inherited.
+// passes a fixed stable install only the environment it needs; shell startup
+// and installer override variables are not inherited. It verifies the installed
+// app signature before treating the integration as ready.
 func (s *Service) Install(ctx context.Context) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("Computer Use is available only in the macOS desktop app")
 	}
+	installerEnv, err := installerEnvironment()
+	if err != nil {
+		return err
+	}
+	s.Stop()
 	cmd := exec.CommandContext(ctx, "/bin/bash", "--noprofile", "--norc", "-c", cuadriverInstall)
-	cmd.Env = installerEnvironment()
+	cmd.Env = installerEnv
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	var installerOutput limitedBuffer
+	cmd.Stderr = &installerOutput
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return errors.New("Cua Driver could not be installed; check your connection and try again")
+		return commandFailure("Cua Driver installer", err, installerOutput.String())
 	}
 	if !s.Installed() {
 		return errors.New("the Cua Driver installer finished without an app at its expected install path")
@@ -144,7 +152,6 @@ func (s *Service) Install(ctx context.Context) error {
 		}
 		return errors.New("Cua Driver installed, but its optional usage telemetry could not be disabled")
 	}
-	s.Stop()
 	return nil
 }
 
@@ -527,8 +534,11 @@ func verifyAppSignature(ctx context.Context) error {
 	return nil
 }
 
-func installerEnvironment() []string {
-	home, _ := os.UserHomeDir()
+func installerEnvironment() ([]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return nil, errors.New("could not resolve the current user's home directory for Cua Driver installation")
+	}
 	env := []string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
 	if tempDir := os.TempDir(); tempDir != "" {
 		env = append(env, "TMPDIR="+tempDir)
@@ -538,7 +548,47 @@ func installerEnvironment() []string {
 			env = append(env, key+"="+value)
 		}
 	}
-	return env
+	return env, nil
+}
+
+type limitedBuffer struct {
+	data      []byte
+	truncated bool
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	originalLength := len(p)
+	remaining := maxInstallerOutput - len(b.data)
+	if remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+			b.truncated = true
+		}
+		b.data = append(b.data, p...)
+	} else if originalLength > 0 {
+		b.truncated = true
+	}
+	return originalLength, nil
+}
+
+func (b *limitedBuffer) String() string {
+	output := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || r >= 0x20 && r != 0x7f {
+			return r
+		}
+		return -1
+	}, string(b.data)))
+	if b.truncated {
+		output += " …"
+	}
+	return output
+}
+
+func commandFailure(operation string, err error, output string) error {
+	if output == "" {
+		return fmt.Errorf("%s failed (%v); check the connection and whether /Applications is writable", operation, err)
+	}
+	return fmt.Errorf("%s failed (%v): %s", operation, err, output)
 }
 
 func driverEnvironment(source []string, policyPath string) []string {

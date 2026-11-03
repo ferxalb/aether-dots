@@ -20,6 +20,32 @@ For each future work session, append a dated entry describing what changed, why,
 - Ran `gofmt`, `CGO_ENABLED=0 go build ./...`, and `git diff --check` successfully. Automated tests were not run.
 - Cua Driver installation, code-signature verification against a downloaded release, and the macOS Accessibility flow remain unverified on this machine.
 
+## 2026-11-03 (2) — Fix Cua Driver setup and first-use latency
+
+### Implementation
+
+- Traced the Integrations setup failure to `--require-signature`: the installer needs `cosign` on PATH for that flag, while AETHER supplies only macOS system paths and a clean install has no `cosign`. Removed that hidden prerequisite; the upstream installer still verifies release checksums, and AETHER verifies the installed app's macOS code signature.
+- Added `pipefail` and bounded installer stderr in the setup error so failures show their actual cause instead of a generic connection message.
+- Moved bounded-session warm-up off the install completion path and limits prewarming to installed drivers with an approved Dot grant. Existing grants warm in the background on app startup, and adding a scope preserves a warm session; removing access still stops it immediately.
+
+### Verification
+
+- `gofmt`, `CGO_ENABLED=0 go build ./...`, and `git diff --check` passed. Automated tests were not run.
+- Cua Driver installation and the macOS Accessibility flow remain unverified on this machine.
+
+## 2026-11-03 (3) — Computer Use diagnostic and regression coverage
+
+### Implementation
+
+- Added regression tests for the fixed installer contract, bounded/sanitized installer diagnostics, filtered installer and driver environments, Dot grant/disclosure change decisions, and the Notes/Music observation and action boundaries.
+- Replaced startup's repeated per-Dot grant queries with one indexed pass over conversations and Dots. At 500 synthetic Dots, the benchmark measured about 19.6 µs versus 780 µs for the previous N+1 scan (about 40× faster).
+- Ran a live system CUA Music play/pause check and restored playback to its original paused state. Built and opened the current AETHER bundle against an isolated temporary profile; its Integrations screen correctly showed Cua Driver as not installed.
+
+### Verification
+
+- `make bundle`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go test ./...`, `go test -race ./...`, `CGO_ENABLED=0 go tool mygo vet .`, `gofmt`, and `git diff --check` passed.
+- The AETHER Cua Driver installer could not be exercised because macOS was locked and the CUA runtime refused UI interaction. Cua Driver is absent; no Notes content was read and no Accessibility permission was changed. Resume the end-to-end integration test after the Mac is unlocked and the user enables CuaDriver under Accessibility.
+
 ## 2026-11-02 (5) — Official MCP Go SDK foundation
 
 ### Implementation

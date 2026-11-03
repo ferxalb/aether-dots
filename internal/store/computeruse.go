@@ -14,6 +14,38 @@ func (s *Store) ComputerUseToolScopes(dotID string) []string {
 	return s.computerUseToolScopes(dotID, false)
 }
 
+// HasAnyComputerUseGrant checks whether any interactive Dot currently has a
+// valid Computer Use grant. The single indexed pass is used for startup
+// prewarming; per-action authorization still calls ComputerUseToolScopes.
+func (s *Store) HasAnyComputerUseGrant() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conversations := make(map[string]*task.Conversation, len(s.db.Conversations))
+	for i := range s.db.Conversations {
+		conversation := &s.db.Conversations[i]
+		conversations[conversation.ID] = conversation
+	}
+	for i := range s.db.Dots {
+		dot := &s.db.Dots[i]
+		if dot.ConversationID == "" || dot.RoutineID != "" || dot.DelegatedByDotID != "" {
+			continue
+		}
+		conversation := conversations[dot.ConversationID]
+		if conversation == nil || !conversation.ComputerUseModelDisclosureAccepted ||
+			conversation.ComputerUseGrantSpaceID == "" ||
+			conversation.ComputerUseGrantSpaceID != conversation.SpaceID ||
+			conversation.SpaceID != dot.SpaceID {
+			continue
+		}
+		grants, err := validateComputerUseScopes(conversation.ComputerUseScopes)
+		if err == nil && len(grants) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // ComputerUseToolAuthorized rechecks the grant and active local run status at
 // the point where an app action is about to execute.
 func (s *Store) ComputerUseToolAuthorized(dotID, scope string) bool {

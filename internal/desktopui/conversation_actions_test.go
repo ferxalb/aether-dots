@@ -69,3 +69,60 @@ func TestProfileCanMoveDotIntoNewSpace(t *testing.T) {
 		t.Fatalf("Dot did not move to the selected Space: %#v", updated)
 	}
 }
+
+func TestComputerUseAccessChangesControlBackgroundWarmup(t *testing.T) {
+	tests := []struct {
+		name               string
+		previousScopes     []string
+		nextScopes         []string
+		previousDisclosure bool
+		nextDisclosure     bool
+		wantAdded          bool
+		wantReduced        bool
+	}{
+		{name: "unchanged grant", previousScopes: []string{"notes"}, nextScopes: []string{"notes"}, previousDisclosure: true, nextDisclosure: true},
+		{name: "new scope", nextScopes: []string{"notes"}, nextDisclosure: true, wantAdded: true},
+		{name: "new disclosure", previousScopes: []string{"notes"}, nextScopes: []string{"notes"}, nextDisclosure: true, wantAdded: true},
+		{name: "scope removed", previousScopes: []string{"notes"}, previousDisclosure: true, nextDisclosure: true, wantReduced: true},
+		{name: "disclosure revoked", previousScopes: []string{"notes"}, nextScopes: []string{"notes"}, previousDisclosure: true, wantReduced: true},
+		{name: "scope replaced", previousScopes: []string{"notes"}, nextScopes: []string{"music"}, previousDisclosure: true, nextDisclosure: true, wantAdded: true, wantReduced: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			added := computerUseAccessAdded(tt.previousScopes, tt.nextScopes, tt.previousDisclosure, tt.nextDisclosure)
+			reduced := computerUseAccessReduced(tt.previousScopes, tt.nextScopes, tt.previousDisclosure, tt.nextDisclosure)
+			if added != tt.wantAdded || reduced != tt.wantReduced {
+				t.Fatalf("access change = (added %v, reduced %v), want (added %v, reduced %v)", added, reduced, tt.wantAdded, tt.wantReduced)
+			}
+		})
+	}
+}
+
+func TestComputerUseWarmupRequiresAnInstalledDriverAndDisclosedGrant(t *testing.T) {
+	valid := func(added, reduced bool, scopes []string, disclosure, installed bool) bool {
+		return computerUseShouldPrepare(added, reduced, scopes, disclosure, installed)
+	}
+	if !valid(true, false, []string{"notes"}, true, true) {
+		t.Fatal("new, disclosed grant with an installed driver should warm in background")
+	}
+	for _, tt := range []struct {
+		name       string
+		added      bool
+		reduced    bool
+		scopes     []string
+		disclosure bool
+		installed  bool
+	}{
+		{name: "no new grant", scopes: []string{"notes"}, disclosure: true, installed: true},
+		{name: "undisclosed grant", added: true, scopes: []string{"notes"}, installed: true},
+		{name: "no scopes", added: true, disclosure: true, installed: true},
+		{name: "driver missing", added: true, scopes: []string{"notes"}, disclosure: true},
+		{name: "access reduced", added: true, reduced: true, scopes: []string{"notes"}, disclosure: true, installed: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if valid(tt.added, tt.reduced, tt.scopes, tt.disclosure, tt.installed) {
+				t.Fatal("background warm-up ran without an eligible grant")
+			}
+		})
+	}
+}
