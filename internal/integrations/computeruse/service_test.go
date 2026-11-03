@@ -1,10 +1,14 @@
 package computeruse
 
 import (
+	"context"
 	"errors"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestInstallerCommandUsesFixedChecksummedStableReleaseWithoutCosignPrerequisite(t *testing.T) {
@@ -20,6 +24,45 @@ func TestInstallerCommandUsesFixedChecksummedStableReleaseWithoutCosignPrerequis
 	}
 	if strings.Contains(cuadriverInstall, "--require-signature") {
 		t.Fatalf("installer command reintroduced the undeclared cosign requirement: %q", cuadriverInstall)
+	}
+}
+
+func TestBoundedDaemonLaunchUsesLaunchServicesAppIdentity(t *testing.T) {
+	args := strings.Join(boundedDaemonLaunchArgs("/private/aether/cua.sock", "/private/aether/manifest.yaml"), " ")
+	for _, expected := range []string{
+		"-a " + cuadriverAppPath,
+		"--args serve",
+		"--socket /private/aether/cua.sock",
+		"--permission-mode bounded",
+		"--capability-manifest /private/aether/manifest.yaml",
+		"--approve-capability-manifest",
+		"--no-permissions-gate",
+	} {
+		if !strings.Contains(args, expected) {
+			t.Errorf("bounded daemon launch is missing %q: %q", expected, args)
+		}
+	}
+}
+
+func TestComputerUseAvoidsGlobalAppDiscovery(t *testing.T) {
+	if strings.Contains(capabilityManifest, "list_apps") || strings.Contains(driverPolicy, "list_apps") {
+		t.Fatal("the Computer Use capability manifest must not allow global app discovery")
+	}
+	if allowedDriverTool("list_apps") {
+		t.Fatal("global app discovery must not be callable through AETHER")
+	}
+	if !allowedDriverTool("launch_app") || !allowedDriverTool("list_windows") {
+		t.Fatal("scoped app launch and window listing must remain available")
+	}
+}
+
+func TestMusicClickUsesOnlyFieldsSupportedByCuaDriver(t *testing.T) {
+	args := musicClickArguments("aether-test", "s0000002a:4")
+	if len(args) != 3 || args["session"] != "aether-test" || args["element_token"] != "s0000002a:4" || args["action"] != "press" {
+		t.Fatalf("music click arguments = %#v, want session, element_token, and press action", args)
+	}
+	if strings.Contains(driverPolicy, "post_action_wait") {
+		t.Fatal("driver policy contains the removed post_action_wait click field")
 	}
 }
 
@@ -84,6 +127,58 @@ func TestInstallerEnvironmentUsesFixedPathAndIgnoresCuaOverrides(t *testing.T) {
 	}
 	if strings.Contains(joined, "CUA_DRIVER_") || strings.Contains(joined, "untrusted-") {
 		t.Fatalf("installer environment retained a CUA override: %q", env)
+	}
+}
+
+func TestAllowedDriverBinaryPathAcceptsOnlyManagedOrSignedAppExecutable(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	packageBinary := filepath.Join(home, ".cua-driver", "packages", "releases", "0.38.0", "cua-driver")
+	appBinary := filepath.Join(root, "Applications", "CuaDriver.app", "Contents", "MacOS", "cua-driver")
+	outsideBinary := filepath.Join(root, "other", "cua-driver")
+	for _, path := range []string{packageBinary, appBinary, outsideBinary} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("test executable"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	packageResolved, err := filepath.EvalSymlinks(packageBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appResolved, err := filepath.EvalSymlinks(appBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsideResolved, err := filepath.EvalSymlinks(outsideBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowedDriverBinaryPath(home, packageResolved, appBinary) {
+		t.Fatal("managed package executable was rejected")
+	}
+	if !allowedDriverBinaryPath(home, appResolved, appBinary) {
+		t.Fatal("executable inside the signed CuaDriver app was rejected")
+	}
+	if allowedDriverBinaryPath(home, outsideResolved, appBinary) {
+		t.Fatal("unmanaged executable outside both approved locations was accepted")
+	}
+}
+
+func TestInstalledCuaDriverUsesApprovedAppLayoutAndValidSignature(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Cua Driver app installation is macOS-only")
+	}
+	service := New(t.TempDir())
+	if !service.Installed() {
+		t.Skip("Cua Driver is not installed")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := verifyAppSignature(ctx); err != nil {
+		t.Fatalf("installed Cua Driver signature verification failed: %v", err)
 	}
 }
 

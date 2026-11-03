@@ -25,13 +25,26 @@ func TestFindUniqueWindowRequiresOneVisibleCurrentSpaceWindow(t *testing.T) {
 		map[string]any{"window_id": float64(2), "title": "Notes", "is_on_screen": true, "on_current_space": true},
 		map[string]any{"id": float64(3), "title": "Other Space", "is_on_screen": true, "on_current_space": false},
 	}}
-	id, title, ok := findUniqueWindow(data)
+	id, title, ok := findUniqueWindow(data, true)
 	if !ok || id != 2 || title != "Notes" {
 		t.Fatalf("findUniqueWindow() = (%d, %q, %v), want (2, Notes, true)", id, title, ok)
 	}
 	data["windows"] = append(data["windows"].([]any), map[string]any{"id": float64(4), "title": "Second", "is_on_screen": true, "on_current_space": true})
-	if id, title, ok := findUniqueWindow(data); ok {
+	if id, title, ok := findUniqueWindow(data, true); ok {
 		t.Fatalf("findUniqueWindow() accepted an ambiguous window set: (%d, %q)", id, title)
+	}
+}
+
+func TestFindUniqueWindowCanSelectAnAppScopedBackgroundWindow(t *testing.T) {
+	data := map[string]any{"windows": []any{
+		map[string]any{"window_id": float64(22), "title": "Music", "is_on_screen": false, "on_current_space": false},
+	}}
+	id, title, ok := findUniqueWindow(data, false)
+	if !ok || id != 22 || title != "Music" {
+		t.Fatalf("findUniqueWindow(background) = (%d, %q, %v), want one app-scoped window", id, title, ok)
+	}
+	if id, title, ok := findUniqueWindow(data, true); ok {
+		t.Fatalf("findUniqueWindow(visible) accepted a hidden window: (%d, %q)", id, title)
 	}
 }
 
@@ -48,16 +61,39 @@ func TestMatchingButtonTokensRequiresExactLabelAndButtonRole(t *testing.T) {
 	}
 }
 
+func TestMatchingButtonTokensRecognizesLocalizedPlaybackControls(t *testing.T) {
+	state := map[string]any{"elements": []any{
+		map[string]any{"role": "AXButton", "label": "Pausar", "element_token": "pause-token"},
+		map[string]any{"role": "AXButton", "label": "Reproducir", "element_token": "play-token"},
+	}}
+	playLabels, pauseLabels := musicLabels("play")
+	if got := matchingButtonTokens(state, playLabels); len(got) != 1 || got[0] != "play-token" {
+		t.Fatalf("Spanish play control match = %q, want play-token", got)
+	}
+	if got := matchingButtonTokens(state, pauseLabels); len(got) != 1 || got[0] != "pause-token" {
+		t.Fatalf("Spanish pause control match = %q, want pause-token", got)
+	}
+}
+
 func TestMusicActionsHaveOnlyFourPlaybackMappings(t *testing.T) {
 	for action, want := range map[string][]string{
-		"play":     {"Play"},
-		"pause":    {"Pause"},
-		"next":     {"Next", "Next Track", "Skip Forward"},
-		"previous": {"Previous", "Previous Track", "Skip Back"},
+		"play":     {"Play", "Reproducir", "Reproduzir"},
+		"pause":    {"Pause", "Pausar", "Pausa"},
+		"next":     {"Next", "Siguiente", "Próxima"},
+		"previous": {"Previous", "Anterior", "Précédent"},
 	} {
 		got, _ := musicLabels(action)
-		if strings.Join(got, "|") != strings.Join(want, "|") {
-			t.Errorf("musicLabels(%q) = %q, want %q", action, got, want)
+		for _, label := range want {
+			found := false
+			for _, candidate := range got {
+				if candidate == label {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("musicLabels(%q) = %q, missing localized playback label %q", action, got, label)
+			}
 		}
 	}
 	if got, _ := musicLabels("delete"); len(got) != 0 {

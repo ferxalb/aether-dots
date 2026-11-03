@@ -17,6 +17,7 @@ import (
 
 const (
 	cuadriverAppPath   = "/Applications/CuaDriver.app"
+	cuadriverAppBinary = "/Applications/CuaDriver.app/Contents/MacOS/cua-driver"
 	cuadriverInstall   = "set -o pipefail; curl -fsSL https://cua.ai/driver/install.sh | /bin/bash -s -- --channel stable --no-modify-path"
 	maxInstallerOutput = 2048
 	capabilityManifest = `version: 3
@@ -28,7 +29,6 @@ allow:
     - start_session
     - end_session
     - launch_app
-    - list_apps
     - list_windows
     - get_window_state
     - click
@@ -48,7 +48,7 @@ resources:
   tools:
     - start_session
     - end_session
-    - list_apps
+    - launch_app
     - list_windows
   rules:
     - tool: launch_app
@@ -69,8 +69,6 @@ resources:
       constraints:
         action:
           allowed: ["press"]
-        post_action_wait:
-          allowed: ["none"]
 `
 )
 
@@ -260,17 +258,12 @@ func (s *Service) ControlMusic(ctx context.Context, session, action string, gene
 	}
 	tokens := matchingButtonTokens(state, targetLabel)
 	if len(tokens) != 1 {
-		return "", errors.New("Music did not expose one unambiguous playback control for that action")
+		return "", errors.New("Music's current accessibility window did not expose exactly one matching playback button. Open its main player window and retry.")
 	}
 	if !s.isCurrent(generation) {
 		return "", errors.New("Computer Use access was revoked before the Music action")
 	}
-	if _, err := s.callTool(ctx, generation, "click", map[string]any{
-		"element_token":    tokens[0],
-		"session":          session,
-		"action":           "press",
-		"post_action_wait": "none",
-	}); err != nil {
+	if _, err := s.callTool(ctx, generation, "click", musicClickArguments(session, tokens[0])); err != nil {
 		return "", err
 	}
 	if !s.isCurrent(generation) {
@@ -289,27 +282,36 @@ func (s *Service) observeApp(ctx context.Context, session, bundleID string, gene
 	if err := s.startSession(ctx, generation, session); err != nil {
 		return "", nil, err
 	}
-	appsPayload, err := s.callTool(ctx, generation, "list_apps", map[string]any{})
+	// launch_app is app-scoped and returns the pid plus window metadata, avoiding
+	// global app enumeration and its broader desktop-display capability.
+	appPayload, err := s.callTool(ctx, generation, "launch_app", map[string]any{"bundle_id": bundleID, "session": session})
 	if err != nil {
 		return "", nil, err
 	}
-	pid, running := findAppPID(appsPayload, bundleID)
+	pid, running := findAppPID(appPayload, bundleID)
 	if !running {
-		if _, err := s.callTool(ctx, generation, "launch_app", map[string]any{"bundle_id": bundleID, "session": session}); err != nil {
+		return "", nil, errors.New("the approved macOS app did not become available")
+	}
+	onScreenOnly := bundleID == notesBundleID
+	windowID, title, found := findUniqueWindow(appPayload, true)
+	if !found && !onScreenOnly {
+		windowID, title, found = findUniqueWindow(appPayload, false)
+	}
+	if !found {
+		windowsPayload, err := s.callTool(ctx, generation, "list_windows", map[string]any{"pid": pid, "on_screen_only": onScreenOnly, "session": session})
+		if err != nil {
 			return "", nil, err
 		}
-		pid, running = s.waitForApp(ctx, generation, bundleID)
-		if !running {
-			return "", nil, errors.New("the approved macOS app did not become available")
+		windowID, title, found = findUniqueWindow(windowsPayload, true)
+		if !found && !onScreenOnly {
+			windowID, title, found = findUniqueWindow(windowsPayload, false)
 		}
 	}
-	windowsPayload, err := s.callTool(ctx, generation, "list_windows", map[string]any{"pid": pid, "on_screen_only": true, "session": session})
-	if err != nil {
-		return "", nil, err
-	}
-	windowID, title, found := findUniqueWindow(windowsPayload)
 	if !found {
-		return "", nil, errors.New("open one visible window in the approved app and try again")
+		if onScreenOnly {
+			return "", nil, errors.New("open one visible window in the approved app and try again")
+		}
+		return "", nil, errors.New("open Apple Music's main player window and try again")
 	}
 	statePayload, err := s.callTool(ctx, generation, "get_window_state", map[string]any{
 		"pid": pid, "window_id": windowID, "session": session,
@@ -324,28 +326,6 @@ func (s *Service) observeApp(ctx context.Context, session, bundleID string, gene
 		return "", nil, errors.New("Cua Driver returned an unexpected window state")
 	}
 	return title, state, nil
-}
-
-func (s *Service) waitForApp(ctx context.Context, generation uint64, bundleID string) (int64, bool) {
-	deadline := time.NewTimer(2 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(120 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		payload, err := s.callTool(ctx, generation, "list_apps", map[string]any{})
-		if err == nil {
-			if pid, running := findAppPID(payload, bundleID); running {
-				return pid, true
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return 0, false
-		case <-deadline.C:
-			return 0, false
-		case <-ticker.C:
-		}
-	}
 }
 
 func (s *Service) startSession(ctx context.Context, generation uint64, session string) error {
@@ -369,7 +349,7 @@ func (s *Service) callTool(ctx context.Context, generation uint64, name string, 
 		return nil, errors.New("Computer Use access was revoked during the action")
 	}
 	if result.IsError {
-		return nil, errors.New("Cua Driver refused the Computer Use action; check Accessibility access and the app's current state")
+		return nil, errors.New("Cua Driver refused the Computer Use action; check Accessibility access and whether the approved app has an accessible window")
 	}
 	if result.Structured != nil {
 		return result.Structured, nil
@@ -458,9 +438,7 @@ func (s *Service) ensureDaemon(ctx context.Context) error {
 	if err := writePrivateConfig(policyPath, []byte(driverPolicy)); err != nil {
 		return errors.New("could not write the Computer Use tool policy")
 	}
-	cmd := exec.CommandContext(ctx, "/usr/bin/open", "-n", "-g", cuadriverAppPath, "--args",
-		"serve", "--socket", s.socketPath(), "--permission-mode", "bounded",
-		"--capability-manifest", manifestPath, "--approve-capability-manifest", "--no-permissions-gate")
+	cmd := exec.CommandContext(ctx, "/usr/bin/open", boundedDaemonLaunchArgs(s.socketPath(), manifestPath)...)
 	cmd.Env = driverEnvironment(os.Environ(), policyPath)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -485,6 +463,12 @@ func (s *Service) ensureDaemon(ctx context.Context) error {
 	}
 }
 
+func boundedDaemonLaunchArgs(socketPath, manifestPath string) []string {
+	return []string{"-n", "-g", "-a", cuadriverAppPath, "--args",
+		"serve", "--socket", socketPath, "--permission-mode", "bounded",
+		"--capability-manifest", manifestPath, "--approve-capability-manifest", "--no-permissions-gate"}
+}
+
 func (s *Service) daemonRunning(ctx context.Context, driver string) bool {
 	checkCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
@@ -504,12 +488,25 @@ func (s *Service) driverPath() (string, error) {
 	if err != nil {
 		return "", errors.New("Cua Driver is not installed")
 	}
-	packageRoot := filepath.Join(home, ".cua-driver", "packages")
-	rel, err := filepath.Rel(packageRoot, resolved)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return "", errors.New("Cua Driver is outside its expected managed install directory")
+	if !allowedDriverBinaryPath(home, resolved, cuadriverAppBinary) {
+		return "", errors.New("Cua Driver is outside its expected managed install locations")
 	}
 	return resolved, nil
+}
+
+func allowedDriverBinaryPath(home, resolved, appBinary string) bool {
+	if resolvedHome, err := filepath.EvalSymlinks(home); err == nil {
+		home = resolvedHome
+	}
+	packageRoot := filepath.Join(home, ".cua-driver", "packages")
+	if packageRoot, err := filepath.EvalSymlinks(packageRoot); err == nil {
+		rel, err := filepath.Rel(packageRoot, resolved)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+			return true
+		}
+	}
+	appResolved, err := filepath.EvalSymlinks(appBinary)
+	return err == nil && resolved == appResolved
 }
 
 func (s *Service) socketPath() string {
@@ -650,9 +647,17 @@ func (s *Service) isCurrent(generation uint64) bool {
 
 func allowedDriverTool(name string) bool {
 	switch name {
-	case "start_session", "end_session", "launch_app", "list_apps", "list_windows", "get_window_state", "click":
+	case "start_session", "end_session", "launch_app", "list_windows", "get_window_state", "click":
 		return true
 	default:
 		return false
+	}
+}
+
+func musicClickArguments(session, elementToken string) map[string]any {
+	return map[string]any{
+		"element_token": elementToken,
+		"session":       session,
+		"action":        "press",
 	}
 }

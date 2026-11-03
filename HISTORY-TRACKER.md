@@ -46,6 +46,35 @@ For each future work session, append a dated entry describing what changed, why,
 - `make bundle`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go test ./...`, `go test -race ./...`, `CGO_ENABLED=0 go tool mygo vet .`, `gofmt`, and `git diff --check` passed.
 - The AETHER Cua Driver installer could not be exercised because macOS was locked and the CUA runtime refused UI interaction. Cua Driver is absent; no Notes content was read and no Accessibility permission was changed. Resume the end-to-end integration test after the Mac is unlocked and the user enables CuaDriver under Accessibility.
 
+## 2026-11-03 (4) — Validate the official macOS driver layout
+
+### Implementation
+
+- Retried the install through AETHER after the Mac was unlocked. The official installer placed `cua-driver` inside `/Applications/CuaDriver.app` and created `~/.local/bin/cua-driver` as a symlink to that executable. AETHER's path validator accepted only `~/.cua-driver/packages`, so it rejected this official layout after the download had completed.
+- Updated the validator to allow only a binary inside the managed package directory or the exact executable inside the signature-verified CuaDriver app. The packaged Integrations UI now detects the installed driver, and a host smoke test verifies its macOS code signature.
+- Added an opt-in live Music integration test that creates a temporary disclosed Dot grant, exercises AETHER's actual per-Dot tool handler, and restores playback to its initial state. It is skipped in normal test runs unless `AETHER_RUN_CUA_LIVE=1` is set.
+
+### Verification
+
+- The Cua Driver installation completed through AETHER's button; the rebuilt app showed `Installed · ready when granted`. The installed bundle's code signature check passed.
+- Full tests, race tests, MyGo vet, `CGO_ENABLED=0 go build ./...`, and `make bundle` passed after the path fix.
+- Accessibility currently lists no CuaDriver entry. The user must add `/Applications/CuaDriver.app` and explicitly enable it before AETHER's bounded session can start. No Notes content was read, and Screen Recording remains off.
+- The opt-in live Music test compiled and correctly skipped without its explicit environment flag; it has not been run because the required Accessibility grant is still pending.
+
+## 2026-11-03 (5) — Narrow and speed up Music computer use
+
+### Implementation
+
+- The live diagnostic showed that AETHER's first `list_apps` call exceeded the bounded manifest because global app inventory requires desktop-display observation. Replaced it with the approved app's `launch_app` response, which supplies the app PID and window metadata. AETHER now avoids unrelated app discovery and can skip a separate window-list call when that response already includes a unique target window.
+- Kept Notes restricted to a visible current-Space window. Music uses an app-scoped window, prefers an on-screen window when one exists, and gives a direct recovery message when the player window exposes no unambiguous playback button. Added exact playback labels for common English, Spanish, Portuguese, French, German, and Italian localizations.
+- Removed a legacy `post_action_wait` click argument and matching policy rule; the installed Cua Driver 0.38 schema rejects that unknown field.
+- Updated README troubleshooting to explain that Music needs its main player window open.
+
+### Verification
+
+- `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go test -race ./...`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, `make bundle`, `gofmt`, and `git diff --check` passed.
+- The opt-in AETHER test reached the bounded Music accessibility tree with Accessibility on and Screen Recording off. The live system check found Music running with zero open windows; the returned tree contained no unambiguous playback control, so AETHER correctly stopped before sending a Music action. No Notes content was read and playback was not changed. Rerun the live play/pause/restore sequence after the user opens Music's main player window.
+
 ## 2026-11-02 (5) — Official MCP Go SDK foundation
 
 ### Implementation

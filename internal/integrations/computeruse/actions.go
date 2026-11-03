@@ -37,7 +37,7 @@ func findAppPID(value any, bundleID string) (int64, bool) {
 	return visit(value)
 }
 
-func findUniqueWindow(value any) (int64, string, bool) {
+func findUniqueWindow(value any, onScreenOnly bool) (int64, string, bool) {
 	var windows []any
 	var visit func(any)
 	visit = func(current any) {
@@ -65,12 +65,14 @@ func findUniqueWindow(value any) (int64, string, bool) {
 		if !ok {
 			continue
 		}
-		onScreen, ok := booleanField(window, "is_on_screen", "on_screen", "isOnScreen")
-		if !ok || !onScreen {
-			continue
-		}
-		if onCurrentSpace, exists := booleanField(window, "on_current_space", "onCurrentSpace"); exists && !onCurrentSpace {
-			continue
+		if onScreenOnly {
+			onScreen, ok := booleanField(window, "is_on_screen", "on_screen", "isOnScreen")
+			if !ok || !onScreen {
+				continue
+			}
+			if onCurrentSpace, exists := booleanField(window, "on_current_space", "onCurrentSpace"); exists && !onCurrentSpace {
+				continue
+			}
 		}
 		visible = append(visible, item)
 	}
@@ -135,13 +137,13 @@ func matchingButtonTokens(value any, labels []string) []string {
 func musicLabels(action string) ([]string, []string) {
 	switch action {
 	case "play":
-		return []string{"Play"}, []string{"Pause"}
+		return []string{"Play", "Reproducir", "Reproduzir", "Lire", "Abspielen", "Riproduci"}, []string{"Pause", "Pausar", "Pausa", "Poner en pausa", "Pausar la reproducción"}
 	case "pause":
-		return []string{"Pause"}, []string{"Play"}
+		return []string{"Pause", "Pausar", "Pausa", "Poner en pausa", "Pausar la reproducción"}, []string{"Play", "Reproducir", "Reproduzir", "Lire", "Abspielen", "Riproduci"}
 	case "next":
-		return []string{"Next", "Next Track", "Skip Forward"}, nil
+		return []string{"Next", "Next Track", "Skip Forward", "Siguiente", "Siguiente canción", "Siguiente pista", "Próxima", "Próxima faixa", "Suivant", "Nächster Titel", "Successivo"}, nil
 	case "previous":
-		return []string{"Previous", "Previous Track", "Skip Back"}, nil
+		return []string{"Previous", "Previous Track", "Skip Back", "Anterior", "Canción anterior", "Pista anterior", "Faixa anterior", "Précédent", "Vorheriger Titel", "Precedente"}, nil
 	default:
 		return nil, nil
 	}
