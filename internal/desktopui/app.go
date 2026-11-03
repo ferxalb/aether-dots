@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math"
+	"sync"
 	"sync/atomic"
 
 	"github.com/egoist/mygo"
@@ -11,6 +12,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 
 	"aether-dots/internal/integrations/github"
+	"aether-dots/internal/integrations/remote"
 	"aether-dots/internal/model"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
@@ -102,6 +104,18 @@ type app struct {
 	credentialError            string
 	credentialProvider         string
 	githubService              *github.Service
+	remoteClient               *remote.Client
+	remoteCredentialStore      *remote.KeychainStore
+	remoteReceipts             *remote.ReceiptStore
+	remoteDevice               remote.DeviceCredential
+	remoteStatus               string
+	remoteError                string
+	remotePairCode             string
+	remotePairBusy             bool
+	remotePairCancel           context.CancelFunc
+	remoteLoopMu               *sync.Mutex
+	remoteLoopCancel           context.CancelFunc
+	remoteForgetMu             *sync.Mutex
 	githubStatus               string
 	githubError                string
 	githubUser                 github.User
@@ -141,7 +155,10 @@ func Run(dataDir string) error {
 		return err
 	}
 	a := &app{db: db, dataDir: dataDir, prefs: prefs, providerSelection: providerSelectionLabel(prefs.Provider),
+		remoteLoopMu: &sync.Mutex{}, remoteForgetMu: &sync.Mutex{},
 		githubService: github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil)}
+	a.routinePreferences = &atomic.Pointer[preferences]{}
+	a.routinePreferences.Store(&prefs)
 	a.refresh()
 	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.WhenReady(func() {
@@ -177,6 +194,7 @@ func Run(dataDir string) error {
 			a.adt.Warning("Shortcut unavailable", err.Error())
 		}
 		show()
+		a.initializeRemoteBridge()
 		a.startRoutineScheduler()
 	})
 	return mygo.App.Run()

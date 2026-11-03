@@ -6,6 +6,28 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-02 (2) — Scoped iPhone relay and connected dashboard
+
+### Implementation
+
+- Added an iPhone pairing card to native Settings and a narrowly scoped desktop relay client. The desktop accepts only a build-time Cloudflare Worker origin, stores the device token in Keychain, and exposes fixed status, Dot listing, conversation reading, and message-sending actions. It grants no file, shell, arbitrary network, or app-control capability.
+- Added the Expo companion sign-in and workspace flows. Browser authorization uses a verifier-bound, one-time handoff; the app stores its opaque session token in iOS SecureStore and can revoke it on sign-out.
+- Added the Worker dashboard and API routes for mobile approval, pairing, device/session revocation, and recent activity. The Worker forwards a small request allowlist to the Neon Function; the Function requires the Worker origin secret, verifies owner sessions, bounds command payloads and retention, and applies pairing and authorization rate limits.
+- Added migrations `0001` through `0004`, the hourly cleanup trigger, setup and privacy documentation, and a local development path. Updated this project's security boundary to explicitly allow only the scoped Aether relay connection.
+
+### Verification
+
+- Desktop: `gofmt`, `git diff --check`, `CGO_ENABLED=0 go test ./...`, `CGO_ENABLED=0 go build ./...`, `CGO_ENABLED=0 go tool mygo vet .`, and race tests for desktop UI and remote integration packages passed.
+- Mobile: `pnpm run lint`, `pnpm exec tsc --noEmit`, and `git diff --check` passed.
+- Web: `pnpm run typecheck`, `pnpm run build`, and `git diff --check` passed. Local pairing, scheduled cleanup, one-time mobile exchange, logout, and replay checks passed. The final direct Function smoke returned 401 for missing origin/auth/maintenance credentials and 200 for health and authorized dev cleanup.
+- Deployed Neon Function deployment 6 is active on the temporary `aether-bridge-dev` branch; migrations `0001` through `0004` were applied to that dev branch only. Restored the local `.neon` selector to `production` with `--no-env-pull`; production data was not migrated or changed.
+
+### Not verified or not deployed
+
+- The Cloudflare Worker was not deployed because Wrangler is not authenticated in this environment. The local Worker source is configured, but publishing it requires the existing Cloudflare login.
+- The native preview was stopped after startup attached to an existing AETHER workspace, so the new Settings card was not visually verified in an isolated window.
+- No production Neon schema migration, production Function deployment, or end-to-end iPhone-to-desktop session was performed.
+
 ## 2026-11-02 (1) — Native integrations and read-only GitHub
 
 ### GitHub integration

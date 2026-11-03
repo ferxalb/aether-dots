@@ -19,6 +19,7 @@ const authorizedGitHubAppsURL = "https://github.com/settings/apps/authorizations
 func (a *app) integrationSettings(c *ui.Context, theme *ui.Theme) {
 	a.startGitHubRefreshIfNeeded()
 	ui.Column(c).FillWidth().MinWidth(0).Gap(14).Children(func() {
+		a.mobileRemoteCard(c, theme)
 		a.githubIntegrationCard(c, theme)
 		providers := integrations.InitialProviders()
 		for _, provider := range providers[1:] {

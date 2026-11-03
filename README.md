@@ -139,6 +139,22 @@ Apple Notes remains a future macOS-only integration. On the development Mac, the
 
 Apple Reminders remains a separate future EventKit integration. A future implementation should request Reminders authorization only after explicit user opt-in, include `NSRemindersFullAccessUsageDescription` for macOS 14 and later (and the appropriate legacy `NSRemindersUsageDescription` fallback if older systems remain supported) in the actual signed app, and scope reads to selected lists. EventKit full Reminders access is a read/write OS permission, so AETHER would still enforce read-only behavior until separate write approvals exist. It must not request Calendar event access. The Reminders AppleScript dictionary is not a substitute for EventKit authorization. Neither Apple permission is requested by this release.
 
+### AETHER Dots for iPhone
+
+The Expo companion signs in through the AETHER web dashboard. A one-time verifier-bound handoff returns a 30-day opaque session credential, which the app stores in iOS Keychain through Expo SecureStore. Pair the iPhone by entering the short-lived code shown in **Settings → Integrations** on the Mac, then approve the claimed pairing on that Mac. The account dashboard can revoke an iPhone session or desktop at any time.
+
+The iPhone can check desktop status, list Dots, open a conversation when requested, and send a message to a Dot. The Mac runs messages through that Dot's saved provider settings and existing specialist or GitHub grants. Remote message text and results pass through the AETHER Cloudflare Worker and Neon; pending and completed remote command data expires after one day. The relay does not receive local files, provider keys, or GitHub tokens. The desktop must be online and AETHER Dots must be open to receive a request.
+
+Release builds must pin the AETHER Cloudflare Worker origin at link time. Add it to the existing public configuration before bundling:
+
+```sh
+MYGO_LDFLAGS="-X aether-dots/internal/integrations/remote.BuildRelayOrigin=https://<worker>.<account>.workers.dev" make bundle
+```
+
+For development testing with the Worker deployed for this bridge, use `https://aether-dots-web-dev.enosislabs.workers.dev` in that linker flag. It points to the temporary `aether-bridge-dev` Neon branch, which expires on 2026-11-09; do not use it for production releases.
+
+For local development, run the Cloudflare Worker on port 5173, then start the desktop with `AETHER_RELAY_DEV=1 AETHER_RELAY_URL=http://127.0.0.1:5173 make run`. The development override accepts only loopback HTTP and is unavailable in release configuration.
+
 ## Skills and routines
 
 Create skills in Settings or with `aether skills create`. A skill records when it applies, required inputs, steps, validation, output format, and approval boundaries. Skills are shared across Dots, but a chat uses one only when you explicitly name it, for example `@skill[Weekly review]`.
@@ -190,7 +206,7 @@ CGO_ENABLED=0 go test ./...
 CGO_ENABLED=0 go tool mygo vet .
 ```
 
-The app's own Dot store and preferences are local. Dot task execution has no user-selected filesystem read or write access, MCP client, cloud worker, or arbitrary-app control. Its function catalog is scoped to the current request; a specialist handoff requires a saved same-Space grant and is rechecked when the tool runs.
+The app's own Dot store and preferences are local. Dot task execution has no user-selected filesystem read or write access, MCP client, or arbitrary-app control. The only cloud connections are explicitly granted read-only GitHub access and the scoped mobile relay described above. Its function catalog is scoped to the current request; a specialist handoff requires a saved same-Space grant and is rechecked when the tool runs.
 
 ## Development history
 
