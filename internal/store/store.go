@@ -66,6 +66,18 @@ func Open(dir string) (*Store, error) {
 	}
 	store := &Store{path: path, db: db}
 	if db.SchemaVersion < task.SchemaVersion {
+		if db.SchemaVersion < 7 {
+			// MCP connections and Dot-specific model overrides are opt-in. No
+			// existing profile receives a server connection or tool grant.
+			db.MCPServers = nil
+			for i := range db.Conversations {
+				db.Conversations[i].ModelProvider = ""
+				db.Conversations[i].Model = ""
+				db.Conversations[i].MCPToolGrants = nil
+				db.Conversations[i].MCPGrantSpaceID = ""
+				db.Conversations[i].MCPModelDisclosureAccepted = false
+			}
+		}
 		if db.SchemaVersion < 6 {
 			// Computer Use is a new, explicit opt-in. No older store receives
 			// an app grant or model-data disclosure during migration.
@@ -112,10 +124,7 @@ func Open(dir string) (*Store, error) {
 func (s *Store) Snapshot() task.Database {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	b, _ := json.Marshal(s.db)
-	var out task.Database
-	_ = json.Unmarshal(b, &out)
-	return out
+	return cloneDatabase(s.db)
 }
 
 func (s *Store) CreateSpace(name string) (task.Space, error) {
@@ -201,9 +210,12 @@ func (s *Store) GetDot(id string) (task.Dot, bool) {
 	defer s.mu.RUnlock()
 	for _, dot := range s.db.Dots {
 		if dot.ID == id {
-			b, _ := json.Marshal(dot)
-			var out task.Dot
-			_ = json.Unmarshal(b, &out)
+			out := dot
+			out.Events = cloneSlice(dot.Events)
+			if dot.Metrics != nil {
+				metrics := *dot.Metrics
+				out.Metrics = &metrics
+			}
 			return out, true
 		}
 	}
@@ -250,9 +262,7 @@ func (s *Store) SetCheckpoint(id, checkpoint string) error {
 func (s *Store) change(fn func(*task.Database) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	b, _ := json.Marshal(s.db)
-	var next task.Database
-	_ = json.Unmarshal(b, &next)
+	next := cloneDatabase(s.db)
 	if err := fn(&next); err != nil {
 		return err
 	}
@@ -264,7 +274,7 @@ func (s *Store) change(fn func(*task.Database) error) error {
 }
 
 func (s *Store) persist(db task.Database) error {
-	b, err := json.MarshalIndent(db, "", "  ")
+	b, err := json.Marshal(db)
 	if err != nil {
 		return err
 	}

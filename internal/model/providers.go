@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -30,6 +31,50 @@ type Provider interface {
 	Readiness() (bool, string)
 	Description() string
 	Test(context.Context) error
+}
+
+// managedProvider keeps request-scoped tools and transports alive for exactly
+// one run, then releases them when the engine calls Close.
+type managedProvider struct {
+	base    Provider
+	tools   []Tool
+	cleanup []func()
+	once    *sync.Once
+}
+
+func (p managedProvider) Generate(ctx context.Context, prompt string, onDelta func(string)) (string, error) {
+	return WithTools(p.base, p.tools...).Generate(ctx, prompt, onDelta)
+}
+
+func (p managedProvider) Readiness() (bool, string) { return p.base.Readiness() }
+func (p managedProvider) Description() string       { return p.base.Description() }
+func (p managedProvider) Test(ctx context.Context) error {
+	return p.base.Test(ctx)
+}
+
+func (p managedProvider) Close() error {
+	if p.once == nil {
+		return nil
+	}
+	p.once.Do(func() {
+		for i := len(p.cleanup) - 1; i >= 0; i-- {
+			p.cleanup[i]()
+		}
+	})
+	return nil
+}
+
+// WithCleanup attaches run-scoped cleanup to a provider. Multiple decorations
+// preserve one lifecycle and close resources once after the run.
+func WithCleanup(provider Provider, cleanup func()) Provider {
+	if cleanup == nil {
+		return provider
+	}
+	if current, ok := provider.(managedProvider); ok {
+		current.cleanup = append(current.cleanup, cleanup)
+		return current
+	}
+	return managedProvider{base: provider, cleanup: []func(){cleanup}, once: &sync.Once{}}
 }
 
 // NewProvider builds a concrete adapter while keeping provider selection out
@@ -64,6 +109,9 @@ func NewProvider(config Config) Provider {
 func WithPromptCacheKey(provider Provider, key string) Provider {
 	key = strings.TrimSpace(key)
 	switch current := provider.(type) {
+	case managedProvider:
+		current.base = WithPromptCacheKey(current.base, key)
+		return current
 	case Generator:
 		current.Config.PromptCacheKey = key
 		return current

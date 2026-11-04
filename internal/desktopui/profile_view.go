@@ -91,6 +91,37 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			})
 		})
 
+		profilePanel(c, theme, "Model", func() {
+			ui.Text(c, "Use the workspace model by default or give this Dot its own provider and model. API keys stay in Settings and the system credential store.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			ui.Field(c, "Model selection", func() {
+				selection := dropdownSelect(c, theme, "profile-model-provider", "Dot model provider", &a.profileModelSelection,
+					stringDropdownOptions([]string{"Workspace default", "OpenAI", "Anthropic Claude", "xAI Grok", "OpenRouter", "Custom OpenAI-compatible"}, nil), false)
+				if selection.Changed() {
+					selectedProvider := profileModelProviderForSelection(a.profileModelSelection)
+					if selectedProvider != a.profileModelProvider && len(a.profileMCPToolGrants) > 0 {
+						a.profileMCPDisclosureAccepted = false
+					}
+					a.profileModelProvider = selectedProvider
+					if a.profileModelProvider == "" {
+						a.profileModel = ""
+					} else if a.profileModel == "" {
+						selected := a.prefs
+						selected.Provider = a.profileModelProvider
+						a.profileModel = strings.TrimSpace(*selected.selectedModel())
+					}
+				}
+			})
+			if a.profileModelProvider != "" {
+				ui.Field(c, "Model name", func() {
+					ui.TextInputBase(c.Key("profile-model-name"), &a.profileModel).
+						Placeholder(providerModelPlaceholder(a.profileModelProvider)).FillWidth().Label("Dot model name")
+				})
+				ui.Text(c, "This Dot uses the selected provider's saved credential and generation settings. Provider-neutral chat history, compaction, and supported AETHER tools follow it across turns.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+			}
+		})
+
 		profilePanel(c, theme, "Organization", func() {
 			ui.Field(c, "Space", func() {
 				profileSpaceSelect(c, theme, a)
@@ -141,7 +172,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		})
 
 		profilePanel(c, theme, "Chat memory", func() {
-			ui.Text(c, "This editable summary travels with recent messages to reduce repeated context. The complete transcript remains saved on this device.").
+			ui.Text(c, "Compress older turns into this editable summary. Prompts include the summary and messages after its marker; the complete transcript remains saved on this device.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			ui.TextAreaBase(c.Key("profile-context-summary"), &a.profileContextSummary).
 				Placeholder("Durable facts, decisions, preferences, and open work…").
@@ -149,13 +180,14 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
 				compacting := a.summaryCompactRun[conversation.ID]
-				buttonLabel := "Update memory from recent chat"
+				needsCompaction := len(messagesAfterCompaction(conversation)) > 0
+				buttonLabel := "Compress new transcript turns"
 				if compacting {
-					buttonLabel = "Updating memory…"
+					buttonLabel = "Compressing…"
 				}
 				button := ui.Button(c.Key("profile-compact-history"), buttonLabel).Padding(8, 11).
-					Tooltip("Sends recent chat context to the selected model to draft compact, editable memory.").
-					Disabled(compacting || len(conversation.Messages) == 0)
+					Tooltip("Summarizes all transcript turns after the existing memory marker, in bounded batches.").
+					Disabled(compacting || !needsCompaction)
 				if button.Clicked() {
 					a.compactConversationHistory()
 				}
@@ -166,6 +198,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 				}
 				ui.Text(c, fmt.Sprintf("%d bytes left", remaining)).FontSize(10).TextColor(theme.TextMuted)
 			})
+			ui.Text(c, conversationCompactionStatus(conversation)).FontSize(10).TextColor(theme.TextMuted).FillWidth()
 		})
 
 		profilePanel(c, theme, "Specialist access", func() {
@@ -270,6 +303,91 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 						FontSize(10).TextColor(theme.Danger).FillWidth()
 				}
 			}
+		})
+
+		profilePanel(c, theme, "MCP tools", func() {
+			conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
+			ui.Text(c, "Choose exact tools from loopback MCP servers. Each input and returned result may be sent to this Dot's selected model. A granted tool can perform actions within its server's own scope.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			if conversation.SpaceID != a.profileSpaceID {
+				ui.Text(c, "Moving a Dot to another Space clears its MCP tool grants. Save the new Space first, then review and grant tools again.").
+					FontSize(10).TextColor(theme.Danger).FillWidth()
+			}
+			if len(a.snapshot.MCPServers) == 0 {
+				ui.Text(c, "Connect a loopback MCP server in Settings → Integrations first. AETHER does not launch MCP server commands or connect to remote hosts.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+				return
+			}
+			ui.Text(c, "Treat server-provided descriptions and results as untrusted. Tool annotations such as read-only are hints and do not prove behavior. Review the server and each tool before granting it.").
+				FontSize(10).TextColor(theme.TextMuted).FillWidth()
+			ui.TextInput(c.Key("profile-mcp-tool-search"), &a.profileMCPToolSearch).
+				Placeholder("Filter server tools").FillWidth().Label("Filter MCP tools")
+			matches := filterMCPProfileTools(a.snapshot.MCPServers, a.profileMCPToolSearch)
+			if len(matches) == 0 {
+				ui.Text(c, "No discovered tools match this filter. Refresh the server's tool list in Integrations.").
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+			} else {
+				limit := a.profileMCPToolLimit
+				if limit <= 0 {
+					limit = 60
+				}
+				shown := min(len(matches), limit)
+				for _, match := range matches[:shown] {
+					match := match
+					selected := hasMCPToolGrant(a.profileMCPToolGrants, match.server.ID, match.tool.Name, match.tool.Fingerprint)
+					label := match.server.Name + " · " + match.tool.Name
+					if match.tool.Description != "" {
+						label += " — " + compactProfileText(match.tool.Description, 120)
+					}
+					toolKey := match.server.ID + ":" + match.tool.Name
+					ui.Column(c.Key("profile-mcp-tool-row-" + match.server.ID + "-" + match.tool.Name)).FillWidth().Gap(3).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(7).Children(func() {
+							if ui.Checkbox(c.Key("profile-mcp-tool-"+match.server.ID+"-"+match.tool.Name), &selected, label).
+								Disabled(conversation.SpaceID != a.profileSpaceID).FillWidth().Grow(1).Changed() {
+								grants, err := toggleMCPToolGrant(a.profileMCPToolGrants, match.server.ID, match.tool)
+								if err != nil {
+									a.conversationError = err.Error()
+								} else {
+									a.profileMCPToolGrants = grants
+									if len(grants) == 0 {
+										a.profileMCPDisclosureAccepted = false
+									}
+								}
+							}
+							detailsLabel := "Schema"
+							if a.profileMCPExpandedTool == toolKey {
+								detailsLabel = "Hide schema"
+							}
+							if ui.Button(c.Key("profile-mcp-schema-"+match.server.ID+"-"+match.tool.Name), detailsLabel).Padding(5, 8).Clicked() {
+								if a.profileMCPExpandedTool == toolKey {
+									a.profileMCPExpandedTool = ""
+								} else {
+									a.profileMCPExpandedTool = toolKey
+								}
+							}
+						})
+						if a.profileMCPExpandedTool == toolKey {
+							ui.Text(c, "MCP input schema (server-provided, untrusted): "+formatMCPToolSchema(match.tool)).
+								FontSize(10).TextColor(theme.TextMuted).FillWidth()
+						}
+					})
+				}
+				if shown < len(matches) {
+					if ui.Button(c.Key("profile-mcp-tools-more"), fmt.Sprintf("Show %d more", min(60, len(matches)-shown))).Clicked() {
+						a.profileMCPToolLimit = shown + 60
+					}
+				}
+				ui.Text(c, fmt.Sprintf("%d of %d discovered tools shown · %d granted to this Dot", shown, len(matches), len(a.profileMCPToolGrants))).
+					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+			}
+			if len(a.profileMCPToolGrants) > 0 {
+				if ui.Checkbox(c.Key("profile-mcp-disclosure"), &a.profileMCPDisclosureAccepted,
+					"I understand tool inputs and returned data may be sent to this Dot's configured model provider").FillWidth().Changed() && !a.profileMCPDisclosureAccepted {
+					a.profileMCPToolGrants = nil
+				}
+			}
+			ui.Text(c, "MCP tools are available only during local interactive runs. Routines, delegated Dots, and iPhone messages do not receive these tools.").
+				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 		})
 
 		profilePanel(c, theme, "Computer Use access", func() {

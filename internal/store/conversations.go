@@ -63,7 +63,7 @@ func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversatio
 }
 
 func (s *Store) UpdateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs ...[]string) error {
-	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, delegatedDotIDs, nil, nil, nil, nil)
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, delegatedDotIDs, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // SetConversationContextSummary saves user-authored or user-approved memory
@@ -78,8 +78,41 @@ func (s *Store) SetConversationContextSummary(id, summary string) error {
 		if i < 0 {
 			return errors.New("conversation not found")
 		}
+		if summary != db.Conversations[i].ContextSummary {
+			db.Conversations[i].ContextSummaryThroughMessageID = ""
+		}
 		db.Conversations[i].ContextSummary = summary
 		db.Conversations[i].UpdatedAt = time.Now().UTC()
+		return nil
+	})
+}
+
+// SetConversationMemory commits a generated summary only if the transcript has
+// not changed since the compaction input was captured.
+func (s *Store) SetConversationMemory(id, summary, throughMessageID, expectedLastMessageID string) error {
+	summary = strings.TrimSpace(summary)
+	if len(summary) > task.MaxConversationSummaryBytes || !utf8.ValidString(summary) {
+		return fmt.Errorf("conversation summary must be valid UTF-8 text of at most %d bytes", task.MaxConversationSummaryBytes)
+	}
+	return s.change(func(db *task.Database) error {
+		i := conversationIndex(db, id)
+		if i < 0 {
+			return errors.New("conversation not found")
+		}
+		conversation := &db.Conversations[i]
+		latest := ""
+		if len(conversation.Messages) > 0 {
+			latest = conversation.Messages[len(conversation.Messages)-1].ID
+		}
+		if latest != expectedLastMessageID {
+			return errors.New("the conversation changed while memory was being compressed; retry the update")
+		}
+		if throughMessageID != expectedLastMessageID {
+			return errors.New("compressed memory must cover the captured transcript")
+		}
+		conversation.ContextSummary = summary
+		conversation.ContextSummaryThroughMessageID = throughMessageID
+		conversation.UpdatedAt = time.Now().UTC()
 		return nil
 	})
 }
@@ -87,7 +120,7 @@ func (s *Store) SetConversationContextSummary(id, summary string) error {
 // UpdateConversationProfileAndGitHub saves the Dot profile and its independent
 // repository grants in one transaction.
 func (s *Store) UpdateConversationProfileAndGitHub(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs []string, githubRepositoryIDs []int64, disclosureAccepted bool) error {
-	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, [][]string{delegatedDotIDs}, &githubRepositoryIDs, &disclosureAccepted, nil, nil)
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions, [][]string{delegatedDotIDs}, &githubRepositoryIDs, &disclosureAccepted, nil, nil, nil, nil, nil, nil)
 }
 
 // UpdateConversationProfileAndIntegrations saves a Dot profile and its
@@ -95,10 +128,17 @@ func (s *Store) UpdateConversationProfileAndGitHub(id, spaceID, name, icon, colo
 func (s *Store) UpdateConversationProfileAndIntegrations(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs []string, githubRepositoryIDs []int64, githubDisclosureAccepted bool, computerUseScopes []string, computerUseDisclosureAccepted bool) error {
 	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions,
 		[][]string{delegatedDotIDs}, &githubRepositoryIDs, &githubDisclosureAccepted,
-		&computerUseScopes, &computerUseDisclosureAccepted)
+		&computerUseScopes, &computerUseDisclosureAccepted, nil, nil, nil, nil)
 }
 
-func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs [][]string, githubRepositoryIDs *[]int64, disclosureAccepted *bool, computerUseScopes *[]string, computerUseDisclosureAccepted *bool) error {
+func (s *Store) UpdateConversationProfileAndAllIntegrations(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs []string, githubRepositoryIDs []int64, githubDisclosureAccepted bool, computerUseScopes []string, computerUseDisclosureAccepted bool, modelProvider, modelName string, mcpToolGrants []task.MCPToolGrant, mcpDisclosureAccepted bool) error {
+	return s.updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions,
+		[][]string{delegatedDotIDs}, &githubRepositoryIDs, &githubDisclosureAccepted,
+		&computerUseScopes, &computerUseDisclosureAccepted,
+		&modelProvider, &modelName, &mcpToolGrants, &mcpDisclosureAccepted)
+}
+
+func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpose, instructions string, delegatedDotIDs [][]string, githubRepositoryIDs *[]int64, disclosureAccepted *bool, computerUseScopes *[]string, computerUseDisclosureAccepted *bool, modelProvider, modelName *string, mcpToolGrants *[]task.MCPToolGrant, mcpDisclosureAccepted *bool) error {
 	spaceID = strings.TrimSpace(spaceID)
 	name = strings.TrimSpace(name)
 	icon = strings.TrimSpace(icon)
@@ -110,6 +150,19 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 	}
 	if len(purpose) > task.MaxConversationPurposeBytes || len(instructions) > task.MaxConversationInstructionsBytes {
 		return errors.New("Dot objective or working instructions exceed the allowed length")
+	}
+	if modelProvider != nil && modelName != nil {
+		provider := strings.TrimSpace(*modelProvider)
+		modelNameValue := strings.TrimSpace(*modelName)
+		if provider == "" && modelNameValue != "" {
+			return errors.New("a Dot-specific model name requires a provider")
+		}
+		if provider != "" && !oneOf(provider, "openai", "anthropic", "xai", "openrouter", "openai-compatible") {
+			return errors.New("Dot model provider is not supported")
+		}
+		if len(modelNameValue) > 256 || (provider != "" && modelNameValue == "") {
+			return errors.New("Dot model name must contain 1–256 bytes when a provider override is selected")
+		}
 	}
 	if !utf8.ValidString(name) || !utf8.ValidString(purpose) || !utf8.ValidString(instructions) {
 		return errors.New("Dot profile is incomplete or invalid")
@@ -131,7 +184,7 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 		if len(delegatedDotIDs) > 0 {
 			requestedDelegates = delegatedDotIDs[0]
 		}
-		grants, err := validateDelegates(db, id, spaceID, requestedDelegates)
+		delegateGrants, err := validateDelegates(db, id, spaceID, requestedDelegates)
 		if err != nil {
 			return err
 		}
@@ -141,18 +194,21 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 		if previousSpaceID != spaceID && computerUseScopes != nil && len(*computerUseScopes) > 0 {
 			return errors.New("save the Dot's new Space before granting Computer Use again")
 		}
+		if previousSpaceID != spaceID && mcpToolGrants != nil && len(*mcpToolGrants) > 0 {
+			return errors.New("save the Dot's new Space before granting MCP tools again")
+		}
 		if githubRepositoryIDs != nil {
-			grants, err := validateGitHubRepositoryGrants(db, *githubRepositoryIDs)
+			githubGrants, err := validateGitHubRepositoryGrants(db, *githubRepositoryIDs)
 			if err != nil {
 				return err
 			}
-			if len(grants) > 0 && (disclosureAccepted == nil || !*disclosureAccepted) {
+			if len(githubGrants) > 0 && (disclosureAccepted == nil || !*disclosureAccepted) {
 				return errors.New("acknowledge that selected GitHub data may be sent to the configured model before granting access")
 			}
-			conversation.GitHubRepositoryIDs = grants
+			conversation.GitHubRepositoryIDs = githubGrants
 			conversation.GitHubGrantSpaceID = ""
-			conversation.GitHubModelDisclosureAccepted = len(grants) > 0 && *disclosureAccepted
-			if len(grants) > 0 {
+			conversation.GitHubModelDisclosureAccepted = len(githubGrants) > 0 && *disclosureAccepted
+			if len(githubGrants) > 0 {
 				conversation.GitHubGrantSpaceID = spaceID
 			}
 		} else if previousSpaceID != spaceID {
@@ -181,7 +237,31 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 			conversation.ComputerUseGrantSpaceID = ""
 			conversation.ComputerUseModelDisclosureAccepted = false
 		}
-		conversation.DelegatedDotIDs = grants
+		if mcpToolGrants != nil {
+			validated, err := validateMCPToolGrants(db, *mcpToolGrants)
+			if err != nil {
+				return err
+			}
+			accepted := mcpDisclosureAccepted != nil && *mcpDisclosureAccepted
+			if len(validated) > 0 && !accepted {
+				return errors.New("acknowledge that MCP tool inputs and returned data may be sent to the configured model before granting access")
+			}
+			conversation.MCPToolGrants = validated
+			conversation.MCPGrantSpaceID = ""
+			conversation.MCPModelDisclosureAccepted = len(validated) > 0 && accepted
+			if len(validated) > 0 {
+				conversation.MCPGrantSpaceID = spaceID
+			}
+		} else if previousSpaceID != spaceID {
+			conversation.MCPToolGrants = nil
+			conversation.MCPGrantSpaceID = ""
+			conversation.MCPModelDisclosureAccepted = false
+		}
+		if modelProvider != nil && modelName != nil {
+			conversation.ModelProvider = strings.TrimSpace(*modelProvider)
+			conversation.Model = strings.TrimSpace(*modelName)
+		}
+		conversation.DelegatedDotIDs = delegateGrants
 		conversation.SpaceID = spaceID
 		conversation.Name = name
 		conversation.Icon = icon
@@ -414,6 +494,23 @@ func conversationIndex(db *task.Database, id string) int {
 	return -1
 }
 
+// ConversationModel returns only the optional per-Dot model override. Provider
+// secrets and full conversation history remain outside this lookup.
+func (s *Store) ConversationModel(dotID string) (provider, modelName string, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	di := dotIndex(&s.db, dotID)
+	if di < 0 || s.db.Dots[di].ConversationID == "" {
+		return "", "", false
+	}
+	ci := conversationIndex(&s.db, s.db.Dots[di].ConversationID)
+	if ci < 0 {
+		return "", "", false
+	}
+	conversation := s.db.Conversations[ci]
+	return conversation.ModelProvider, conversation.Model, true
+}
+
 func conversationObjective(conversation task.Conversation, message string) string {
 	return conversationObjectiveWithSkill(conversation, message, task.Skill{}, false)
 }
@@ -545,7 +642,16 @@ func (s *Store) ConversationObjective(dotID string) (string, error) {
 		context.WriteString(memoryPrefix)
 		context.WriteString(strings.TrimSpace(conversation.ContextSummary))
 	}
-	recent := boundedConversationContext(conversation.Messages[:messageIndex])
+	contextStart := 0
+	if throughID := conversation.ContextSummaryThroughMessageID; throughID != "" {
+		for i := range conversation.Messages {
+			if i < messageIndex && conversation.Messages[i].ID == throughID {
+				contextStart = i + 1
+				break
+			}
+		}
+	}
+	recent := boundedConversationContext(conversation.Messages[contextStart:messageIndex])
 	if recent != "" {
 		context.WriteString(recentPrefix)
 		context.WriteString(recent)

@@ -6,6 +6,21 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-03 (6) — Independent Dot models, prompt compaction, performance, and MCP
+
+### Implementation
+
+- Added a per-Dot provider/model override while keeping credentials in the system credential store. Chat, memory compaction, and the existing provider-neutral tool catalog follow the Dot's selected model; provider changes clear Anthropic thread references so a thread from a prior model cannot be reused. Changing a Dot or workspace provider also requires renewed MCP disclosure for affected Dots before their tools run again.
+- Made chat compression cover the transcript through a recorded message ID. Compression processes bounded batches, preserves the full local transcript, only summarizes uncovered turns, and rejects the save if the transcript changes while generation is in progress. Editing saved memory clears its coverage marker so future prompts fail safe by retaining recent transcript context.
+- Replaced JSON marshal/unmarshal deep copies in store snapshots and transactions with structural copies, compacted local JSON writes, and changed live reply updates to append each stream batch without recopying the accumulated response.
+- Implemented an end-to-end user-managed MCP client using the pinned Go SDK's Streamable HTTP transport. It connects only to explicit `127.0.0.1` or `::1` endpoints, refuses redirects, caps response/event sizes, and never starts processes or stores MCP credentials. Users can discover tools, review schemas, grant exact tools per Dot, and accept the model-data disclosure. Runtime sessions are run-scoped; tool schemas are reconciled and changed grants revoked, and authorization is rechecked before and after each call. MCP remains unavailable to Routines, delegated Dots, and iPhone runs.
+- Read the pinned MyGo v0.7.3 lifecycle/UI documentation, MCP Go SDK v1.8 transport/client and protocol documentation, and the provider function-calling documentation. Updated README and repository permission guidance with the implementation and its trust boundary: a local server may act within a broader scope than its advertised tools.
+
+### Verification
+
+- `gofmt`, `CGO_ENABLED=0 go build ./...`, and `git diff --check` passed. Automated tests were not run.
+- No live user-managed MCP server was available. A source launch with an isolated temporary data directory did not surface a native AETHER window in the CUA app inventory, so the updated UI could not be previewed. Provider switching, model API calls, and local server behavior remain unverified at runtime.
+
 ## 2026-11-03 (1) — Bounded macOS Computer Use with Cua Driver
 
 ### Implementation

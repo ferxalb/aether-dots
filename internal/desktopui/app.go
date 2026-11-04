@@ -3,6 +3,7 @@ package desktopui
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -54,7 +55,15 @@ type app struct {
 	profilePurpose                       string
 	profileInstructions                  string
 	profileContextSummary                string
+	profileModelSelection                string
+	profileModelProvider                 string
+	profileModel                         string
 	profileDelegateIDs                   []string
+	profileMCPToolGrants                 []task.MCPToolGrant
+	profileMCPDisclosureAccepted         bool
+	profileMCPToolSearch                 string
+	profileMCPToolLimit                  int
+	profileMCPExpandedTool               string
 	profileGitHubEnabledDraft            bool
 	profileGitHubDisclosureAccepted      bool
 	profileGitHubRepositorySearch        string
@@ -105,6 +114,7 @@ type app struct {
 	markdownOptions           *markdown.Options
 
 	liveReplies       map[string]string
+	liveReplyBuffers  map[string]*strings.Builder
 	runCancels        map[string]context.CancelFunc
 	summaryCompactRun map[string]bool
 
@@ -155,6 +165,11 @@ type app struct {
 	githubRepositoryLimit      int
 	githubTruncated            bool
 	profileGitHubRepositoryIDs []int64
+	mcpServerNameDraft         string
+	mcpServerEndpointDraft     string
+	mcpServerError             string
+	mcpServerLoadingID         string
+	mcpServerRequest           uint64
 	settingsSaving             bool
 	modelConnection            string
 	routineSchedulerStarted    bool

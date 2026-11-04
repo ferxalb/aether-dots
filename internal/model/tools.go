@@ -24,6 +24,9 @@ type Tool struct {
 // selected model is known not to support functions.
 func WithTools(provider Provider, tools ...Tool) Provider {
 	switch current := provider.(type) {
+	case managedProvider:
+		current.tools = append(current.tools, tools...)
+		return current
 	case Generator:
 		current.Config.Tools = append(current.Config.Tools, tools...)
 		return current
@@ -41,6 +44,9 @@ func WithTools(provider Provider, tools ...Tool) Provider {
 // WithoutNativeTools suppresses AETHER's built-in and request-scoped functions.
 func WithoutNativeTools(provider Provider) Provider {
 	switch current := provider.(type) {
+	case managedProvider:
+		current.base = WithoutNativeTools(current.base)
+		return current
 	case Generator:
 		current.Config.DisableNativeTools = true
 		return current
@@ -58,6 +64,9 @@ func WithoutNativeTools(provider Provider) Provider {
 // WithMaxOutputTokens sets a one-off output cap for a provider request.
 func WithMaxOutputTokens(provider Provider, limit int64) Provider {
 	switch current := provider.(type) {
+	case managedProvider:
+		current.base = WithMaxOutputTokens(current.base, limit)
+		return current
 	case Generator:
 		current.Config.MaxOutputTokens = limit
 		return current

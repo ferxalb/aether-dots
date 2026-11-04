@@ -16,6 +16,9 @@ func (a *app) initializeRunState() {
 	if a.liveReplies == nil {
 		a.liveReplies = make(map[string]string)
 	}
+	if a.liveReplyBuffers == nil {
+		a.liveReplyBuffers = make(map[string]*strings.Builder)
+	}
 }
 
 func (a *app) hasActiveRuns() bool {
@@ -61,6 +64,7 @@ func (a *app) startRun(id string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.runCancels[id] = cancel
 	a.liveReplies[id] = ""
+	a.liveReplyBuffers[id] = &strings.Builder{}
 	toastID := "dot-run-" + id
 	a.adt.Loading(toastID, "Your Dot is working", "A reply is being prepared.")
 	if conversationID == a.selectedConversationID {
@@ -74,7 +78,7 @@ func (a *app) startRun(id string) {
 				win.Update(func() { a.refresh() })
 			}
 		}
-		generator := generatorForInteractiveConversationRun(prefs, a.db, id, a.githubService, a.computerUseService, onProgress)
+		generator := generatorForInteractiveConversationRun(ctx, prefs, a.db, id, a.githubService, a.computerUseService, onProgress)
 		var deltas chan string
 		var deltasDone chan struct{}
 		if win != nil {
@@ -95,6 +99,7 @@ func (a *app) startRun(id string) {
 		finish := func() {
 			delete(a.runCancels, id)
 			delete(a.liveReplies, id)
+			delete(a.liveReplyBuffers, id)
 			a.refresh()
 			if err == nil {
 				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply saved", Description: "Your Dot’s response is in the conversation.", Level: ADTSuccess})
@@ -124,16 +129,15 @@ func collectRunDeltas(win *mygo.Window, a *app, id string, deltas <-chan string,
 	ticker := time.NewTicker(40 * time.Millisecond)
 	defer ticker.Stop()
 	var streamed strings.Builder
-	lastPublished := 0
 	publish := func() {
-		if streamed.Len() == lastPublished {
+		if streamed.Len() == 0 {
 			return
 		}
-		snapshot := streamed.String()
-		lastPublished = len(snapshot)
+		batch := streamed.String()
+		streamed.Reset()
 		win.Update(func() {
-			if a.runCancels[id] != nil {
-				a.liveReplies[id] = snapshot
+			if a.runCancels[id] != nil && a.liveReplyBuffers[id] != nil {
+				a.liveReplyBuffers[id].WriteString(batch)
 			}
 		})
 	}

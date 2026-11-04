@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"aether-dots/internal/model"
+	"aether-dots/internal/store"
+	"aether-dots/internal/task"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -38,6 +40,33 @@ func generatorForPreferences(prefs preferences, keyOverride ...string) model.Pro
 		DisableReasoningEffort: openRouterReasoningEffortDisabled(prefs),
 	}
 	return model.NewProvider(config)
+}
+
+func generatorForConversationPreferences(prefs preferences, conversation task.Conversation) model.Provider {
+	if strings.TrimSpace(conversation.ModelProvider) == "" {
+		return generatorForPreferences(prefs)
+	}
+	selected := prefs
+	selected.Provider = strings.TrimSpace(conversation.ModelProvider)
+	if strings.TrimSpace(conversation.Model) != "" {
+		*selected.selectedModel() = strings.TrimSpace(conversation.Model)
+	}
+	if selected.Provider == string(model.ProviderOpenRouter) && selected.OpenRouterModel != *selected.selectedModel() {
+		selected.OpenRouterCatalogModel = ""
+		selected.OpenRouterModelSupportsTools = false
+		selected.OpenRouterModelSupportsReasoning = false
+		selected.OpenRouterModelSupportsReasoningSet = false
+		selected.OpenRouterModelSupportedEfforts = ""
+	}
+	return generatorForPreferences(selected)
+}
+
+func generatorForDotPreferences(prefs preferences, db *store.Store, dotID string) model.Provider {
+	provider, modelName, ok := db.ConversationModel(dotID)
+	if !ok || strings.TrimSpace(provider) == "" {
+		return generatorForPreferences(prefs)
+	}
+	return generatorForConversationPreferences(prefs, task.Conversation{ModelProvider: provider, Model: modelName})
 }
 
 func openRouterReasoningEffortDisabled(prefs preferences) bool {
@@ -130,10 +159,18 @@ func (a *app) switchProvider(provider string) {
 	if !validProvider(provider) || provider == a.prefs.Provider {
 		return
 	}
+	if a.db != nil {
+		if err := a.db.ClearWorkspaceMCPDisclosures(); err != nil {
+			a.providerSelection = providerSelectionLabel(a.prefs.Provider)
+			a.adt.Error("Couldn't switch the workspace provider", err.Error())
+			return
+		}
+	}
 	if a.apiKeyDrafts == nil {
 		a.apiKeyDrafts = make(map[string]string)
 	}
 	a.apiKeyDrafts[a.prefs.Provider] = a.apiKeyDraft
+	model.ClearAnthropicThreads()
 	a.prefs.Provider = provider
 	if provider == string(model.ProviderOpenAI) && strings.TrimSpace(a.prefs.ReasoningEffort) == "" {
 		a.prefs.ReasoningEffort = model.DefaultReasoningEffort
@@ -221,9 +258,9 @@ func (a *app) saveSettings() {
 		a.adt.Error("Couldn’t save settings", err.Error())
 		return
 	}
-	if !a.prefs.AnthropicMessageThreads {
-		model.ClearAnthropicThreads()
-	}
+	// Model, provider, effort, or tool changes can invalidate a cached server
+	// thread. Drop local references so a later switch back replays local chat.
+	model.ClearAnthropicThreads()
 	a.publishRoutinePreferences()
 	key := strings.TrimSpace(a.apiKeyDraft)
 	if key == "" {

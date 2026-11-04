@@ -18,6 +18,9 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 	dotsByID := a.dotsByConversationID[conversation.ID]
 	liveDotID := a.activeRunDotIDForConversation(conversation.ID)
 	liveReply := a.liveReplies[liveDotID]
+	if buffer := a.liveReplyBuffers[liveDotID]; buffer != nil {
+		liveReply = buffer.String()
+	}
 	showLiveReply := liveReply != "" && dotsByID[liveDotID].ID != ""
 	messageCount := len(conversation.Messages)
 	if showLiveReply {

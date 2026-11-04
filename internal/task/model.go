@@ -1,11 +1,16 @@
 package task
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"strconv"
+	"strings"
 	"time"
 )
 
-const SchemaVersion = 6
+const SchemaVersion = 7
 
 const (
 	MaxConversationNameBytes         = 128
@@ -22,6 +27,13 @@ const (
 	MaxGitHubRepositories            = 2000
 	MaxGitHubDotGrants               = 100
 	MaxComputerUseScopes             = 2
+	MaxMCPServers                    = 16
+	MaxMCPServerTools                = 64
+	MaxMCPDotToolGrants              = 32
+	MaxMCPServerNameBytes            = 128
+	MaxMCPToolNameBytes              = 128
+	MaxMCPToolDescriptionBytes       = 2048
+	MaxMCPToolSchemaBytes            = 16 * 1024
 	MaxConversationContextMessages   = 12
 	MaxConversationContextBytes      = 24 * 1024
 	MaxSkillNameBytes                = 128
@@ -102,6 +114,14 @@ type Conversation struct {
 	// ContextSummary is optional user-maintained memory. The full transcript
 	// remains in Messages; this summary only replaces older turns in provider prompts.
 	ContextSummary string `json:"context_summary,omitempty"`
+	// ContextSummaryThroughMessageID marks the newest transcript entry covered
+	// by ContextSummary. The transcript remains intact locally; prompt assembly
+	// sends only messages after this marker plus the editable summary.
+	ContextSummaryThroughMessageID string `json:"context_summary_through_message_id,omitempty"`
+	// ModelProvider and Model optionally override the workspace's default model
+	// for this Dot. Credentials remain in the provider credential store.
+	ModelProvider string `json:"model_provider,omitempty"`
+	Model         string `json:"model,omitempty"`
 	// DelegatedDotIDs are the same-Space specialists this Dot may consult.
 	// Grants are directional and empty by default.
 	DelegatedDotIDs []string `json:"delegated_dot_ids,omitempty"`
@@ -113,6 +133,9 @@ type Conversation struct {
 	ComputerUseScopes                  []string              `json:"computer_use_scopes,omitempty"`
 	ComputerUseGrantSpaceID            string                `json:"computer_use_grant_space_id,omitempty"`
 	ComputerUseModelDisclosureAccepted bool                  `json:"computer_use_model_disclosure_accepted,omitempty"`
+	MCPToolGrants                      []MCPToolGrant        `json:"mcp_tool_grants,omitempty"`
+	MCPGrantSpaceID                    string                `json:"mcp_grant_space_id,omitempty"`
+	MCPModelDisclosureAccepted         bool                  `json:"mcp_model_disclosure_accepted,omitempty"`
 	CreatedAt                          time.Time             `json:"created_at"`
 	UpdatedAt                          time.Time             `json:"updated_at"`
 	Messages                           []ConversationMessage `json:"messages"`
@@ -162,6 +185,48 @@ type Skill struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// MCPServer is a user-registered loopback MCP endpoint. Tool metadata is a
+// cached discovery result used for review; grants are stored on each Dot.
+type MCPServer struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Endpoint  string    `json:"endpoint"`
+	Tools     []MCPTool `json:"tools,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// MCPTool contains the discoverable schema shown for explicit Dot grants.
+// Fingerprint changes invalidate that tool's saved grants.
+type MCPTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema"`
+	Fingerprint string         `json:"fingerprint"`
+}
+
+type MCPToolGrant struct {
+	ServerID    string `json:"server_id"`
+	ToolName    string `json:"tool_name"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+func MCPToolFingerprint(tool MCPTool) (string, error) {
+	if strings.TrimSpace(tool.Name) == "" || len(tool.Name) > MaxMCPToolNameBytes ||
+		len(tool.Description) > MaxMCPToolDescriptionBytes || tool.InputSchema == nil {
+		return "", errors.New("invalid MCP tool metadata")
+	}
+	schema, err := json.Marshal(tool.InputSchema)
+	if err != nil || len(schema) > MaxMCPToolSchemaBytes {
+		return "", errors.New("MCP tool schema exceeds the 16 KiB limit")
+	}
+	if tool.InputSchema["type"] != "object" {
+		return "", errors.New("MCP tool input schema must be a JSON object schema")
+	}
+	hash := sha256.Sum256([]byte(tool.Name + "\x00" + tool.Description + "\x00" + string(schema)))
+	return hex.EncodeToString(hash[:]), nil
+}
+
 // Routine stores an interval-based recurring prompt. Runs are local to the
 // app or CLI process and are recorded in the owning conversation.
 type Routine struct {
@@ -200,6 +265,7 @@ type Database struct {
 	GitHubRepositories   []GitHubRepository `json:"github_repositories,omitempty"`
 	GitHubConnected      bool               `json:"github_connected,omitempty"`
 	GitHubLastVerifiedAt time.Time          `json:"github_last_verified_at,omitempty"`
+	MCPServers           []MCPServer        `json:"mcp_servers,omitempty"`
 }
 
 // GitHubRepository is a non-secret, locally selected resource. Its stable ID

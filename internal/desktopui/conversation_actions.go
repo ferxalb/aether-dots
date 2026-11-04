@@ -1,6 +1,11 @@
 package desktopui
 
-import "aether-dots/internal/task"
+import (
+	"strings"
+
+	"aether-dots/internal/model"
+	"aether-dots/internal/task"
+)
 
 func (a *app) startCreator() {
 	a.rememberCurrentConversationState()
@@ -34,7 +39,15 @@ func (a *app) openConversationProfile() {
 	a.profilePurpose = conversation.Purpose
 	a.profileInstructions = conversation.Instructions
 	a.profileContextSummary = conversation.ContextSummary
+	a.profileModelProvider = conversation.ModelProvider
+	a.profileModelSelection = profileModelSelection(conversation.ModelProvider)
+	a.profileModel = conversation.Model
 	a.profileDelegateIDs = append([]string(nil), conversation.DelegatedDotIDs...)
+	a.profileMCPToolGrants = append([]task.MCPToolGrant(nil), conversation.MCPToolGrants...)
+	a.profileMCPDisclosureAccepted = conversation.MCPModelDisclosureAccepted
+	a.profileMCPToolSearch = ""
+	a.profileMCPToolLimit = 60
+	a.profileMCPExpandedTool = ""
 	a.profileGitHubRepositoryIDs = append([]int64(nil), conversation.GitHubRepositoryIDs...)
 	a.profileGitHubEnabledDraft = len(conversation.GitHubRepositoryIDs) > 0
 	a.profileGitHubDisclosureAccepted = conversation.GitHubModelDisclosureAccepted
@@ -61,6 +74,7 @@ func (a *app) saveConversationProfile() {
 	}
 	githubRepositoryIDs := append([]int64(nil), a.profileGitHubRepositoryIDs...)
 	computerUseScopes := append([]string(nil), a.profileComputerUseScopes...)
+	mcpToolGrants := append([]task.MCPToolGrant(nil), a.profileMCPToolGrants...)
 	current, _ := findConversation(a.snapshot, a.selectedConversationID)
 	if a.profileSpaceID != current.SpaceID || !a.profileGitHubEnabledDraft || !a.profileGitHubDisclosureAccepted {
 		githubRepositoryIDs = nil
@@ -69,14 +83,24 @@ func (a *app) saveConversationProfile() {
 	if a.profileSpaceID != current.SpaceID {
 		computerUseScopes = nil
 		computerUseDisclosureAccepted = false
+		mcpToolGrants = nil
 	}
+	modelProvider, modelName := strings.TrimSpace(a.profileModelProvider), strings.TrimSpace(a.profileModel)
+	if modelProvider == "" {
+		modelName = ""
+	} else if modelName == "" {
+		selected := a.prefs
+		selected.Provider = modelProvider
+		modelName = strings.TrimSpace(*selected.selectedModel())
+	}
+	modelChanged := current.ModelProvider != modelProvider || current.Model != modelName
 	accessReduced := computerUseAccessReduced(
 		current.ComputerUseScopes,
 		computerUseScopes,
 		current.ComputerUseModelDisclosureAccepted,
 		computerUseDisclosureAccepted,
 	)
-	err := a.db.UpdateConversationProfileAndIntegrations(
+	err := a.db.UpdateConversationProfileAndAllIntegrations(
 		a.selectedConversationID,
 		a.profileSpaceID,
 		a.profileName,
@@ -89,11 +113,18 @@ func (a *app) saveConversationProfile() {
 		a.profileGitHubDisclosureAccepted,
 		computerUseScopes,
 		computerUseDisclosureAccepted,
+		modelProvider,
+		modelName,
+		mcpToolGrants,
+		a.profileMCPDisclosureAccepted,
 	)
 	if err != nil {
 		a.conversationError = err.Error()
 		a.adt.Error("Couldn't save the Dot profile", err.Error())
 		return
+	}
+	if modelChanged {
+		model.ClearAnthropicThreads()
 	}
 	if accessReduced && a.computerUseService != nil {
 		a.computerUseService.StopAsync()

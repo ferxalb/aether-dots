@@ -163,6 +163,20 @@ func providerSelectionLabel(provider string) string {
 	}
 }
 
+func profileModelSelection(provider string) string {
+	if strings.TrimSpace(provider) == "" {
+		return "Workspace default"
+	}
+	return providerSelectionLabel(provider)
+}
+
+func profileModelProviderForSelection(selection string) string {
+	if selection == "Workspace default" {
+		return ""
+	}
+	return providerFromSelection(selection)
+}
+
 func providerModelPlaceholder(provider string) string {
 	switch model.ProviderID(provider) {
 	case model.ProviderOpenRouter:

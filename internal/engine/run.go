@@ -24,6 +24,9 @@ func Run(ctx context.Context, db *store.Store, dotID string, generator Generator
 // RunWithProgress executes one chat turn and persists the assistant response
 // into the Dot conversation. The runner has no filesystem input or output.
 func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generator Generator, onDelta func(string), onProgress func()) error {
+	if closer, ok := generator.(interface{ Close() error }); ok {
+		defer func() { _ = closer.Close() }()
+	}
 	progress := func() {
 		if onProgress != nil {
 			onProgress()
