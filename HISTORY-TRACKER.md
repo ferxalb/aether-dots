@@ -560,3 +560,11 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - The app remains local-first. MCP configuration, cloud sync, device handoff, OS keychain storage, and arbitrary-app control were not implemented.
 - No production signing, notarization, DMG, or non-macOS build was verified.
 
+
+## 2026-11-06 — Midnight integration (CLI)
+
+- New CLI commands: `mcp [list|add|refresh|remove|grant|revoke]`, `midnight enable`, `memory [remember|recall|list|forget]`, `doctor`/`status`, `init`, `model show`. Interactive CLI runs now load the Dot's granted loopback MCP tools through `engine.WithMCPTools`, the same path and grant/fingerprint/disclosure checks as Desktop; Routines and delegated Dots still get none. The shared tool-catalog converter moved to `internal/integrations/mcp` and `store.SetConversationMCPGrants` mirrors the profile editor's validation.
+- Store: `dots.json` writes now take an exclusive `flock`, reload if another process changed the file, then apply and persist, so Desktop and CLI no longer overwrite each other (tests: two handles, four concurrent handles). `RecoverInterruptedRuns` uses the same path. Known gap: Desktop startup still marks any `running` Dot as interrupted, including one a live CLI process owns.
+- Fixed `send <dot-id> --message …` (flags after the positional were rejected).
+- `cmd/aether-mockllm` (offline OpenAI-compatible mock), `scripts/e2e-midnight.sh` (real binaries: remember → restart Midnight → grounded recall → supersede → forget → scope denial → outage recovery) and `scripts/bench-e2e.py`. Midnight must be started by the user: `aether-midnight serve-http --memory-scope 'dot:<id>'`.
+- Not verified: macOS Desktop UI; `internal/desktopui` `TestDotProfileCanBeCustomizedFromChat` fails on unmodified `main` in this headless sandbox (viewport scroll).

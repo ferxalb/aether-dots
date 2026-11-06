@@ -45,6 +45,10 @@ grep -q "20 dollars" <<<"$R" && ! grep -q "10 dollars" <<<"$R" || { echo "FAIL: 
 ! "${A[@]}" memory recall "$DOT" budget | grep -q "20 dollars" || { echo "FAIL: forgotten fact recalled"; exit 1; }
 echo "--- permission boundary: another scope must be denied"
 if curl -s -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"recall","arguments":{"scope":"user:other","query":"x"}}}' "$MURL2" | grep -q 'permission denied'; then echo denied-ok; else echo "FAIL: scope not enforced"; exit 1; fi
+echo "--- recovery: Midnight down -> Dot still replies, doctor reports it"
+kill "$MPID"; wait "$MPID" 2>/dev/null || true
+"${A[@]}" send "$DOT" --message "Are you there?" | grep -q "no Midnight tools" || { echo "FAIL: no graceful degradation"; exit 1; }
+DOCTOR="$("${A[@]}" doctor 2>&1 || true)"
+grep -q UNREACHABLE <<<"$DOCTOR" || { echo "FAIL: doctor missed outage"; exit 1; }
 echo "--- persisted conversation"; "${A[@]}" inspect "$DOT" | tail -n 6
-"${A[@]}" doctor
 echo "E2E OK (work dir: $WORK)"
