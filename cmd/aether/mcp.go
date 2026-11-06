@@ -263,6 +263,9 @@ func conversationFor(db *store.Store, id string) (task.Conversation, bool) {
 // midnightCommand wires a Dot to a user-started loopback Midnight server.
 func midnightCommand(db *store.Store, args []string) error {
 	usage := errors.New("usage: aether midnight enable <dot-id> --endpoint http://127.0.0.1:<port>/mcp --token-file F|--token-stdin --accept-model-disclosure [--code] [--forget]")
+	if len(args) >= 1 && args[0] == "server" {
+		return midnightServerCommand(db, args[1:])
+	}
 	if len(args) < 2 || args[0] != "enable" {
 		return usage
 	}

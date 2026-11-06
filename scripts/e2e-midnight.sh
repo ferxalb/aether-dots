@@ -97,7 +97,7 @@ grep -q "20 dollars" <<<"$R" && ! grep -q "10 dollars" <<<"$R" || fail "superses
 ID2="$(grep -o '"id":[0-9]*' <<<"$R" | head -1 | cut -d: -f2)"
 A memory forget "$ALPHA" "$ID2" >/dev/null
 A memory recall "$ALPHA" budget | grep -q "20 dollars" && fail "forgotten fact recalled"
-{ A memory forget "$BETA" "$ID2" || true; } | grep -q 'permission denied' || fail "beta lacks forget"
+{ A memory forget "$BETA" "$ID2" || true; } | grep -q 'not granted' || fail "beta lacks forget (client-side grant check)"
 
 step "concurrent CLI processes"
 PIDS=(); for i in $(seq 8); do "$BIN/aether" --data-dir "$WORK/dots" memory remember "$ALPHA" "concurrent note $i" >/dev/null 2>&1 & PIDS+=($!); done
@@ -127,5 +127,38 @@ step "recovery: Midnight down -> Dot still replies, doctor reports it"
 kill "$MPID"; wait "$MPID" 2>/dev/null || true
 A send "$ALPHA" --message "Are you there?" | grep -q "no Midnight tools" || fail "no graceful degradation"
 DR | grep -q UNREACHABLE || fail "doctor missed outage"
+step "supervised Midnight: approve, start once, crash, restart on the same endpoint, stop cleanly"
+{ A midnight server start || true; } | grep -q 'no Midnight binary approved' || fail "start must require approval"
+{ A midnight server approve --binary "$MIDNIGHT_BIN" --db "$WORK/sup.db" || true; } | grep -q -- '--yes' || fail "approval must be explicit"
+A midnight server approve --binary "$MIDNIGHT_BIN" --db "$WORK/sup.db" --yes >/dev/null
+A midnight server start | grep -q 'auth enforced' || fail "supervised start"
+SUPPID="$(A midnight server status | sed -nE 's/.*pid=([0-9]+).*/\1/p')"
+SUPURL="$(A midnight server status | sed -nE 's/.*(http:[^ ]+\/mcp).*/\1/p')"
+A midnight server start >/dev/null
+[ "$(pgrep -fc "sup.db serve-http" || true)" = "1" ] || fail "duplicate Midnight servers"
+SM() { "$MIDNIGHT_BIN" --db "$WORK/sup.db" "$@"; }
+GAMMA="$(A create --name Gamma --objective "Supervised memory assistant" | sed -E 's/.*\(([^)]+)\).*/\1/')"
+SM token create --name gamma --memory-scope "dot:$GAMMA" --tools recall,remember,list_memories > "$WORK/tok-gamma"
+A midnight enable "$GAMMA" --endpoint "$SUPURL" --token-file "$WORK/tok-gamma" --accept-model-disclosure >/dev/null
+A send "$GAMMA" --message "remember: The Gamma codename is Kumquat." | grep -qi 'remember\|stored\|saved\|memory' || fail "supervised remember"
+grep -rq "$(cat "$WORK/tok-gamma")" "$WORK/dots/midnight" && fail "token leaked into supervisor state"
+tr '\0' ' ' < "/proc/$SUPPID/cmdline" | grep -q "mdn_" && fail "token on supervised argv"
+tr '\0' '\n' < "/proc/$SUPPID/environ" | grep -qE 'AETHER_|mdn_' && fail "credential in supervised environment"
+kill -9 "$SUPPID"; sleep 0.2
+A midnight server status | grep -q 'stopped' || fail "crash not detected"
+A send "$GAMMA" --message "Are you there?" | grep -q "no Midnight tools" || fail "no degradation during supervised outage"
+A midnight server start | grep -q "$SUPURL" || fail "restart changed the endpoint"
+A midnight server status | grep -q 'dot-.*: ok' || fail "reconnect after restart"
+A send "$GAMMA" --message "What is the Gamma codename?" | grep -q Kumquat || fail "memory lost across supervised restart"
+step "token expiry degrades and is reported"
+DELTA="$(A create --name Delta --objective "Short-lived token" | sed -E 's/.*\(([^)]+)\).*/\1/')"
+SM token create --name delta --memory-scope "dot:$DELTA" --tools recall,remember,list_memories --ttl-secs 2 > "$WORK/tok-delta"
+A midnight enable "$DELTA" --endpoint "$SUPURL" --token-file "$WORK/tok-delta" --accept-model-disclosure >/dev/null
+sleep 3
+A midnight server status | grep -q "dot-$DELTA: REJECTED" || fail "expired token not reported"
+A send "$DELTA" --message "hello" | grep -q "no Midnight tools" || fail "expired token should degrade"
+A midnight server stop | grep -q stopped || fail "stop"
+sleep 0.2; [ "$(pgrep -fc "sup.db serve-http" || true)" = "0" ] || fail "orphaned Midnight after stop"
+
 step "persisted conversation"; A inspect "$ALPHA" | tail -n 4
 echo "E2E OK (work dir: $WORK)"
