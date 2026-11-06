@@ -17,12 +17,21 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+)
+
+var (
+	// ErrNotApproved means no Midnight binary has been approved yet.
+	ErrNotApproved = errors.New("no Midnight binary approved; run `aether midnight server approve`")
+	// ErrCorrupt means supervisor state on disk is unreadable or invalid. It is
+	// reported, never silently repaired, because the state may be the only
+	// record of a running server.
+	ErrCorrupt = errors.New("corrupt supervisor state")
 )
 
 // Config is what the user approved. Port is fixed after the first start so
@@ -153,7 +162,7 @@ func Approve(dataDir, binary, db string) (Config, error) {
 		return Config{}, err
 	}
 	defer f.Close()
-	out, err := runVersion(f)
+	out, err := runVersion(f, binary)
 	if err != nil {
 		return Config{}, err
 	}
@@ -177,10 +186,8 @@ func firstLine(s string) string {
 	return s
 }
 
-func runVersion(f *os.File) (string, error) {
-	cmd := exec.Command("/proc/self/fd/3", "--version")
-	cmd.Args[0] = "aether-midnight"
-	cmd.ExtraFiles = []*os.File{f}
+func runVersion(f *os.File, path string) (string, error) {
+	cmd := command(f, path, "--version")
 	cmd.Env = []string{}
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -202,15 +209,38 @@ func runVersion(f *os.File) (string, error) {
 	return out.String(), nil
 }
 
+var hexSHA = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 func loadConfig(dir string) (Config, error) {
+	path := filepath.Join(dir, "approved.json")
 	var cfg Config
-	if err := readJSON(filepath.Join(dir, "approved.json"), &cfg); err != nil {
+	if err := readJSON(path, &cfg); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return cfg, errors.New("no Midnight binary approved; run `aether midnight server approve`")
+			return cfg, ErrNotApproved
 		}
-		return cfg, err
+		return cfg, fmt.Errorf("%w: %s: %v (remove it and re-run `aether midnight server approve`)", ErrCorrupt, path, err)
+	}
+	if !filepath.IsAbs(cfg.Binary) || !filepath.IsAbs(cfg.DB) || !hexSHA.MatchString(cfg.SHA256) || cfg.Port < 0 || cfg.Port > 65535 {
+		return cfg, fmt.Errorf("%w: %s has invalid fields (remove it and re-approve)", ErrCorrupt, path)
 	}
 	return cfg, nil
+}
+
+// loadState returns (state, true, nil) for a readable state file,
+// (zero, false, nil) when there is none, and ErrCorrupt when it is unreadable.
+func loadState(dir string) (state, bool, error) {
+	path := filepath.Join(dir, "server.json")
+	var s state
+	if err := readJSON(path, &s); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return s, false, nil
+		}
+		return s, false, fmt.Errorf("%w: %s: %v (a Midnight process may still be running; stop it manually, then remove the file)", ErrCorrupt, path, err)
+	}
+	if s.PID <= 1 || !strings.HasPrefix(s.Endpoint, "http://") {
+		return s, false, fmt.Errorf("%w: %s has invalid fields (a Midnight process may still be running; stop it manually, then remove the file)", ErrCorrupt, path)
+	}
+	return s, true, nil
 }
 
 // owned reports whether pid is a live process running the approved Midnight
@@ -220,19 +250,10 @@ func owned(pid int, cfg Config) bool {
 	if pid <= 1 {
 		return false
 	}
-	exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
-	if err != nil {
+	exe, args, ok := processIdentity(pid)
+	if !ok || exe != cfg.Binary {
 		return false
 	}
-	exe = strings.TrimSuffix(exe, " (deleted)")
-	if exe != cfg.Binary {
-		return false
-	}
-	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		return false
-	}
-	args := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
 	hasServe, hasDB := false, false
 	for i, a := range args {
 		hasServe = hasServe || a == "serve-http"
@@ -251,16 +272,23 @@ func probe(endpoint string) bool {
 	return resp.StatusCode == http.StatusUnauthorized
 }
 
-// Get reports the current state without changing anything.
+// Get reports the current state without changing anything. An unapproved
+// supervisor is a valid state; corrupt files are an error.
 func Get(dataDir string) (Status, error) {
 	dir := root(dataDir)
 	cfg, err := loadConfig(dir)
+	if errors.Is(err, ErrNotApproved) {
+		return Status{}, nil
+	}
 	if err != nil {
-		return Status{}, nil // not approved is a valid state
+		return Status{}, err
 	}
 	st := Status{Approved: true, Config: cfg}
-	var s state
-	if readJSON(filepath.Join(dir, "server.json"), &s) == nil && owned(s.PID, cfg) {
+	s, ok, err := loadState(dir)
+	if err != nil {
+		return st, err
+	}
+	if ok && owned(s.PID, cfg) {
 		st.Running, st.PID, st.Endpoint, st.StartedAt = true, s.PID, s.Endpoint, s.StartedAt
 		st.AuthEnforced = probe(s.Endpoint)
 	}
@@ -283,8 +311,11 @@ func Start(dataDir string) (Status, error) {
 		return Status{}, err
 	}
 	statePath := filepath.Join(dir, "server.json")
-	var s state
-	if readJSON(statePath, &s) == nil {
+	s, ok, err := loadState(dir)
+	if err != nil {
+		return Status{}, err
+	}
+	if ok {
 		if owned(s.PID, cfg) {
 			return Status{Approved: true, Config: cfg, Running: true, PID: s.PID, Endpoint: s.Endpoint, StartedAt: s.StartedAt, AuthEnforced: probe(s.Endpoint)}, nil
 		}
@@ -307,10 +338,7 @@ func Start(dataDir string) (Status, error) {
 		return Status{}, err
 	}
 	defer logf.Close()
-	bind := "127.0.0.1:" + strconv.Itoa(cfg.Port)
-	cmd := exec.Command("/proc/self/fd/3", "--db", cfg.DB, "serve-http", "--bind", bind)
-	cmd.Args[0] = "aether-midnight"
-	cmd.ExtraFiles = []*os.File{f}
+	cmd := command(f, cfg.Binary, "--db", cfg.DB, "serve-http", "--bind", "127.0.0.1:"+strconv.Itoa(cfg.Port))
 	// No inherited environment: nothing credential-shaped can reach the server.
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + os.Getenv("HOME")}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, logf, logf
@@ -321,27 +349,41 @@ func Start(dataDir string) (Status, error) {
 	pid := cmd.Process.Pid
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
+	// Any failure after this point must leave nothing behind: the child is
+	// killed and reaped, and no state file claims it.
+	abort := func(cause error) (Status, error) {
+		_ = cmd.Process.Signal(syscall.SIGINT)
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+			_ = cmd.Process.Kill()
+			<-exited
+		}
+		_ = os.Remove(statePath)
+		return Status{}, cause
+	}
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		raw, _ := os.ReadFile(logPath)
 		if line := listeningLine(string(raw)); line != "" {
 			u, err := url.Parse(line)
 			if err != nil || !isLoopback(u.Host) {
-				_ = cmd.Process.Signal(syscall.SIGINT)
-				return Status{}, errors.New("Midnight reported a non-loopback address; stopped")
+				return abort(errors.New("Midnight reported a non-loopback address; stopped"))
 			}
 			_, portStr, _ := net.SplitHostPort(u.Host)
 			port, _ := strconv.Atoi(portStr)
+			if cfg.Port == 0 {
+				// Persist the port first so a restart keeps the endpoint.
+				fixed := cfg
+				fixed.Port = port
+				if err := writeJSON(filepath.Join(dir, "approved.json"), fixed); err != nil {
+					return abort(err)
+				}
+				cfg = fixed
+			}
 			started := time.Now().UTC()
 			if err := writeJSON(statePath, state{PID: pid, Endpoint: line, StartedAt: started}); err != nil {
-				_ = cmd.Process.Signal(syscall.SIGINT)
-				return Status{}, err
-			}
-			if cfg.Port == 0 {
-				cfg.Port = port
-				if err := writeJSON(filepath.Join(dir, "approved.json"), cfg); err != nil {
-					return Status{}, err
-				}
+				return abort(err)
 			}
 			_ = cmd.Process.Release()
 			return Status{Approved: true, Config: cfg, Running: true, PID: pid, Endpoint: line, StartedAt: started, AuthEnforced: probe(line)}, nil
@@ -349,12 +391,12 @@ func Start(dataDir string) (Status, error) {
 		select {
 		case <-exited:
 			raw, _ := os.ReadFile(logPath)
+			_ = os.Remove(statePath)
 			return Status{}, fmt.Errorf("Midnight exited during startup: %s", firstLine(string(raw)))
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	_ = cmd.Process.Signal(syscall.SIGINT)
-	return Status{}, errors.New("Midnight did not report a listening address in time")
+	return abort(errors.New("Midnight did not report a listening address in time"))
 }
 
 func listeningLine(log string) string {
@@ -392,8 +434,11 @@ func Stop(dataDir string, timeout time.Duration) (bool, error) {
 		return false, err
 	}
 	statePath := filepath.Join(dir, "server.json")
-	var s state
-	if readJSON(statePath, &s) != nil || !owned(s.PID, cfg) {
+	s, ok, err := loadState(dir)
+	if err != nil {
+		return false, err
+	}
+	if !ok || !owned(s.PID, cfg) {
 		_ = os.Remove(statePath)
 		return false, nil
 	}
