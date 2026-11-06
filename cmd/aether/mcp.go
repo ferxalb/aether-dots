@@ -283,6 +283,9 @@ func midnightCommand(db *store.Store, args []string) error {
 	if token == "" {
 		return errors.New("a Midnight token is required: run `aether-midnight token create --name dot-<id> --memory-scope dot:<id>` and pass it with --token-file or --token-stdin")
 	}
+	if _, err := db.SnapshotChecked(); err != nil {
+		return err
+	}
 	conversation, ok := conversationFor(db, positional[0])
 	if !ok {
 		return errors.New("Dot not found")
@@ -345,6 +348,65 @@ func midnightCommand(db *store.Store, args []string) error {
 	return nil
 }
 
+// midnightServerFor resolves the single server a Dot may use for a Midnight
+// tool. The Dot's own `Midnight dot-<id>` record (endpoint ending /dot-<id>) is
+// preferred; otherwise exactly one manually configured server may carry a
+// current grant for the tool. A grant is honoured only while the server still
+// advertises the tool at the granted fingerprint. Several candidates, a record
+// that belongs to a different Dot, or a stale/missing grant are all refused.
+func midnightServerFor(conversation task.Conversation, servers []task.MCPServer, tool string) (task.MCPServer, error) {
+	byID := make(map[string]task.MCPServer, len(servers))
+	for _, server := range servers {
+		byID[server.ID] = server
+	}
+	label := "/dot-" + conversation.ID
+	var own, other []task.MCPServer
+	seen := map[string]bool{}
+	granted := false
+	for _, grant := range conversation.MCPToolGrants {
+		if grant.ToolName != tool || seen[grant.ServerID] {
+			continue
+		}
+		server, ok := byID[grant.ServerID]
+		if !ok {
+			continue
+		}
+		granted = true
+		current := false
+		for _, advertised := range server.Tools {
+			if advertised.Name == tool && advertised.Fingerprint == grant.Fingerprint {
+				current = true
+			}
+		}
+		if !current {
+			continue
+		}
+		seen[grant.ServerID] = true
+		switch {
+		case server.Name == "Midnight dot-"+conversation.ID && strings.HasSuffix(server.Endpoint, label):
+			own = append(own, server)
+		case strings.HasSuffix(server.Name, "dot-"+conversation.ID) || strings.Contains(server.Endpoint, "/dot-"):
+			// A per-Dot record that is not this Dot's, or a mislabelled one.
+			return task.MCPServer{}, fmt.Errorf("server %q is labelled for a different Dot; run `aether midnight enable %s`", server.Name, conversation.ID)
+		default:
+			other = append(other, server)
+		}
+	}
+	switch {
+	case len(own) == 1:
+		return own[0], nil
+	case len(own) > 1:
+		return task.MCPServer{}, errors.New("ambiguous: several Midnight connections for this Dot; remove duplicates with `aether mcp remove`")
+	case len(other) == 1:
+		return other[0], nil
+	case len(other) > 1:
+		return task.MCPServer{}, fmt.Errorf("ambiguous: %d servers grant %q to this Dot; run `aether midnight enable %s` to select a dedicated connection", len(other), tool, conversation.ID)
+	case granted:
+		return task.MCPServer{}, fmt.Errorf("the grant for %q is stale; run `aether mcp refresh` and re-grant", tool)
+	}
+	return task.MCPServer{}, fmt.Errorf("tool %q is not granted to this Dot; run `aether midnight enable %s` (add --forget for forget)", tool, conversation.ID)
+}
+
 // memoryCommand performs user-initiated memory operations against Midnight.
 func memoryCommand(db *store.Store, args []string) error {
 	usage := errors.New("usage: aether memory <remember|recall|list|forget> <dot-id> ...\n  remember <dot-id> <text> [--derived] [--supersedes <id>] [--source-uri URI]\n  recall <dot-id> <query> [--limit N]\n  list <dot-id>\n  forget <dot-id> <memory-id>")
@@ -360,27 +422,21 @@ func memoryCommand(db *store.Store, args []string) error {
 	if err := fs.Parse(flags); err != nil || len(positional) < 1 {
 		return usage
 	}
-	conversation, ok := conversationFor(db, positional[0])
-	if !ok {
-		return errors.New("Dot not found")
-	}
-	scope := dotScope(conversation.ID)
-	// The Dot's own granted server (and token) is the only route; one Dot can
-	// never pick up another Dot's connection.
-	var server task.MCPServer
-	for _, grant := range conversation.MCPToolGrants {
-		if found, ok := findServer(db, grant.ServerID); ok {
-			server = found
-			break
-		}
-	}
-	if server.ID == "" {
-		return errors.New("this Dot has no Midnight connection; run `aether midnight enable`")
-	}
-	options, err := db.MCPConnectOptions(server.ID)
+	snapshot, err := db.SnapshotChecked()
 	if err != nil {
 		return err
 	}
+	var conversation task.Conversation
+	found := false
+	for _, candidate := range snapshot.Conversations {
+		if candidate.ID == positional[0] {
+			conversation, found = candidate, true
+		}
+	}
+	if !found {
+		return errors.New("Dot not found")
+	}
+	scope := dotScope(conversation.ID)
 	var tool string
 	call := map[string]any{"scope": scope}
 	switch args[0] {
@@ -424,6 +480,14 @@ func memoryCommand(db *store.Store, args []string) error {
 	default:
 		return usage
 	}
+	server, err := midnightServerFor(conversation, snapshot.MCPServers, tool)
+	if err != nil {
+		return err
+	}
+	options, err := db.MCPConnectOptions(server.ID)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	session, err := mcpclient.Connect(ctx, cliVersion, server.Endpoint, options...)
@@ -461,7 +525,10 @@ func doctorCommand(db *store.Store, dataDir string) error {
 	if recoverErr != nil {
 		return fmt.Errorf("check for interrupted runs: %w", recoverErr)
 	}
-	snapshot := db.Snapshot()
+	snapshot, snapErr := db.SnapshotChecked()
+	if snapErr != nil {
+		return snapErr
+	}
 	running, paused, waiting := 0, 0, 0
 	for _, dot := range snapshot.Dots {
 		switch dot.Status {
