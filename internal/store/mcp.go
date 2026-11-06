@@ -335,3 +335,31 @@ func oneOf(value string, choices ...string) bool {
 	}
 	return false
 }
+
+// SetConversationMCPGrants replaces one Dot conversation's MCP tool grants.
+// It applies the same validation, fingerprint, Space-binding, and model-data
+// disclosure rules as the Desktop profile editor. Passing no grants revokes all.
+func (s *Store) SetConversationMCPGrants(conversationID string, grants []task.MCPToolGrant, disclosureAccepted bool) error {
+	return s.change(func(db *task.Database) error {
+		ci := conversationIndex(db, conversationID)
+		if ci < 0 {
+			return errors.New("Dot not found")
+		}
+		validated, err := validateMCPToolGrants(db, grants)
+		if err != nil {
+			return err
+		}
+		if len(validated) > 0 && !disclosureAccepted {
+			return errors.New("acknowledge that MCP tool inputs and returned data may be sent to the configured model before granting access")
+		}
+		conversation := &db.Conversations[ci]
+		conversation.MCPToolGrants = validated
+		conversation.MCPGrantSpaceID = ""
+		conversation.MCPModelDisclosureAccepted = len(validated) > 0 && disclosureAccepted
+		if len(validated) > 0 {
+			conversation.MCPGrantSpaceID = conversation.SpaceID
+		}
+		conversation.UpdatedAt = time.Now().UTC()
+		return nil
+	})
+}

@@ -23,6 +23,10 @@ type Store struct {
 	path    string
 	db      task.Database
 	lease   *os.File
+	// seen identifies the on-disk bytes this process last read or wrote, so a
+	// second process (Desktop or CLI) sharing the folder is detected and merged
+	// instead of overwritten.
+	seen [sha256.Size]byte
 }
 
 func DefaultDataDir() (string, error) {
@@ -41,6 +45,11 @@ func Open(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
 	path := filepath.Join(dir, "dots.json")
+	unlock, err := lockStoreFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		s := &Store{path: path, db: task.Database{SchemaVersion: task.SchemaVersion}}
@@ -64,7 +73,7 @@ func Open(dir string) (*Store, error) {
 	if err := verifyEvents(db); err != nil {
 		return nil, fmt.Errorf("task event history failed integrity check: %w", err)
 	}
-	store := &Store{path: path, db: db}
+	store := &Store{path: path, db: db, seen: sha256.Sum256(b)}
 	if db.SchemaVersion < task.SchemaVersion {
 		if db.SchemaVersion < 7 {
 			// MCP connections and Dot-specific model overrides are opt-in. No
@@ -122,9 +131,35 @@ func Open(dir string) (*Store, error) {
 }
 
 func (s *Store) Snapshot() task.Database {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.reloadLocked()
 	return cloneDatabase(s.db)
+}
+
+// reloadLocked adopts another process's committed changes. Callers hold s.mu.
+func (s *Store) reloadLocked() error {
+	b, err := os.ReadFile(s.path)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(b)
+	if sum == s.seen {
+		return nil
+	}
+	var db task.Database
+	if err := json.Unmarshal(b, &db); err != nil {
+		return fmt.Errorf("decode task store: %w", err)
+	}
+	if db.SchemaVersion < task.SchemaVersion || db.SchemaVersion > task.SchemaVersion {
+		return fmt.Errorf("task store schema changed to %d while running (expected %d)", db.SchemaVersion, task.SchemaVersion)
+	}
+	if err := verifyEvents(db); err != nil {
+		return fmt.Errorf("task event history failed integrity check: %w", err)
+	}
+	s.db = db
+	s.seen = sum
+	return nil
 }
 
 func (s *Store) CreateSpace(name string) (task.Space, error) {
@@ -262,6 +297,14 @@ func (s *Store) SetCheckpoint(id, checkpoint string) error {
 func (s *Store) change(fn func(*task.Database) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, err := lockStoreFile(s.path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
 	next := cloneDatabase(s.db)
 	if err := fn(&next); err != nil {
 		return err
@@ -302,6 +345,7 @@ func (s *Store) persist(db task.Database) error {
 	if err := os.Rename(name, s.path); err != nil {
 		return fmt.Errorf("commit task store: %w", err)
 	}
+	s.seen = sha256.Sum256(b)
 	return nil
 }
 

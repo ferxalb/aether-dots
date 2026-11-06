@@ -3,7 +3,6 @@ package desktopui
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	mcpclient "aether-dots/internal/integrations/mcp"
 	"aether-dots/internal/task"
 	"github.com/egoist/mygo/ui"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func (a *app) mcpIntegrationCard(c *ui.Context, theme *ui.Theme) {
@@ -130,7 +128,7 @@ func (a *app) refreshMCPServerTools(id string) {
 			if listErr != nil {
 				err = listErr
 			} else {
-				tools, err = convertMCPTools(remoteTools)
+				tools, err = mcpclient.ConvertTools(remoteTools)
 			}
 			_ = session.Close()
 		}
@@ -155,35 +153,6 @@ func (a *app) refreshMCPServerTools(id string) {
 		}
 		win.Update(finish)
 	}()
-}
-
-func convertMCPTools(remoteTools []*mcpsdk.Tool) ([]task.MCPTool, error) {
-	if len(remoteTools) > task.MaxMCPServerTools {
-		return nil, fmt.Errorf("MCP server exposes more than %d tools", task.MaxMCPServerTools)
-	}
-	tools := make([]task.MCPTool, 0, len(remoteTools))
-	for _, remote := range remoteTools {
-		if remote == nil {
-			return nil, errors.New("MCP server returned an empty tool definition")
-		}
-		schemaJSON, err := json.Marshal(remote.InputSchema)
-		if err != nil || len(schemaJSON) > task.MaxMCPToolSchemaBytes {
-			return nil, fmt.Errorf("MCP tool %q has an invalid or oversized input schema", remote.Name)
-		}
-		var schema map[string]any
-		if err := json.Unmarshal(schemaJSON, &schema); err != nil || schema == nil {
-			return nil, fmt.Errorf("MCP tool %q has an invalid input schema", remote.Name)
-		}
-		description := strings.TrimSpace(remote.Description)
-		tool := task.MCPTool{Name: remote.Name, Description: description, InputSchema: schema}
-		fingerprint, err := task.MCPToolFingerprint(tool)
-		if err != nil {
-			return nil, fmt.Errorf("MCP tool %q cannot be granted: %w", remote.Name, err)
-		}
-		tool.Fingerprint = fingerprint
-		tools = append(tools, tool)
-	}
-	return tools, nil
 }
 
 func mcpGrantingConversationCount(snapshot task.Database, serverID string) int {
