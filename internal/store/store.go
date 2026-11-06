@@ -132,11 +132,26 @@ func Open(dir string) (*Store, error) {
 	return store, nil
 }
 
+// Snapshot is best effort for display: if another process left the store
+// unreadable it returns the last good state. Anything that makes a security
+// decision (grants, servers, tokens) must use SnapshotChecked instead.
 func (s *Store) Snapshot() task.Database {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_ = s.reloadLocked()
 	return cloneDatabase(s.db)
+}
+
+// SnapshotChecked returns the current committed state, or an error when the
+// store cannot be re-read (corrupt, schema changed, failed integrity check).
+// Callers fail closed rather than act on a stale view of grants or servers.
+func (s *Store) SnapshotChecked() (task.Database, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.reloadLocked(); err != nil {
+		return task.Database{}, fmt.Errorf("task store is unavailable: %w", err)
+	}
+	return cloneDatabase(s.db), nil
 }
 
 // reloadLocked adopts another process's committed changes. Callers hold s.mu.
