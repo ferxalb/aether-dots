@@ -149,6 +149,7 @@ func TestRecoverInterruptedConversationRun(t *testing.T) {
 	if err := db.SetStatus(dot.ID, task.Running, "Started."); err != nil {
 		t.Fatal(err)
 	}
+	simulateCrash(db, dot.ID)
 	recovered, err := db.RecoverInterruptedRuns()
 	if err != nil || recovered != 1 {
 		t.Fatalf("recovered=%d err=%v", recovered, err)

@@ -446,28 +446,12 @@ func (s *Store) AppendConversationResult(conversationID, dotID, report string) e
 	})
 }
 
-// RecoverInterruptedRuns marks conversation Dots that were running when the
-// desktop app last exited. It assumes the desktop is the sole live writer for
-// its data directory; CLI reads do not call this method.
+// RecoverInterruptedRuns pauses conversation Dots whose owning process is gone
+// (see runlease.go). Dots running in any live Desktop or CLI process keep their
+// state, so starting Desktop never interrupts an active CLI run.
 func (s *Store) RecoverInterruptedRuns() (int, error) {
-	count := 0
-	err := s.change(func(next *task.Database) error {
-		for i := range next.Dots {
-			dot := &next.Dots[i]
-			if dot.ConversationID == "" || dot.Status != task.Running {
-				continue
-			}
-			dot.Status = task.Paused
-			dot.UpdatedAt = time.Now().UTC()
-			if dot.Checkpoint == "" {
-				dot.Checkpoint = "previous app session ended; retry this message"
-			}
-			appendEvent(dot, "interrupted", "Previous app session ended before the response completed.")
-			count++
-		}
-		return nil
-	})
-	return count, err
+	recovered, _, err := s.RecoverOrphanedRuns()
+	return recovered, err
 }
 
 func conversationIndex(db *task.Database, id string) int {

@@ -52,7 +52,7 @@ func WithMCPTools(ctx context.Context, db *store.Store, dotID string, provider m
 				discoveries[index].err = ctx.Err()
 				return
 			}
-			discoveries[index] = discoverMCPServerTools(ctx, servers[index])
+			discoveries[index] = discoverMCPServerTools(ctx, db, servers[index])
 		}(i)
 	}
 	wait.Wait()
@@ -111,9 +111,13 @@ type mcpServerDiscovery struct {
 	err            error
 }
 
-func discoverMCPServerTools(ctx context.Context, server task.MCPServer) mcpServerDiscovery {
+func discoverMCPServerTools(ctx context.Context, db *store.Store, server task.MCPServer) mcpServerDiscovery {
+	options, err := db.MCPConnectOptions(server.ID)
+	if err != nil {
+		return mcpServerDiscovery{err: err}
+	}
 	connectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	session, err := mcpclient.Connect(connectCtx, "0.1.0", server.Endpoint)
+	session, err := mcpclient.Connect(connectCtx, "0.1.0", server.Endpoint, options...)
 	cancel()
 	if err != nil {
 		return mcpServerDiscovery{err: err}

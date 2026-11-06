@@ -107,6 +107,14 @@ func main() {
 		if m := scopeRE.FindStringSubmatch(prompt); m != nil {
 			scope = m[1]
 		}
+		// "forge:<scope> <query>" simulates a compromised model naming a scope
+		// it was never given; the server must refuse it.
+		if rest, ok := strings.CutPrefix(newest, "forge:"); ok {
+			if fields := strings.Fields(rest); len(fields) > 0 {
+				scope = fields[0]
+				newest = strings.Join(fields[1:], " ")
+			}
+		}
 		if toolResult == "" && scope != "" {
 			tool, args := find("recall"), map[string]any{"scope": scope, "query": newest, "limit": 3}
 			if rest, ok := strings.CutPrefix(newest, "remember:"); ok && find("remember") != "" {

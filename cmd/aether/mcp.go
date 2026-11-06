@@ -6,6 +6,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -30,7 +32,7 @@ const scopeMarker = "Midnight memory scope:"
 func dotScope(conversationID string) string { return "dot:" + conversationID }
 
 func mcpCommand(db *store.Store, args []string) error {
-	usage := errors.New("usage: aether mcp [list|add <name> <endpoint>|refresh <server-id>|remove <server-id>|grant <dot-id> <server-id> <tool>...|revoke <dot-id>]")
+	usage := errors.New("usage: aether mcp [list|add <name> <endpoint> [--token-file F|--token-stdin]|refresh <server-id>|remove <server-id>|grant <dot-id> <server-id> <tool>...|revoke <dot-id>]")
 	if len(args) == 0 {
 		return usage
 	}
@@ -46,10 +48,17 @@ func mcpCommand(db *store.Store, args []string) error {
 		}
 		return nil
 	case "add":
-		if len(args) != 3 {
+		positional, flags := splitFlags(args[1:])
+		fs := flag.NewFlagSet("mcp add", flag.ContinueOnError)
+		tokenFile, tokenStdin := tokenFlags(fs)
+		if err := fs.Parse(flags); err != nil || len(positional) != 2 {
 			return usage
 		}
-		server, err := addAndDiscover(db, args[1], args[2])
+		token, err := readToken(*tokenFile, *tokenStdin)
+		if err != nil {
+			return err
+		}
+		server, err := addAndDiscover(db, positional[0], positional[1], token)
 		if err != nil {
 			return err
 		}
@@ -116,10 +125,37 @@ func isBoolFlag(name string) bool {
 	return false
 }
 
-func discoverTools(ctx context.Context, endpoint string) ([]task.MCPTool, error) {
+func tokenFlags(fs *flag.FlagSet) (*string, *bool) {
+	return fs.String("token-file", "", "file holding the Midnight bearer token (never pass tokens as arguments)"),
+		fs.Bool("token-stdin", false, "read the Midnight bearer token from standard input")
+}
+
+// readToken reads a bearer token from a file or stdin; secrets are never
+// accepted as command-line arguments because argv is visible to other users.
+func readToken(file string, stdin bool) (string, error) {
+	switch {
+	case file != "" && stdin:
+		return "", errors.New("use either --token-file or --token-stdin, not both")
+	case file != "":
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("read token file: %w", err)
+		}
+		return strings.TrimSpace(string(raw)), nil
+	case stdin:
+		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(raw)), nil
+	}
+	return "", nil
+}
+
+func discoverTools(ctx context.Context, endpoint string, options ...mcpclient.Option) ([]task.MCPTool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	session, err := mcpclient.Connect(ctx, cliVersion, endpoint)
+	session, err := mcpclient.Connect(ctx, cliVersion, endpoint, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +167,25 @@ func discoverTools(ctx context.Context, endpoint string) ([]task.MCPTool, error)
 	return mcpclient.ConvertTools(remote)
 }
 
-func addAndDiscover(db *store.Store, name, endpoint string) (task.MCPServer, error) {
+// addAndDiscover registers a server and validates it. A server that cannot be
+// reached or authenticated is not left half-configured.
+func addAndDiscover(db *store.Store, name, endpoint, token string) (task.MCPServer, error) {
 	server, err := db.AddMCPServer(name, endpoint)
 	if err != nil {
 		return server, err
 	}
-	return refreshServer(db, server.ID)
+	if token != "" {
+		if err := db.SetMCPToken(server.ID, token); err != nil {
+			_ = db.RemoveMCPServer(server.ID)
+			return server, err
+		}
+	}
+	refreshed, err := refreshServer(db, server.ID)
+	if err != nil {
+		_ = db.RemoveMCPServer(server.ID)
+		return server, err
+	}
+	return refreshed, nil
 }
 
 func findServer(db *store.Store, id string) (task.MCPServer, bool) {
@@ -153,7 +202,11 @@ func refreshServer(db *store.Store, id string) (task.MCPServer, error) {
 	if !ok {
 		return server, errors.New("MCP server not found")
 	}
-	tools, err := discoverTools(context.Background(), server.Endpoint)
+	options, err := db.MCPConnectOptions(server.ID)
+	if err != nil {
+		return server, err
+	}
+	tools, err := discoverTools(context.Background(), server.Endpoint, options...)
 	if err != nil {
 		return server, fmt.Errorf("could not refresh %s: %w", server.Name, err)
 	}
@@ -209,7 +262,7 @@ func conversationFor(db *store.Store, id string) (task.Conversation, bool) {
 
 // midnightCommand wires a Dot to a user-started loopback Midnight server.
 func midnightCommand(db *store.Store, args []string) error {
-	usage := errors.New("usage: aether midnight enable <dot-id> --endpoint http://127.0.0.1:<port>/mcp --accept-model-disclosure [--code] [--forget]")
+	usage := errors.New("usage: aether midnight enable <dot-id> --endpoint http://127.0.0.1:<port>/mcp --token-file F|--token-stdin --accept-model-disclosure [--code] [--forget]")
 	if len(args) < 2 || args[0] != "enable" {
 		return usage
 	}
@@ -219,8 +272,16 @@ func midnightCommand(db *store.Store, args []string) error {
 	accept := fs.Bool("accept-model-disclosure", false, "acknowledge memories and code snippets may be sent to the Dot's model provider")
 	code := fs.Bool("code", false, "also grant read-only code retrieval tools")
 	forget := fs.Bool("forget", false, "also grant the forget tool")
+	tokenFile, tokenStdin := tokenFlags(fs)
 	if err := fs.Parse(flags); err != nil || len(positional) != 1 || *endpoint == "" {
 		return usage
+	}
+	token, err := readToken(*tokenFile, *tokenStdin)
+	if err != nil {
+		return err
+	}
+	if token == "" {
+		return errors.New("a Midnight token is required: run `aether-midnight token create --name dot-<id> --memory-scope dot:<id>` and pass it with --token-file or --token-stdin")
 	}
 	conversation, ok := conversationFor(db, positional[0])
 	if !ok {
@@ -230,18 +291,36 @@ func midnightCommand(db *store.Store, args []string) error {
 	if err != nil {
 		return err
 	}
+	// One server record per Dot: the path label keeps each Dot's token, tool
+	// catalog and grants separate from every other Dot using the same Midnight.
+	label := "/dot-" + conversation.ID
+	if !strings.HasSuffix(normalized, label) {
+		normalized += label
+	}
 	var server task.MCPServer
 	for _, existing := range db.Snapshot().MCPServers {
 		if existing.Endpoint == normalized {
 			server = existing
 		}
 	}
+	created := false
 	if server.ID == "" {
-		if server, err = db.AddMCPServer("Midnight", normalized); err != nil {
+		if server, err = db.AddMCPServer("Midnight dot-"+conversation.ID, normalized); err != nil {
 			return err
 		}
+		created = true
 	}
-	if server, err = refreshServer(db, server.ID); err != nil {
+	previous, _ := mcpclient.LoadToken(db.Dir(), server.ID)
+	if err = db.SetMCPToken(server.ID, token); err == nil {
+		server, err = refreshServer(db, server.ID)
+	}
+	if err != nil {
+		// Roll back so a bad token does not leave a dead server record behind.
+		if created {
+			_ = db.RemoveMCPServer(server.ID)
+		} else if previous != "" {
+			_ = db.SetMCPToken(server.ID, previous)
+		}
 		return err
 	}
 	tools := append([]string(nil), midnightMemoryTools...)
@@ -263,19 +342,17 @@ func midnightCommand(db *store.Store, args []string) error {
 		}
 	}
 	fmt.Printf("Dot %s can use Midnight tools [%s] on scope %s\n", conversation.ID, strings.Join(tools, ", "), dotScope(conversation.ID))
-	fmt.Printf("Run Midnight with: aether-midnight serve-http --memory-scope %s\n", dotScope(conversation.ID))
 	return nil
 }
 
 // memoryCommand performs user-initiated memory operations against Midnight.
 func memoryCommand(db *store.Store, args []string) error {
-	usage := errors.New("usage: aether memory <remember|recall|list|forget> <dot-id> [--endpoint URL] ...\n  remember <dot-id> <text> [--derived] [--supersedes <id>] [--source-uri URI]\n  recall <dot-id> <query> [--limit N]\n  list <dot-id>\n  forget <dot-id> <memory-id>")
+	usage := errors.New("usage: aether memory <remember|recall|list|forget> <dot-id> ...\n  remember <dot-id> <text> [--derived] [--supersedes <id>] [--source-uri URI]\n  recall <dot-id> <query> [--limit N]\n  list <dot-id>\n  forget <dot-id> <memory-id>")
 	if len(args) < 2 {
 		return usage
 	}
 	positional, flags := splitFlags(args[1:])
 	fs := flag.NewFlagSet("memory", flag.ContinueOnError)
-	endpoint := fs.String("endpoint", "", "Midnight endpoint (default: the connected server that offers recall)")
 	supersedes := fs.Int64("supersedes", 0, "memory id this fact replaces")
 	sourceURI := fs.String("source-uri", "", "provenance URI for the memory")
 	limit := fs.Int("limit", 5, "maximum recall results")
@@ -288,18 +365,21 @@ func memoryCommand(db *store.Store, args []string) error {
 		return errors.New("Dot not found")
 	}
 	scope := dotScope(conversation.ID)
-	target := *endpoint
-	if target == "" {
-		for _, server := range db.Snapshot().MCPServers {
-			for _, tool := range server.Tools {
-				if tool.Name == "recall" {
-					target = server.Endpoint
-				}
-			}
+	// The Dot's own granted server (and token) is the only route; one Dot can
+	// never pick up another Dot's connection.
+	var server task.MCPServer
+	for _, grant := range conversation.MCPToolGrants {
+		if found, ok := findServer(db, grant.ServerID); ok {
+			server = found
+			break
 		}
 	}
-	if target == "" {
-		return errors.New("no Midnight server connected; run `aether midnight enable` or pass --endpoint")
+	if server.ID == "" {
+		return errors.New("this Dot has no Midnight connection; run `aether midnight enable`")
+	}
+	options, err := db.MCPConnectOptions(server.ID)
+	if err != nil {
+		return err
 	}
 	var tool string
 	call := map[string]any{"scope": scope}
@@ -346,7 +426,7 @@ func memoryCommand(db *store.Store, args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	session, err := mcpclient.Connect(ctx, cliVersion, target)
+	session, err := mcpclient.Connect(ctx, cliVersion, server.Endpoint, options...)
 	if err != nil {
 		return err
 	}
@@ -375,6 +455,12 @@ func memoryCommand(db *store.Store, args []string) error {
 
 // doctorCommand reports local state and probes each connected Midnight server.
 func doctorCommand(db *store.Store, dataDir string) error {
+	// Runs whose owner process died are paused so they can be retried; runs
+	// owned by a live Desktop or CLI process are reported and left alone.
+	recovered, live, recoverErr := db.RecoverOrphanedRuns()
+	if recoverErr != nil {
+		return fmt.Errorf("check for interrupted runs: %w", recoverErr)
+	}
 	snapshot := db.Snapshot()
 	running, paused, waiting := 0, 0, 0
 	for _, dot := range snapshot.Dots {
@@ -389,16 +475,25 @@ func doctorCommand(db *store.Store, dataDir string) error {
 	}
 	fmt.Printf("data dir:    %s\nschema:      %d\nspaces:      %d\ndots:        %d\nmessages:    running=%d paused=%d waiting=%d\n",
 		dataDir, snapshot.SchemaVersion, len(snapshot.Spaces), len(snapshot.Conversations), running, paused, waiting)
+	fmt.Printf("runs:        recovered=%d (owner process gone) active-elsewhere=%d\n", recovered, live)
 	provider := model.NewProvider(model.FromEnvironment())
 	ready, reason := provider.Readiness()
 	fmt.Printf("model:       %s ready=%v %s\n", provider.Description(), ready, reason)
 	problems := 0
 	for _, server := range snapshot.MCPServers {
 		start := time.Now()
-		tools, err := discoverTools(context.Background(), server.Endpoint)
+		options, err := db.MCPConnectOptions(server.ID)
+		var tools []task.MCPTool
+		if err == nil {
+			tools, err = discoverTools(context.Background(), server.Endpoint, options...)
+		}
 		if err != nil {
 			problems++
-			fmt.Printf("mcp %-10s UNREACHABLE %s (%v)\n", server.Name, server.Endpoint, err)
+			state := "UNREACHABLE"
+			if errors.Is(err, mcpclient.ErrUnauthorized) {
+				state = "REJECTED"
+			}
+			fmt.Printf("mcp %s %s %s (%v)\n", server.Name, state, server.Endpoint, err)
 			continue
 		}
 		stale := len(tools) != len(server.Tools)

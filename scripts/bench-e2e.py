@@ -28,7 +28,7 @@ def cpu_ticks(pid):
     f = open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split(); return int(f[11]) + int(f[12])
 
 t0 = time.perf_counter()
-mid, murl = start([MID, "--db", f"{work}/m.db", "serve-http", "--memory-scope", "dot:*"])
+mid, murl = start([MID, "--db", f"{work}/m.db", "serve-http"])
 startup_ms = (time.perf_counter() - t0) * 1000
 llm, lurl = start([LLM])
 env = dict(os.environ, AETHER_MODEL_PROVIDER="openai-compatible", AETHER_MODEL_BASE_URL=lurl, AETHER_MODEL_NAME="mock")
@@ -37,16 +37,22 @@ A = [AE, "--data-dir", f"{work}/dots"]
 def cli(*a):
     return subprocess.run(A + list(a), env=env, capture_output=True, text=True, check=True).stdout
 
+TOKEN = ""
+
 def rpc(method, params, i=1):
     req = urllib.request.Request(murl, json.dumps({"jsonrpc": "2.0", "id": i, "method": method, "params": params}).encode(),
-                                 {"content-type": "application/json"})
+                                 {"content-type": "application/json", "authorization": f"Bearer {TOKEN}"})
     return json.load(urllib.request.urlopen(req))
 
 def mk_dot(name):
     return re.search(r"\(([0-9a-f]+)\)", cli("create", "--name", name)).group(1)
 
 dot = mk_dot("Bench")
-cli("midnight", "enable", dot, "--endpoint", murl, "--accept-model-disclosure")
+tokfile = f"{work}/bench.token"
+TOKEN = subprocess.run([MID, "--db", f"{work}/m.db", "token", "create", "--name", "bench", "--memory-scope", f"dot:{dot}",
+                        "--tools", "recall,remember,remember_batch,list_memories"], capture_output=True, text=True, check=True).stdout.strip()
+os.umask(0o077); open(tokfile, "w").write(TOKEN)
+cli("midnight", "enable", dot, "--endpoint", murl, "--token-file", tokfile, "--accept-model-disclosure")
 plain = mk_dot("NoTools")
 scope = f"dot:{dot}"
 words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango".split()

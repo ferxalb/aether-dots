@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -19,6 +20,9 @@ import (
 
 const implementationName = "aether-dots"
 const maxMCPHTTPResponseBytes = 2 << 20
+
+// ErrUnauthorized means the server answered but rejected (or lacked) credentials.
+var ErrUnauthorized = errors.New("MCP server rejected the credentials (HTTP 401/403): the token is missing, revoked, or expired")
 
 var ErrToolListLimitExceeded = errors.New("MCP tool list exceeded the configured limit")
 
@@ -71,7 +75,23 @@ type Session struct {
 	client  *http.Client
 }
 
-func Connect(ctx context.Context, version, endpoint string) (*Session, error) {
+// Option customises Connect.
+type Option func(*connectOptions)
+
+type connectOptions struct{ bearer string }
+
+// WithBearer authenticates every request to the configured endpoint with a
+// bearer token. The token is attached only by this client's transport, never
+// logged, and never forwarded because redirects are disabled.
+func WithBearer(token string) Option {
+	return func(o *connectOptions) { o.bearer = strings.TrimSpace(token) }
+}
+
+func Connect(ctx context.Context, version, endpoint string, opts ...Option) (*Session, error) {
+	var options connectOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -82,7 +102,9 @@ func Connect(ctx context.Context, version, endpoint string) (*Session, error) {
 	if version == "" {
 		version = "dev"
 	}
-	client := loopbackHTTPClient(endpoint)
+	status := &statusRecorder{}
+	client := loopbackHTTPClient(endpoint, options.bearer)
+	client.Transport = statusTransport{base: client.Transport, status: status}
 	transport := &mcpsdk.StreamableClientTransport{
 		Endpoint: endpoint, HTTPClient: client,
 		MaxRetries: -1, DisableStandaloneSSE: true,
@@ -93,6 +115,10 @@ func Connect(ctx context.Context, version, endpoint string) (*Session, error) {
 	session, err := NewClient(version).Connect(connectCtx, transport, nil)
 	if err != nil {
 		client.CloseIdleConnections()
+		switch status.last.Load() {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return nil, ErrUnauthorized
+		}
 		return nil, errors.New("could not connect to the loopback MCP server")
 	}
 	return &Session{session: session, client: client}, nil
@@ -141,7 +167,7 @@ func (s *Session) Close() error {
 	return err
 }
 
-func loopbackHTTPClient(endpoint string) *http.Client {
+func loopbackHTTPClient(endpoint, bearer string) *http.Client {
 	u, _ := url.Parse(endpoint)
 	allowedHost := u.Hostname()
 	allowedPort := u.Port()
@@ -156,9 +182,39 @@ func loopbackHTTPClient(endpoint string) *http.Client {
 		}
 		return (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network, address)
 	}}
-	return &http.Client{Transport: limitedResponseTransport{base: baseTransport, limit: maxMCPHTTPResponseBytes}, CheckRedirect: func(*http.Request, []*http.Request) error {
+	var transport http.RoundTripper = limitedResponseTransport{base: baseTransport, limit: maxMCPHTTPResponseBytes}
+	if bearer != "" {
+		transport = bearerTransport{base: transport, token: bearer}
+	}
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return errors.New("MCP endpoint redirects are disabled")
 	}}
+}
+
+type statusRecorder struct{ last atomic.Int32 }
+
+type statusTransport struct {
+	base   http.RoundTripper
+	status *statusRecorder
+}
+
+func (t statusTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.base.RoundTrip(request)
+	if err == nil {
+		t.status.last.Store(int32(response.StatusCode))
+	}
+	return response, err
+}
+
+type bearerTransport struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(clone)
 }
 
 type limitedResponseTransport struct {

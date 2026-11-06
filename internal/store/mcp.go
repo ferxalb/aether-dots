@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -40,7 +41,37 @@ func (s *Store) AddMCPServer(name, endpoint string) (task.MCPServer, error) {
 	return server, err
 }
 
+// Dir returns the data directory shared by Desktop and the CLI.
+func (s *Store) Dir() string { return filepath.Dir(s.path) }
+
+// MCPConnectOptions returns the connection options for a configured server,
+// attaching its saved bearer token when one exists. A token the user saved
+// must be usable or the connection fails; silently dropping it would turn an
+// authorization problem into a confusing outage.
+func (s *Store) MCPConnectOptions(serverID string) ([]mcp.Option, error) {
+	token, err := mcp.LoadToken(s.Dir(), serverID)
+	if err != nil {
+		return nil, err
+	}
+	if token == "" {
+		return nil, nil
+	}
+	return []mcp.Option{mcp.WithBearer(token)}, nil
+}
+
+// SetMCPToken stores the bearer token for a configured server outside dots.json.
+func (s *Store) SetMCPToken(serverID, token string) error {
+	return mcp.SaveToken(s.Dir(), serverID, token)
+}
+
 func (s *Store) RemoveMCPServer(id string) error {
+	if err := s.removeMCPServer(id); err != nil {
+		return err
+	}
+	return mcp.DeleteToken(s.Dir(), id)
+}
+
+func (s *Store) removeMCPServer(id string) error {
 	return s.change(func(db *task.Database) error {
 		index := -1
 		for i := range db.MCPServers {

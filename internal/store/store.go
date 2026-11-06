@@ -23,6 +23,8 @@ type Store struct {
 	path    string
 	db      task.Database
 	lease   *os.File
+	// runLeases holds the per-Dot run ownership locks this process owns.
+	runLeases map[string]*os.File
 	// seen identifies the on-disk bytes this process last read or wrote, so a
 	// second process (Desktop or CLI) sharing the folder is detected and merged
 	// instead of overwritten.
@@ -270,6 +272,21 @@ func (s *Store) AppendEvent(id, kind, message string) error {
 }
 
 func (s *Store) SetStatus(id string, status task.Status, message string) error {
+	if status == task.Running {
+		// Claim ownership before the status flips so two processes can never
+		// both believe they are running the same Dot.
+		if err := s.acquireRunLease(id); err != nil {
+			return err
+		}
+	}
+	err := s.setStatus(id, status, message)
+	if status != task.Running || err != nil {
+		s.releaseRunLease(id)
+	}
+	return err
+}
+
+func (s *Store) setStatus(id string, status task.Status, message string) error {
 	return s.change(func(db *task.Database) error {
 		i := dotIndex(db, id)
 		if i < 0 {

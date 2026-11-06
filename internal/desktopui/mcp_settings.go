@@ -121,7 +121,11 @@ func (a *app) refreshMCPServerTools(id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	go func() {
 		defer cancel()
-		session, err := mcpclient.Connect(ctx, "0.1.0", server.Endpoint)
+		options, err := a.db.MCPConnectOptions(server.ID)
+		var session *mcpclient.Session
+		if err == nil {
+			session, err = mcpclient.Connect(ctx, "0.1.0", server.Endpoint, options...)
+		}
 		var tools []task.MCPTool
 		if err == nil {
 			remoteTools, listErr := session.ListTools(ctx)

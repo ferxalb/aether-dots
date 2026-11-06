@@ -163,6 +163,11 @@ func sendCommand(db *store.Store, args []string) error {
 	if len(positional) != 1 || strings.TrimSpace(*message) == "" {
 		return errors.New("usage: aether send <dot-id> --message <text>")
 	}
+	// A previous CLI/Desktop process that crashed mid-run must not block the
+	// conversation; runs owned by live processes are left alone.
+	if _, _, err := db.RecoverOrphanedRuns(); err != nil {
+		return err
+	}
 	dot, _, err := db.CreateConversationRun(positional[0], *message)
 	if err != nil {
 		return err
