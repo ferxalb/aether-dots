@@ -40,7 +40,16 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 		return fail(db, dotID, errors.New("this legacy task has no Dot conversation and cannot be run"))
 	}
 	if dot.Status == task.Running {
-		return errors.New("Dot already has an active run")
+		// Running with no live owner means the previous process crashed.
+		if _, err := db.RecoverOrphanedRun(dotID); err != nil {
+			if errors.Is(err, store.ErrRunOwned) {
+				return errors.New("Dot already has an active run")
+			}
+			return err
+		}
+		if dot, ok = db.GetDot(dotID); !ok || dot.Status == task.Running {
+			return errors.New("Dot already has an active run")
+		}
 	}
 	if dot.Status == task.Done {
 		return errors.New("Dot message is already complete")

@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,6 +149,7 @@ func TestRecoverInterruptedConversationRun(t *testing.T) {
 	if err := db.SetStatus(dot.ID, task.Running, "Started."); err != nil {
 		t.Fatal(err)
 	}
+	simulateCrash(db, dot.ID)
 	recovered, err := db.RecoverInterruptedRuns()
 	if err != nil || recovered != 1 {
 		t.Fatalf("recovered=%d err=%v", recovered, err)
@@ -189,5 +191,60 @@ func TestSchemaV2MigrationStartsAutomationCollectionsEmpty(t *testing.T) {
 	snapshot := db.Snapshot()
 	if snapshot.SchemaVersion != task.SchemaVersion || len(snapshot.Skills) != 0 || len(snapshot.Routines) != 0 {
 		t.Fatalf("unexpected schema 2 migration: %#v", snapshot)
+	}
+}
+
+func TestTwoStoreHandlesMergeInsteadOfOverwriting(t *testing.T) {
+	dir := t.TempDir()
+	desktop, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := desktop.CreateSpace("From Desktop"); err != nil {
+		t.Fatal(err)
+	}
+	// The CLI handle has not seen the Desktop write yet; its own write must
+	// merge with it rather than replacing the file with a stale copy.
+	if _, err := cli.CreateSpace("From CLI"); err != nil {
+		t.Fatal(err)
+	}
+	for _, handle := range []*Store{desktop, cli} {
+		names := map[string]bool{}
+		for _, space := range handle.Snapshot().Spaces {
+			names[space.Name] = true
+		}
+		if !names["From Desktop"] || !names["From CLI"] || !names["Personal"] {
+			t.Fatalf("lost update across handles: %v", names)
+		}
+	}
+}
+
+func TestConcurrentHandlesNeverLoseSpaces(t *testing.T) {
+	dir := t.TempDir()
+	const writers, each = 4, 5
+	done := make(chan error, writers)
+	for w := 0; w < writers; w++ {
+		go func(w int) {
+			handle, err := Open(dir)
+			if err == nil {
+				for i := 0; i < each && err == nil; i++ {
+					_, err = handle.CreateSpace(fmt.Sprintf("w%d-%d", w, i))
+				}
+			}
+			done <- err
+		}(w)
+	}
+	for w := 0; w < writers; w++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	handle, _ := Open(dir)
+	if got := len(handle.Snapshot().Spaces); got != 1+writers*each {
+		t.Fatalf("expected %d spaces, got %d", 1+writers*each, got)
 	}
 }

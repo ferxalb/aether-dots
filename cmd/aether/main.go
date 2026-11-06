@@ -75,6 +75,17 @@ func run(args []string) error {
 		return routinesCommand(db, args[1:])
 	case "github":
 		return githubCommand(db, args[1:])
+	case "mcp":
+		return mcpCommand(db, args[1:])
+	case "midnight":
+		return midnightCommand(db, args[1:])
+	case "memory":
+		return memoryCommand(db, args[1:])
+	case "doctor", "status":
+		return doctorCommand(db, *dataDir)
+	case "init":
+		fmt.Printf("Initialized AETHER Dots data at %s\nNext: aether create --name \"My Dot\"; aether model show; aether midnight enable <dot-id> --endpoint http://127.0.0.1:<port>/mcp --accept-model-disclosure\n", *dataDir)
+		return nil
 	default:
 		return fmt.Errorf("unknown command %q (try `aether help`)", args[0])
 	}
@@ -145,13 +156,19 @@ func createCommand(db *store.Store, args []string) error {
 func sendCommand(db *store.Store, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
 	message := fs.String("message", "", "message for the Dot")
-	if err := fs.Parse(args); err != nil {
+	positional, flags := splitFlags(args)
+	if err := fs.Parse(flags); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 || strings.TrimSpace(*message) == "" {
+	if len(positional) != 1 || strings.TrimSpace(*message) == "" {
 		return errors.New("usage: aether send <dot-id> --message <text>")
 	}
-	dot, _, err := db.CreateConversationRun(fs.Arg(0), *message)
+	// A previous CLI/Desktop process that crashed mid-run must not block the
+	// conversation; runs owned by live processes are left alone.
+	if _, _, err := db.RecoverOrphanedRuns(); err != nil {
+		return err
+	}
+	dot, _, err := db.CreateConversationRun(positional[0], *message)
 	if err != nil {
 		return err
 	}
@@ -161,7 +178,7 @@ func sendCommand(db *store.Store, args []string) error {
 func runMessage(db *store.Store, id string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	generator := cliGitHubGenerator(db, id, newGitHubService())
+	generator := interactiveGenerator(ctx, db, id)
 	if err := engine.Run(ctx, db, id, generator, func(delta string) { fmt.Print(delta) }); err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Println("\nReply paused. Retry the message when ready.")
@@ -212,8 +229,17 @@ func inspectCommand(db *store.Store, args []string) error {
 }
 
 func modelCommand(args []string) error {
+	if len(args) == 1 && args[0] == "show" {
+		provider := model.NewProvider(model.FromEnvironment())
+		ready, reason := provider.Readiness()
+		fmt.Printf("%s\nready: %v %s\n", provider.Description(), ready, reason)
+		if !ready {
+			return errors.New("model is not ready")
+		}
+		return nil
+	}
 	if len(args) != 1 || args[0] != "test" {
-		return errors.New("usage: aether model test")
+		return errors.New("usage: aether model [show|test]")
 	}
 	config := model.FromEnvironment()
 	provider := model.NewProvider(config)
@@ -254,7 +280,12 @@ Commands:
   inspect <dot-id>             Show a Dot profile and chat history
   run <message-id>              Retry a saved message
   spaces [list|create|rename]  Manage Spaces
-  model test                   Test the selected model provider
+  model [show|test]            Show readiness / test the selected model provider
+  init                         Create the data folder and show next steps
+  doctor | status              Report local state, model readiness, and Midnight reachability
+  mcp [list|add|refresh|remove|grant|revoke]  Manage user-run loopback MCP servers and per-Dot tool grants
+  midnight enable <dot-id> --endpoint URL --accept-model-disclosure  Connect a Dot to a Midnight server
+  memory [remember|recall|list|forget] <dot-id> ...  User-initiated Midnight memory operations (scope dot:<id>)
   skills [list|create|update|inspect|delete]  Manage reusable playbooks
   routines [list|create|update|pause|resume|test|inspect|delete|serve]  Manage schedules
   github [login|status|refresh|repositories|select|grant|revoke|disconnect]  Manage the read-only GitHub connection
