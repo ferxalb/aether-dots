@@ -176,7 +176,9 @@ func createTestConversation(t *testing.T, a *app, spaceID, name, purpose string)
 
 func clickUIControl(t *testing.T, tester *ui.Tester, label string, width, height int) {
 	t.Helper()
-	for attempt := 0; attempt < 10; attempt++ {
+	// Long forms (the Dot profile editor is ~2,100px tall) need many wheel
+	// steps at a small viewport, so allow enough of them to cover the page.
+	for attempt := 0; attempt < 60; attempt++ {
 		bounds, ok := tester.Find(label)
 		if !ok {
 			t.Fatalf("control %q is not present: %q", label, tester.Texts())
