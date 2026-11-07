@@ -139,15 +139,15 @@ func TestRunWithProgressPublishesModelPhases(t *testing.T) {
 	var checkpoints []string
 	err = RunWithProgress(context.Background(), db, dot.ID, &testGenerator{ready: true, reply: "Reply"}, nil, func() {
 		current, ok := db.GetDot(dot.ID)
-		if !ok || current.Status != task.Running {
-			t.Fatalf("progress callback ran before running status was persisted: %#v", current)
+		if !ok || (current.Status != task.Running && current.Status != task.Done) {
+			t.Fatalf("progress callback ran before status was persisted: %#v", current)
 		}
 		checkpoints = append(checkpoints, current.Checkpoint)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(checkpoints) != 3 || checkpoints[0] != "" || checkpoints[1] != "generating response" || checkpoints[2] != "" {
+	if len(checkpoints) != 2 || checkpoints[0] != "generating response" || checkpoints[1] != "" {
 		t.Fatalf("unexpected persisted phase notifications: %#v", checkpoints)
 	}
 }

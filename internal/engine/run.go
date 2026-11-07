@@ -67,12 +67,8 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 	if err != nil {
 		return fail(db, dotID, err)
 	}
-	if err := db.SetStatus(dotID, task.Running, "Preparing a reply from this Dot's profile and chat history."); err != nil {
+	if err := db.StartRun(dotID, "Preparing a reply from this Dot's profile and chat history.", "generating response"); err != nil {
 		return err
-	}
-	progress()
-	if err := db.SetCheckpoint(dotID, "generating response"); err != nil {
-		return fail(db, dotID, err)
 	}
 	progress()
 	startedAt := time.Now().UTC()
@@ -107,28 +103,28 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 		metrics.FirstTokenLatencyMillis = firstTokenAt.Sub(startedAt).Milliseconds()
 	}
 	timingMu.Unlock()
-	_ = db.SetRunMetrics(dotID, metrics)
 	if err != nil {
+		_ = db.SetRunMetrics(dotID, metrics)
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return pause(db, dotID)
 		}
 		return fail(db, dotID, err)
 	}
 	if err := ctx.Err(); err != nil {
+		_ = db.SetRunMetrics(dotID, metrics)
 		return pause(db, dotID)
 	}
 	response = strings.TrimSpace(response)
 	if response == "" {
+		_ = db.SetRunMetrics(dotID, metrics)
 		return fail(db, dotID, errors.New("model returned an empty response"))
 	}
-	if err := db.AppendConversationResult(dot.ConversationID, dotID, response); err != nil {
-		return fail(db, dotID, err)
-	}
-	if err := db.SetCheckpoint(dotID, ""); err != nil {
+	if err := db.CompleteRun(dot.ConversationID, dotID, response, metrics); err != nil {
+		_ = db.SetRunMetrics(dotID, metrics)
 		return fail(db, dotID, err)
 	}
 	progress()
-	return db.SetStatus(dotID, task.Done, "Reply saved in the Dot conversation.")
+	return nil
 }
 
 func estimatedTokens(bytes int) int64 {

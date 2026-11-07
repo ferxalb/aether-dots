@@ -29,6 +29,17 @@ type Store struct {
 	// second process (Desktop or CLI) sharing the folder is detected and merged
 	// instead of overwritten.
 	seen [sha256.Size]byte
+	// fp is a cheap file fingerprint (size, mtime, inode) of the bytes in
+	// s.db; when it is unchanged the file is not re-read or re-hashed.
+	fp fileFP
+	// verified records, per Dot, how many events passed chain verification
+	// and the hash of the last one, so reloads only verify new events.
+	verified map[string]verifiedChain
+}
+
+type verifiedChain struct {
+	count int
+	last  string
 }
 
 func DefaultDataDir() (string, error) {
@@ -156,6 +167,9 @@ func (s *Store) SnapshotChecked() (task.Database, error) {
 
 // reloadLocked adopts another process's committed changes. Callers hold s.mu.
 func (s *Store) reloadLocked() error {
+	if fp, ok := statFP(s.path); ok && fp == s.fp && s.fp != (fileFP{}) {
+		return nil
+	}
 	b, err := os.ReadFile(s.path)
 	if err != nil {
 		return err
@@ -171,11 +185,12 @@ func (s *Store) reloadLocked() error {
 	if db.SchemaVersion < task.SchemaVersion || db.SchemaVersion > task.SchemaVersion {
 		return fmt.Errorf("task store schema changed to %d while running (expected %d)", db.SchemaVersion, task.SchemaVersion)
 	}
-	if err := verifyEvents(db); err != nil {
+	if err := s.verifyEventsIncremental(db); err != nil {
 		return fmt.Errorf("task event history failed integrity check: %w", err)
 	}
 	s.db = db
 	s.seen = sum
+	s.fp, _ = statFP(s.path)
 	return nil
 }
 
@@ -378,6 +393,10 @@ func (s *Store) persist(db task.Database) error {
 		return fmt.Errorf("commit task store: %w", err)
 	}
 	s.seen = sha256.Sum256(b)
+	s.fp, _ = statFP(s.path)
+	if err := s.verifyEventsIncremental(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -410,6 +429,29 @@ func verifyEvents(db task.Database) error {
 			previous = e.Hash
 		}
 	}
+	return nil
+}
+
+// verifyEventsIncremental checks only events appended since the last verified
+// point of each Dot, plus that the previously verified tail is unchanged.
+func (s *Store) verifyEventsIncremental(db task.Database) error {
+	next := make(map[string]verifiedChain, len(db.Dots))
+	for _, dot := range db.Dots {
+		start, previous := 0, ""
+		if v, ok := s.verified[dot.ID]; ok && v.count <= len(dot.Events) &&
+			(v.count == 0 || dot.Events[v.count-1].Hash == v.last) {
+			start, previous = v.count, v.last
+		}
+		for i := start; i < len(dot.Events); i++ {
+			e := dot.Events[i]
+			if e.Sequence != uint64(i+1) || e.PrevHash != previous || e.Hash != eventHash(e) {
+				return fmt.Errorf("Dot %s event %d is invalid", dot.ID, i+1)
+			}
+			previous = e.Hash
+		}
+		next[dot.ID] = verifiedChain{count: len(dot.Events), last: previous}
+	}
+	s.verified = next
 	return nil
 }
 

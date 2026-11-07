@@ -414,36 +414,40 @@ func (s *Store) AppendConversationResult(conversationID, dotID, report string) e
 		return err
 	}
 	return s.change(func(db *task.Database) error {
-		ci := conversationIndex(db, conversationID)
-		if ci < 0 {
-			return errors.New("conversation not found")
-		}
-		di := dotIndex(db, dotID)
-		if di < 0 {
-			return errors.New("Dot not found")
-		}
-		conversation, dot := &db.Conversations[ci], &db.Dots[di]
-		if dot.ConversationID != conversationID {
-			return errors.New("Dot does not belong to this conversation")
-		}
-		if dot.Status != task.Running && dot.Status != task.Done {
-			return errors.New("only an active or completed Dot can save a conversation response")
-		}
-		for _, existing := range conversation.Messages {
-			if existing.Role == "assistant" && existing.DotID == dotID {
-				if existing.Content == report {
-					return nil
-				}
-				return errors.New("a result for this Dot is already saved")
-			}
-		}
-		conversation.Messages = append(conversation.Messages, task.ConversationMessage{
-			ID: messageID, Role: "assistant",
-			Content: report, DotID: dotID, CreatedAt: time.Now().UTC(),
-		})
-		conversation.UpdatedAt = time.Now().UTC()
-		return nil
+		return appendResultLocked(db, messageID, conversationID, dotID, report)
 	})
+}
+
+func appendResultLocked(db *task.Database, messageID, conversationID, dotID, report string) error {
+	ci := conversationIndex(db, conversationID)
+	if ci < 0 {
+		return errors.New("conversation not found")
+	}
+	di := dotIndex(db, dotID)
+	if di < 0 {
+		return errors.New("Dot not found")
+	}
+	conversation, dot := &db.Conversations[ci], &db.Dots[di]
+	if dot.ConversationID != conversationID {
+		return errors.New("Dot does not belong to this conversation")
+	}
+	if dot.Status != task.Running && dot.Status != task.Done {
+		return errors.New("only an active or completed Dot can save a conversation response")
+	}
+	for _, existing := range conversation.Messages {
+		if existing.Role == "assistant" && existing.DotID == dotID {
+			if existing.Content == report {
+				return nil
+			}
+			return errors.New("a result for this Dot is already saved")
+		}
+	}
+	conversation.Messages = append(conversation.Messages, task.ConversationMessage{
+		ID: messageID, Role: "assistant",
+		Content: report, DotID: dotID, CreatedAt: time.Now().UTC(),
+	})
+	conversation.UpdatedAt = time.Now().UTC()
+	return nil
 }
 
 // RecoverInterruptedRuns pauses conversation Dots whose owning process is gone

@@ -603,3 +603,9 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - **Portability.** `/proc`/descriptor-exec code moved to `proc_linux.go`; `proc_other.go` uses `ps(1)` identity and path exec. It compiles for darwin (`GOOS=darwin go vet`) but is **not validated on macOS**; the residual risk is a path swap between hash and exec there.
 - **Desktop test.** `TestDotProfileCanBeCustomizedFromChat` failed because the profile editor is ~2,100 px tall at 960×720 and `clickUIControl` allowed only 10×120 px of scrolling. The helper now allows 60 steps. No UI code changed.
 - Validation: go vet/gofmt/test all green, real-binary E2E OK; recall p50/p95/p99 CLI 10.5/12.8/13.1 ms, grounded send 46.1/54.3/55.7 ms (no regression vs 10.8/14.4/15.5 and 46.8/58.2/59.7).
+
+## 2026-11-07 — Store performance pass
+- `reloadLocked` skips reading/hashing `dots.json` when its stat fingerprint (size, mtime, inode) is unchanged, so `Snapshot()` polling no longer re-reads the file.
+- Event hash chains are verified incrementally per Dot (only new events plus the previously verified tail), not on every reload.
+- A reply now costs 2 writes instead of ~6: `StartRun` (status + checkpoint) and `CompleteRun` (metrics + reply + checkpoint clear + Done).
+- Not done: SQLite/WAL migration and version-invalidated snapshot cache; deferred as a larger separate change.
