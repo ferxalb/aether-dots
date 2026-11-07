@@ -6,6 +6,19 @@ This file is separate from a product release changelog. `CHANGELOG.md` is reserv
 
 For each future work session, append a dated entry describing what changed, why, how it was checked, and what remains unverified. Keep older entries intact.
 
+## 2026-11-03 (7) — Dedicated MCP discovery page
+
+### Implementation
+
+- Moved MCP server management from the Integrations card into its own Settings → MCP tab. Removed server-name and endpoint fields; opening the tab automatically searches only local IPv4/IPv6 loopback listeners and tries Streamable HTTP MCP at `/mcp` and `/`.
+- Discovered servers and tool catalogs are saved automatically, while tool grants remain explicit per Dot. The page displays a safe server name, local port, tool count, and Dot grant count, and links directly to the selected Dot's MCP access controls.
+- Added scan progress and bounded local discovery, while retaining the existing endpoint restrictions, tool-schema validation, disclosure, and grant rechecks. Updated the README, profile guidance, and repository boundaries to describe automatic loopback discovery.
+
+### Verification
+
+- `gofmt`, `CGO_ENABLED=0 go build ./...`, and `git diff --check` passed. Automated tests were not run.
+- No live MCP server was available for discovery or UI preview. Automatic discovery timing and server compatibility beyond the documented Streamable HTTP paths remain unverified at runtime.
+
 ## 2026-11-03 (6) — Independent Dot models, prompt compaction, performance, and MCP
 
 ### Implementation

@@ -87,6 +87,13 @@ func WithBearer(token string) Option {
 	return func(o *connectOptions) { o.bearer = strings.TrimSpace(token) }
 }
 
+type DiscoveredServer struct {
+	Endpoint string
+	Name     string
+	Version  string
+	Tools    []*mcpsdk.Tool
+}
+
 func Connect(ctx context.Context, version, endpoint string, opts ...Option) (*Session, error) {
 	var options connectOptions
 	for _, opt := range opts {
@@ -113,7 +120,7 @@ func Connect(ctx context.Context, version, endpoint string, opts ...Option) (*Se
 	connectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	session, err := NewClient(version).Connect(connectCtx, transport, nil)
-	if err != nil {
+	if err != nil || session == nil {
 		client.CloseIdleConnections()
 		switch status.last.Load() {
 		case http.StatusUnauthorized, http.StatusForbidden:
@@ -135,6 +142,9 @@ func (s *Session) ListTools(ctx context.Context) ([]*mcpsdk.Tool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("list MCP tools: %w", err)
 		}
+		if result == nil {
+			return nil, errors.New("MCP server returned an empty tool list")
+		}
 		if len(tools)+len(result.Tools) > 64 {
 			return nil, fmt.Errorf("%w: more than 64 tools", ErrToolListLimitExceeded)
 		}
@@ -147,11 +157,29 @@ func (s *Session) ListTools(ctx context.Context) ([]*mcpsdk.Tool, error) {
 	return nil, fmt.Errorf("%w: more than 8 pages", ErrToolListLimitExceeded)
 }
 
+func (s *Session) ServerIdentity() (name, version string) {
+	if s == nil || s.session == nil {
+		return "", ""
+	}
+	result := s.session.InitializeResult()
+	if result == nil || result.ServerInfo == nil {
+		return "", ""
+	}
+	return result.ServerInfo.Name, result.ServerInfo.Version
+}
+
 func (s *Session) CallTool(ctx context.Context, name string, args map[string]any) (*mcpsdk.CallToolResult, error) {
 	if s == nil || s.session == nil {
 		return nil, errors.New("MCP session is closed")
 	}
-	return s.session.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args})
+	result, err := s.session.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("MCP server returned an empty tool result")
+	}
+	return result, nil
 }
 
 func (s *Session) Close() error {

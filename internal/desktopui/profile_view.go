@@ -314,7 +314,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 					FontSize(10).TextColor(theme.Danger).FillWidth()
 			}
 			if len(a.snapshot.MCPServers) == 0 {
-				ui.Text(c, "Connect a loopback MCP server in Settings → Integrations first. AETHER does not launch MCP server commands or connect to remote hosts.").
+				ui.Text(c, "Find local MCP servers in Settings → MCP first. AETHER doesn't start server commands or connect to remote hosts.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 				return
 			}
@@ -324,7 +324,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 				Placeholder("Filter server tools").FillWidth().Label("Filter MCP tools")
 			matches := filterMCPProfileTools(a.snapshot.MCPServers, a.profileMCPToolSearch)
 			if len(matches) == 0 {
-				ui.Text(c, "No discovered tools match this filter. Refresh the server's tool list in Integrations.").
+				ui.Text(c, "No discovered tools match this filter. Return to Settings → MCP and choose Scan again to refresh local servers.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 			} else {
 				limit := a.profileMCPToolLimit

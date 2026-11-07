@@ -4,159 +4,220 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	mcpclient "aether-dots/internal/integrations/mcp"
 	"aether-dots/internal/task"
 	"github.com/egoist/mygo/ui"
 )
 
-func (a *app) mcpIntegrationCard(c *ui.Context, theme *ui.Theme) {
-	card := ui.Column(c.Key("integration-mcp-card")).FillWidth().MinWidth(0).Gap(14).Padding(17, 18).
-		Radius(15).Background(theme.Surface).Border(1, theme.Border)
-	card.Children(func() {
-		ui.Column(c).Gap(3).Children(func() {
-			ui.Text(c, "MCP servers").FontSize(15).Bold()
-			ui.Text(c, "Connect to MCP servers already running on this Mac. AETHER accepts loopback HTTP endpoints only and never starts a server command.").
-				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+func (a *app) mcpSettingsPage(c *ui.Context, theme *ui.Theme) {
+	if a.win != nil && !a.mcpDiscoveryScanned && !a.mcpDiscoveryLoading {
+		a.startMCPDiscovery()
+	}
+	ui.Column(c.Key("mcp-settings-page")).FillWidth().MinWidth(0).Gap(16).Children(func() {
+		card := ui.Column(c.Key("mcp-discovery-card")).FillWidth().MinWidth(0).Gap(12).Padding(17, 18).
+			Radius(15).Background(theme.Surface).Border(1, theme.Border)
+		card.Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+					ui.Text(c, "Local MCP servers").FontSize(15).Bold()
+					ui.Text(c, "AETHER searches this Mac's open local ports for MCP servers. No URL or server name needed.").
+						FontSize(11).TextColor(theme.TextMuted).FillWidth()
+				})
+				label := "Find servers"
+				if a.mcpDiscoveryScanned {
+					label = "Scan again"
+				}
+				if a.mcpDiscoveryLoading {
+					label = fmt.Sprintf("Searching %d%%…", a.mcpDiscoveryProgress)
+				}
+				if ui.PrimaryButton(c.Key("mcp-discover"), label).Padding(9, 13).Disabled(a.mcpDiscoveryLoading).Clicked() {
+					a.startMCPDiscovery()
+				}
+			})
+			if a.mcpDiscoveryLoading {
+				ui.Text(c, "Checking local ports for Streamable HTTP MCP servers…").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			}
+			if a.mcpDiscoveryError != "" {
+				ui.Text(c, a.mcpDiscoveryError).FontSize(11).TextColor(theme.Danger).FillWidth()
+			}
+			ui.Text(c, "Only this Mac's 127.0.0.1 and ::1 addresses are checked. AETHER tests the common /mcp and / endpoints; it never scans the internet or starts a server command.").
+				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 		})
-		if a.mcpServerError != "" {
-			ui.Text(c, a.mcpServerError).FontSize(11).TextColor(theme.Danger).FillWidth()
-		}
-		ui.Divider(c)
-		ui.Field(c, "Server name", func() {
-			ui.TextInputBase(c.Key("mcp-server-name"), &a.mcpServerNameDraft).
-				Placeholder("e.g. Local knowledge tools").FillWidth().Label("MCP server name")
-		})
-		ui.Field(c, "Loopback endpoint", func() {
-			ui.TextInputBase(c.Key("mcp-server-endpoint"), &a.mcpServerEndpointDraft).
-				Placeholder("http://127.0.0.1:8765/mcp").FillWidth().Label("MCP loopback URL")
-		})
-		if ui.PrimaryButton(c.Key("mcp-server-add"), "Connect and review tools").Padding(9, 13).
-			Disabled(a.mcpServerLoadingID != "").Clicked() {
-			a.addMCPServer()
-		}
-		if len(a.snapshot.MCPServers) == 0 {
-			ui.Text(c, "No MCP servers connected.").FontSize(11).TextColor(theme.TextMuted).FillWidth()
-		}
-		for _, server := range a.snapshot.MCPServers {
-			server := server
-			ui.Column(c.Key("mcp-server-"+server.ID)).FillWidth().Gap(8).Padding(12, 13).Radius(11).
-				Background(theme.Background).Border(1, theme.Border).Children(func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+
+		ui.Column(c.Key("mcp-connected-servers")).FillWidth().MinWidth(0).Gap(10).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Text(c, "Discovered servers").FontSize(14).Bold()
+				ui.Spacer(c)
+				if len(a.snapshot.MCPServers) > 0 {
+					ui.Text(c, fmt.Sprintf("%d", len(a.snapshot.MCPServers))).FontSize(10).TextColor(theme.TextMuted)
+				}
+			})
+			if len(a.snapshot.MCPServers) == 0 {
+				message := "Open this tab to search for MCP servers running on this Mac."
+				if a.mcpDiscoveryLoading {
+					message = "Searching this Mac for running MCP servers…"
+				} else if a.mcpDiscoveryScanned && a.mcpDiscoveryError == "" {
+					message = "No MCP servers found. Start a server with Streamable HTTP on localhost, then choose Scan again. Servers that only use stdio are not discoverable here."
+				} else if a.mcpDiscoveryError != "" {
+					message = "No validated MCP servers are connected yet."
+				}
+				ui.Column(c.Key("mcp-empty-state")).FillWidth().Gap(4).Padding(15, 16).Radius(12).
+					Background(theme.Surface).Border(1, theme.Border).Children(func() {
+					ui.Text(c, message).FontSize(11).TextColor(theme.TextMuted).FillWidth()
+				})
+				return
+			}
+			for _, server := range a.snapshot.MCPServers {
+				server := server
+				ui.Row(c.Key("mcp-server-"+server.ID)).FillWidth().AlignItems(ui.Center).Gap(10).Padding(12, 14).
+					Radius(12).Background(theme.Surface).Border(1, theme.Border).Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 						ui.Text(c, server.Name).FontSize(12).Bold()
-						ui.Text(c, server.Endpoint).FontSize(10).TextColor(theme.TextMuted).FillWidth()
+						ui.Text(c, mcpServerLocalLabel(server.Endpoint)+fmt.Sprintf(" · %d tools · %d Dots granted", len(server.Tools), mcpGrantingConversationCount(a.snapshot, server.ID))).
+							FontSize(10).TextColor(theme.TextMuted).FillWidth()
 					})
-					busy := a.mcpServerLoadingID == server.ID
-					label := "Refresh tools"
-					if busy {
-						label = "Connecting…"
-					}
-					if ui.Button(c.Key("mcp-refresh-"+server.ID), label).Padding(7, 9).Disabled(a.mcpServerLoadingID != "").Clicked() {
-						a.refreshMCPServerTools(server.ID)
-					}
-					if ui.Button(c.Key("mcp-remove-"+server.ID), "Remove").Padding(7, 9).Disabled(a.mcpServerLoadingID != "").Clicked() {
+					if ui.Button(c.Key("mcp-disconnect-"+server.ID), "Disconnect").Padding(7, 10).
+						Disabled(a.mcpDiscoveryLoading).Clicked() {
 						if err := a.db.RemoveMCPServer(server.ID); err != nil {
-							a.mcpServerError = err.Error()
+							a.mcpDiscoveryError = "Couldn't disconnect this server. Try again."
 						} else {
-							a.mcpServerError = ""
+							a.mcpDiscoveryError = ""
 							a.refresh()
 						}
 					}
 				})
-				ui.Text(c, fmt.Sprintf("%d discovered tools · %d Dots have their own grants", len(server.Tools), mcpGrantingConversationCount(a.snapshot, server.ID))).
-					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+			}
+		})
+
+		if len(a.snapshot.MCPServers) > 0 {
+			ui.Column(c.Key("mcp-next-step")).FillWidth().Gap(6).Padding(14, 16).Radius(12).
+				Background(theme.Accent.Alpha(0.08)).Children(func() {
+				ui.Text(c, "Choose which Dot can use a server").FontSize(12).Bold()
+				ui.Text(c, "Open a Dot's Customize → MCP tools section to grant exact tools. Each Dot keeps its own access.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
+				if a.selectedConversationID != "" {
+					if ui.Button(c.Key("mcp-open-dot-access"), "Choose tools for selected Dot").Padding(8, 11).Clicked() {
+						a.settingsOpen = false
+						a.openConversationProfile()
+					}
+				}
 			})
 		}
-		ui.Text(c, "Review every server and tool before granting it. A server can act within its own scope; tool annotations are hints only. Dot-specific grants and a model-data disclosure are required, and MCP tools are off for Routines, delegated Dots, and iPhone messages.").
-			FontSize(10).TextColor(theme.TextMuted).FillWidth()
 	})
 }
 
-func (a *app) addMCPServer() {
-	if a.mcpServerLoadingID != "" {
+func (a *app) startMCPDiscovery() {
+	if a.mcpDiscoveryLoading || a.win == nil {
 		return
 	}
-	endpoint, err := mcpclient.NormalizeEndpoint(a.mcpServerEndpointDraft)
-	if err != nil {
-		a.mcpServerError = err.Error()
-		return
-	}
-	server, err := a.db.AddMCPServer(a.mcpServerNameDraft, endpoint)
-	if err != nil {
-		a.mcpServerError = err.Error()
-		return
-	}
-	a.mcpServerNameDraft = ""
-	a.mcpServerEndpointDraft = ""
-	a.mcpServerError = ""
-	a.refresh()
-	a.refreshMCPServerTools(server.ID)
-}
-
-func (a *app) refreshMCPServerTools(id string) {
-	if a.mcpServerLoadingID != "" {
-		return
-	}
-	var server *task.MCPServer
-	for i := range a.snapshot.MCPServers {
-		if a.snapshot.MCPServers[i].ID == id {
-			copy := a.snapshot.MCPServers[i]
-			server = &copy
-			break
-		}
-	}
-	if server == nil {
-		a.mcpServerError = "MCP server not found. Refresh Integrations and try again."
-		return
-	}
-	a.mcpServerLoadingID = id
-	a.mcpServerRequest++
-	request := a.mcpServerRequest
-	a.mcpServerError = ""
+	a.mcpDiscoveryScanned = true
+	a.mcpDiscoveryLoading = true
+	a.mcpDiscoveryProgress = 0
+	a.mcpDiscoveryError = ""
 	win := a.win
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
+	var lastProgress int
 	go func() {
 		defer cancel()
-		options, err := a.db.MCPConnectOptions(server.ID)
-		var session *mcpclient.Session
-		if err == nil {
-			session, err = mcpclient.Connect(ctx, "0.1.0", server.Endpoint, options...)
-		}
-		var tools []task.MCPTool
-		if err == nil {
-			remoteTools, listErr := session.ListTools(ctx)
-			if listErr != nil {
-				err = listErr
-			} else {
-				tools, err = mcpclient.ConvertTools(remoteTools)
+		discovered, discoveryErr := mcpclient.DiscoverLocalServers(ctx, func(progress int) {
+			if progress <= lastProgress || progress%2 != 0 {
+				return
 			}
-			_ = session.Close()
+			lastProgress = progress
+			win.Update(func() {
+				a.mcpDiscoveryProgress = progress
+				a.refresh()
+			})
+		})
+		known := make(map[string]string)
+		for _, server := range a.db.Snapshot().MCPServers {
+			known[server.Endpoint] = server.ID
 		}
-		if err == nil {
-			err = a.db.RefreshMCPServerTools(server.ID, tools)
+		connected, skipped := 0, 0
+		seen := make(map[string]bool)
+		for _, candidate := range discovered {
+			endpoint, err := mcpclient.NormalizeEndpoint(candidate.Endpoint)
+			if err != nil {
+				skipped++
+				continue
+			}
+			tools, err := mcpclient.ConvertTools(candidate.Tools)
+			if err != nil {
+				skipped++
+				continue
+			}
+			portKey := strings.ToLower(strings.TrimSpace(candidate.Name)) + ":" + mcpServerLocalLabel(endpoint)
+			if seen[portKey] {
+				continue
+			}
+			seen[portKey] = true
+			serverID := known[endpoint]
+			if serverID == "" {
+				server, addErr := a.db.AddMCPServer(mcpServerSafeName(candidate.Name, endpoint), endpoint)
+				if addErr != nil {
+					skipped++
+					continue
+				}
+				serverID = server.ID
+			}
+			if err := a.db.RefreshMCPServerTools(serverID, tools); err != nil {
+				skipped++
+				continue
+			}
+			known[endpoint] = serverID
+			connected++
 		}
 		finish := func() {
-			if a.mcpServerRequest != request {
-				return
-			}
-			a.mcpServerLoadingID = ""
+			a.mcpDiscoveryLoading = false
+			a.mcpDiscoveryProgress = 100
 			a.refresh()
-			if err != nil {
-				a.mcpServerError = fmt.Sprintf("Couldn't refresh %s: %v", server.Name, err)
-				return
+			switch {
+			case discoveryErr != nil:
+				a.mcpDiscoveryError = "Local scan timed out. Some ports may not have been checked; choose Scan again to retry."
+			case skipped > 0:
+				a.mcpDiscoveryError = "Some local server tool details couldn't be validated. No new tools were enabled."
+			case connected > 0:
+				a.mcpDiscoveryError = ""
+			case len(a.snapshot.MCPServers) == 0:
+				a.mcpDiscoveryError = ""
 			}
-			a.adt.Success("MCP tools refreshed", "Review tool names, descriptions, and schemas in the Dot's Customize panel before granting access.")
-		}
-		if win == nil {
-			finish()
-			return
 		}
 		win.Update(finish)
 	}()
+}
+
+func mcpServerLocalLabel(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Port() == "" {
+		return "This Mac"
+	}
+	return "This Mac · port " + parsed.Port()
+}
+
+func mcpServerSafeName(name, endpoint string) string {
+	var cleaned strings.Builder
+	for _, char := range name {
+		if unicode.IsControl(char) {
+			cleaned.WriteByte(' ')
+		} else {
+			cleaned.WriteRune(char)
+		}
+	}
+	name = strings.Join(strings.Fields(cleaned.String()), " ")
+	if name == "" {
+		name = "Local MCP server on " + mcpServerLocalLabel(endpoint)
+	}
+	if len(name) > task.MaxMCPServerNameBytes {
+		name = truncateUTF8Bytes(name, task.MaxMCPServerNameBytes)
+	}
+	return name
 }
 
 func mcpGrantingConversationCount(snapshot task.Database, serverID string) int {

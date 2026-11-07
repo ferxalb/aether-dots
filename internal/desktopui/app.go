@@ -49,7 +49,7 @@ type app struct {
 	activityOpen            bool
 	settingsTab             int
 	settingsAdvancedOpen    bool
-	settingsScroll          [5]ui.ScrollState
+	settingsScroll          [6]ui.ScrollState
 
 	profileName                          string
 	profilePurpose                       string
@@ -165,11 +165,10 @@ type app struct {
 	githubRepositoryLimit      int
 	githubTruncated            bool
 	profileGitHubRepositoryIDs []int64
-	mcpServerNameDraft         string
-	mcpServerEndpointDraft     string
-	mcpServerError             string
-	mcpServerLoadingID         string
-	mcpServerRequest           uint64
+	mcpDiscoveryLoading        bool
+	mcpDiscoveryScanned        bool
+	mcpDiscoveryProgress       int
+	mcpDiscoveryError          string
 	settingsSaving             bool
 	modelConnection            string
 	routineSchedulerStarted    bool

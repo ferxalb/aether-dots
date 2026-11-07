@@ -67,7 +67,7 @@ Settings → **Integrations** includes GitHub and Computer Use. Apple Reminders 
 
 ### MCP servers
 
-Settings → **Integrations** can connect to MCP servers already running on the same Mac through Streamable HTTP at an explicit `127.0.0.1` or `::1` endpoint. AETHER does not launch server commands, use stdio for user-configured servers, connect to remote MCP hosts, or store MCP credentials. Refreshing discovers tool names, descriptions, and schemas; changed definitions invalidate their saved grants.
+Open the dedicated **MCP** Settings tab to automatically find servers already running on this Mac. AETHER scans only `127.0.0.1` and `::1`, and checks Streamable HTTP on the common `/mcp` and `/` paths; it does not ask you to copy a URL. Servers that use only stdio or a custom path won't appear. AETHER never launches server commands, contacts remote MCP hosts, or stores MCP credentials. Discovered tool schemas are refreshed and changed definitions invalidate their saved grants.
 
 In **Customize → MCP tools**, grant exact tools to one Dot and accept the disclosure that tool inputs and returned data may be sent to that Dot's configured model provider. Changing a Dot's provider, or changing the workspace provider for Dots that use its default, requires accepting that disclosure again. A granted tool may act within the server's own scope, so review and trust the server and each tool before enabling it. Server descriptions, schemas, annotations, and results are untrusted data; annotations such as `readOnlyHint` are not treated as proof of behavior. Grants are bound to the Dot's current Space, rechecked before and after each call, and are unavailable to Routines, delegated Dots, and iPhone messages. Removing a server revokes all of its Dot grants.
 
@@ -227,7 +227,7 @@ CGO_ENABLED=0 go test ./...
 CGO_ENABLED=0 go tool mygo vet .
 ```
 
-The app's own Dot store and preferences are local. Dot task execution has no direct user-selected filesystem access or arbitrary-app control. Local MCP access is limited to user-configured loopback HTTP endpoints, explicit per-Dot tool grants, and a disclosure; AETHER does not launch MCP commands or connect to remote MCP hosts. The fixed Cua Driver MCP connection uses AETHER's private socket, a bounded capability manifest, and an argument policy. The only cloud connections are explicitly granted read-only GitHub access and the scoped mobile relay described above. Its function catalog is scoped to the current request; a specialist handoff requires a saved same-Space grant and is rechecked when the tool runs.
+The app's own Dot store and preferences are local. Dot task execution has no direct user-selected filesystem access or arbitrary-app control. User-managed MCP discovery scans only TCP listeners on loopback and checks Streamable HTTP MCP handshakes at `/mcp` and `/`; tools still need explicit per-Dot grants and disclosure. AETHER does not start MCP commands or connect to remote MCP hosts. The fixed Cua Driver MCP connection uses AETHER's private socket, a bounded capability manifest, and an argument policy. The only cloud connections are explicitly granted read-only GitHub access and the scoped mobile relay described above. Its function catalog is scoped to the current request; a specialist handoff requires a saved same-Space grant and is rechecked when the tool runs.
 
 ## Development history
 

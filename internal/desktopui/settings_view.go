@@ -4,11 +4,14 @@ import "github.com/egoist/mygo/ui"
 
 func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 	section := max(0, min(len(a.settingsScroll)-1, a.settingsTab))
-	sectionKey := [...]string{"general", "ai", "integrations", "skills", "routines"}[section]
+	sectionKey := [...]string{"general", "ai", "integrations", "skills", "routines", "mcp"}[section]
 	heading, description := "Preferences", "Choose how AETHER looks and how your Dots work."
 	if section == 2 {
 		heading = "Integrations"
 		description = "Connect the tools your Dots can work with. You're always in control of what they can access."
+	} else if section == 5 {
+		heading = "MCP servers"
+		description = "Find local MCP servers automatically and choose which Dots can use their tools."
 	}
 	ui.Column(c).Grow(1).FillWidth().MinHeight(0).Children(func() {
 		ui.Column(c).FillWidth().Gap(14).Padding(20, 26, 0, 26).Shrink(0).Children(func() {
@@ -20,7 +23,7 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 				})
 				a.settingsAction(c, theme)
 			})
-			ui.Tabs(c, &a.settingsTab, "General", "AI & responses", "Integrations", "Skills", "Routines").FillWidth()
+			ui.Tabs(c, &a.settingsTab, "General", "AI & responses", "Integrations", "Skills", "Routines", "MCP").FillWidth()
 		})
 		ui.Scroll(c.Key("settings-content-" + sectionKey)).TrackScroll(&a.settingsScroll[section]).
 			Grow(1).Shrink(1).FillWidth().MinHeight(0).Children(func() {
@@ -38,6 +41,8 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 					a.skillLibrarySettings(c, theme)
 				case 4:
 					a.routineSettings(c, theme)
+				case 5:
+					a.mcpSettingsPage(c, theme)
 				default:
 					a.appearanceSettings(c, theme)
 				}
