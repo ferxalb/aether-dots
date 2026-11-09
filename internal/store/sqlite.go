@@ -126,6 +126,7 @@ func loadAll(ctx context.Context, q queryer) (db task.Database, ok bool, err err
 	if v := meta["github_last_verified_at"]; v != "" {
 		db.GitHubLastVerifiedAt, _ = time.Parse(time.RFC3339Nano, v)
 	}
+	db.GitHubAccount = meta["github_account"]
 	if v := meta["routine_run_starts"]; v != "" {
 		if err := json.Unmarshal([]byte(v), &db.RoutineRunStarts); err != nil {
 			return db, false, fmt.Errorf("decode routine run starts: %w", err)
@@ -302,6 +303,11 @@ func writeMeta(ctx context.Context, x execer, prev, next task.Database) error {
 	}
 	if !prev.GitHubLastVerifiedAt.Equal(next.GitHubLastVerifiedAt) || prev.SchemaVersion == 0 {
 		if err := set("github_last_verified_at", ts(next.GitHubLastVerifiedAt)); err != nil {
+			return err
+		}
+	}
+	if prev.GitHubAccount != next.GitHubAccount || prev.SchemaVersion == 0 {
+		if err := set("github_account", next.GitHubAccount); err != nil {
 			return err
 		}
 	}

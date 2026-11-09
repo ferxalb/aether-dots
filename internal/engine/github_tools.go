@@ -42,6 +42,16 @@ func WithGitHubTools(db *store.Store, dotID string, provider model.Provider, ser
 	if !connected {
 		return provider
 	}
+	// gh is shared machine state. If it is now signed in as a different account
+	// than the one AETHER was connected with, grants no longer apply.
+	if account := db.GitHubAccount(); account != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		login := service.Login(ctx)
+		cancel()
+		if !strings.EqualFold(account, login) {
+			return provider
+		}
+	}
 	ids := make([]int64, 0, len(repositories))
 	labels := make(map[int64]string, len(repositories))
 	for _, repository := range repositories {
@@ -86,7 +96,7 @@ func WithGitHubTools(db *store.Store, dotID string, provider model.Provider, ser
 			if _, ok := labels[repository.ID]; !ok {
 				return "", errors.New("this Dot does not have access to that GitHub repository")
 			}
-			if err := service.RepositoryStillAccessible(ctx, repository.InstallationID, repository.ID); err != nil {
+			if err := service.RepositoryStillAccessible(ctx, repository.ID); err != nil {
 				return "", err
 			}
 			result, err := run(ctx, repository, args)
@@ -225,7 +235,7 @@ func githubCommitTool(db *store.Store, dotID string, service *github.Service, id
 			if !ok || labels[repo.ID] == "" {
 				return "", errors.New("GitHub access was removed or this repository is no longer selected")
 			}
-			if err := service.RepositoryStillAccessible(ctx, repo.InstallationID, repo.ID); err != nil {
+			if err := service.RepositoryStillAccessible(ctx, repo.ID); err != nil {
 				return "", err
 			}
 			commit, err := service.GetCommit(ctx, repo.Owner, repo.Name, args.Ref)
@@ -268,7 +278,6 @@ func githubListRepositoriesTool(db *store.Store, dotID string, service *github.S
 				return "", errors.New("this Dot has no current GitHub repository grants")
 			}
 			items := make([]map[string]any, 0, min(limit, len(selected)))
-			accessibleByInstallation := make(map[int64]map[int64]bool)
 			for _, repository := range selected {
 				if len(items) == limit {
 					break
@@ -276,24 +285,11 @@ func githubListRepositoriesTool(db *store.Store, dotID string, service *github.S
 				if _, ok := labels[repository.ID]; !ok || !containsRepositoryID(ids, repository.ID) {
 					continue
 				}
-				accessible, loaded := accessibleByInstallation[repository.InstallationID]
-				if !loaded {
-					current, _, err := service.ListInstallationRepositories(ctx, repository.InstallationID)
-					if err != nil {
-						if errors.Is(err, github.ErrPermissionDenied) || errors.Is(err, github.ErrNotFound) {
-							accessibleByInstallation[repository.InstallationID] = nil
-							continue
-						}
-						return "", err
+				if err := service.RepositoryStillAccessible(ctx, repository.ID); err != nil {
+					if errors.Is(err, github.ErrPermissionDenied) || errors.Is(err, github.ErrNotFound) {
+						continue
 					}
-					accessible = make(map[int64]bool, len(current))
-					for _, item := range current {
-						accessible[item.ID] = true
-					}
-					accessibleByInstallation[repository.InstallationID] = accessible
-				}
-				if !accessible[repository.ID] {
-					continue
+					return "", err
 				}
 				items = append(items, map[string]any{"repository_id": repository.ID, "full_name": repository.FullName, "private": repository.Private, "url": repository.HTMLURL})
 			}

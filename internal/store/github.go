@@ -54,10 +54,44 @@ func (s *Store) ReplaceGitHubRepositories(repositories []task.GitHubRepository) 
 	})
 }
 
+// GitHubAccount returns the GitHub CLI login recorded when GitHub was connected.
+func (s *Store) GitHubAccount() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.db.GitHubAccount
+}
+
+// SetGitHubAccount records the GitHub CLI login the connection belongs to.
+// Switching to a different login drops the previous account's repository list
+// and every Dot grant, because those belonged to the old account.
+func (s *Store) SetGitHubAccount(login string) error {
+	login = strings.TrimSpace(login)
+	if login != "" && !validGitHubName(login) {
+		return errors.New("GitHub returned an invalid account name")
+	}
+	return s.change(func(db *task.Database) error {
+		if db.GitHubAccount != "" && !strings.EqualFold(db.GitHubAccount, login) {
+			db.GitHubRepositories = nil
+			for i := range db.Conversations {
+				db.Conversations[i].GitHubRepositoryIDs = nil
+				db.Conversations[i].GitHubGrantSpaceID = ""
+				db.Conversations[i].GitHubModelDisclosureAccepted = false
+				db.Conversations[i].UpdatedAt = time.Now().UTC()
+			}
+			for i := range db.Routines {
+				db.Routines[i].GitHubEnabled = false
+			}
+		}
+		db.GitHubAccount = login
+		return nil
+	})
+}
+
 func (s *Store) SetGitHubConnected(connected bool) error {
 	return s.change(func(db *task.Database) error {
 		db.GitHubConnected = connected
 		if !connected {
+			db.GitHubAccount = ""
 			db.GitHubRepositories = nil
 			db.GitHubLastVerifiedAt = time.Time{}
 			for i := range db.Conversations {
@@ -173,6 +207,7 @@ func (s *Store) GitHubToolRepository(dotID string, repoID int64) (task.GitHubRep
 func (s *Store) DisconnectGitHub() error {
 	return s.change(func(db *task.Database) error {
 		db.GitHubConnected = false
+		db.GitHubAccount = ""
 		db.GitHubLastVerifiedAt = time.Time{}
 		db.GitHubRepositories = nil
 		for i := range db.Conversations {
@@ -311,7 +346,7 @@ func validateGitHubRepositoryGrants(db *task.Database, ids []int64) ([]int64, er
 }
 
 func validateGitHubRepository(repo task.GitHubRepository) error {
-	if repo.ID <= 0 || repo.InstallationID <= 0 || !validGitHubName(repo.Owner) || !validGitHubName(repo.Name) {
+	if repo.ID <= 0 || !validGitHubName(repo.Owner) || !validGitHubName(repo.Name) {
 		return errors.New("GitHub returned an invalid repository identity")
 	}
 	if repo.FullName != repo.Owner+"/"+repo.Name || len(repo.FullName) > 210 {

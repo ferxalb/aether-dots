@@ -308,8 +308,6 @@ Model settings (environment):
   AETHER_MODEL_PROVIDER           openai|openrouter|openai-compatible (default: openai)
   AETHER_MODEL_NAME                model ID (required for OpenRouter and custom endpoints)
   AETHER_MODEL_BASE_URL            custom OpenAI-compatible endpoint base URL
-  AETHER_GITHUB_CLIENT_ID          public GitHub App Client ID for Device Flow
-  AETHER_GITHUB_APP_SLUG           optional public App slug for the installation link
   OPENAI_API_KEY                   OpenAI credential
   OPENROUTER_API_KEY               OpenRouter credential
   AETHER_COMPATIBLE_API_KEY        custom endpoint credential (optional on localhost)

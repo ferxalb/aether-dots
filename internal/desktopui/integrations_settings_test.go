@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"aether-dots/internal/integrations/github"
+	"aether-dots/internal/integrations/github/ghtest"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -12,7 +13,8 @@ func TestIntegrationsTabShowsGitHubComputerUseAndDisabledUpcomingProviders(t *te
 	a := newMessengerTestApp(t)
 	conversation := createTestConversation(t, a, a.selectedSpaceID, "Selected Dot", "Keep this Dot selected.")
 	a.selectConversation(conversation.ID)
-	a.githubService = github.NewService("public-client-id", nil, nil)
+	ghtest.Install(t, true)
+	a.githubService = github.NewService()
 	a.settingsOpen = true
 	tester := ui.NewTester(a.view, 1120, 760)
 
@@ -24,7 +26,7 @@ func TestIntegrationsTabShowsGitHubComputerUseAndDisabledUpcomingProviders(t *te
 		"Integrations",
 		"Connect the tools your Dots can work with. You're always in control of what they can access.",
 		"GitHub",
-		"Let your Dots inspect repositories, issues, pull requests, and CI activity.",
+		"Read repositories, issues, pull requests, and CI through your GitHub CLI login. AETHER stores no token.",
 		"Connect GitHub",
 		"Computer Use",
 		"Apple Notes",
@@ -63,69 +65,80 @@ func TestIntegrationsTabShowsGitHubComputerUseAndDisabledUpcomingProviders(t *te
 	}
 }
 
-func TestGitHubAuthorizationStatesDoNotShowDuplicateConnectActions(t *testing.T) {
+func TestGitHubCLIStatesGuideTheUserAndNeverShowCredentials(t *testing.T) {
+	// gh missing: explain how to get it, offer no connect button.
+	ghtest.Missing(t)
 	a := newMessengerTestApp(t)
-	a.githubService = github.NewService("public-client-id", nil, nil)
+	a.githubService = github.NewService()
 	a.settingsOpen = true
 	a.settingsTab = 2
-	a.githubStatus = "Awaiting authorization"
-	a.githubDeviceCode = "ABCD-EFGH"
-	a.githubVerificationURL = github.DeviceVerificationURL
-	a.githubLoading = true
-	a.githubAuthCancel = func() {}
+	a.githubLoaded = false
 	tester := ui.NewTester(a.view, 1120, 760)
-	texts := tester.Texts()
-	if !tester.HasText("Enter this code on GitHub") || !tester.HasText("ABCD-EFGH") ||
-		!tester.HasText("Copy code") || !tester.HasText("Open GitHub verification") || !tester.HasText("Cancel") {
-		t.Fatalf("awaiting-authorization state is incomplete: %q", texts)
+	if !tester.HasText("GitHub CLI not found") || !tester.HasText("Get the GitHub CLI") {
+		t.Fatalf("missing-gh state is not actionable: %q", tester.Texts())
 	}
-	if countText(texts, "Connect GitHub") != 0 {
-		t.Fatalf("duplicate connect action appeared during authorization: %q", texts)
+	if tester.HasText("Connect GitHub") {
+		t.Fatalf("connect offered without a GitHub CLI: %q", tester.Texts())
 	}
 
+	// gh present but signed out: show the command to run.
+	ghtest.Install(t, false)
+	a.githubService = github.NewService()
+	a.githubStatus = "Sign-in required"
+	a.githubError = "The GitHub CLI is not signed in. Run `gh auth login` in Terminal, then press Connect."
+	a.githubLoaded = true
+	a.refresh()
+	tester = ui.NewTester(a.view, 1120, 760)
+	if !tester.HasText("Copy command") || !tester.HasText("gh auth login") || !tester.HasText("Connect GitHub") {
+		t.Fatalf("signed-out state is incomplete: %q", tester.Texts())
+	}
+
+	// A rate limit on a live connection is recoverable without reconnecting.
 	a.githubStatus = "Rate limited"
 	a.githubError = "GitHub API rate limit reached; try again later."
-	a.githubLoaded = true
-	a.githubLoading = false
-	a.githubAuthCancel = nil
 	if err := a.db.SetGitHubConnected(true); err != nil {
 		t.Fatal(err)
 	}
 	a.refresh()
 	tester = ui.NewTester(a.view, 1120, 760)
-	texts = tester.Texts()
+	texts := tester.Texts()
 	if !tester.HasText("Rate limited") || !tester.HasText(a.githubError) || !tester.HasText("Refresh GitHub access") {
 		t.Fatalf("rate-limit state is not understandable or recoverable: %q", texts)
 	}
-	if strings.Contains(strings.Join(texts, " "), "ghu_") || strings.Contains(strings.Join(texts, " "), "ghr_") {
-		t.Fatalf("credential material appeared in UI state: %q", texts)
+	joined := strings.Join(texts, " ")
+	for _, secret := range []string{"ghu_", "ghr_", "gho_", "ghp_"} {
+		if strings.Contains(joined, secret) {
+			t.Fatalf("credential material appeared in UI state: %q", texts)
+		}
 	}
 }
 
-func TestGitHubDisconnectingBlocksNewAuthorizationAndUnconfiguredDisconnectRemainsAvailable(t *testing.T) {
+func TestGitHubDisconnectingBlocksNewConnectionAndDisconnectWorksWithoutGH(t *testing.T) {
+	ghtest.Install(t, true)
 	a := newMessengerTestApp(t)
-	a.githubService = github.NewService("public-client-id", nil, nil)
+	a.githubService = github.NewService()
 	a.githubDisconnecting = true
 	a.githubStatus = "Disconnecting"
 	a.refreshGitHubConnection()
-	a.startGitHubAuthorization()
-	if a.githubStatus != "Disconnecting" || a.githubLoading || a.githubAuthCancel != nil {
-		t.Fatalf("disconnecting state allowed a new connection flow: status=%q loading=%v auth=%v", a.githubStatus, a.githubLoading, a.githubAuthCancel != nil)
+	a.connectGitHub()
+	if a.githubStatus != "Disconnecting" || a.githubLoading {
+		t.Fatalf("disconnecting state allowed a new connection flow: status=%q loading=%v", a.githubStatus, a.githubLoading)
 	}
 
+	ghtest.Missing(t)
 	b := newMessengerTestApp(t)
 	if err := b.db.SetGitHubConnected(true); err != nil {
 		t.Fatal(err)
 	}
 	b.refresh()
-	b.githubService = github.NewService("", nil, nil)
-	b.githubStatus = "Not configured"
+	b.githubService = github.NewService()
+	b.githubStatus = "GitHub CLI not found"
 	b.githubLoaded = true
 	b.settingsOpen = true
 	b.settingsTab = 2
 	tester := ui.NewTester(b.view, 1120, 760)
-	if !tester.HasText("Not configured") || !tester.HasText("Disconnect") {
-		t.Fatalf("saved GitHub connection could not be removed without the app client ID: %q", tester.Texts())
+	if !tester.HasText("GitHub CLI not found") {
+		t.Fatalf("missing gh not explained: %q", tester.Texts())
 	}
 }
 

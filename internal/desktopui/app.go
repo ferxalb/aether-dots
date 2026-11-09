@@ -152,14 +152,10 @@ type app struct {
 	githubAvatar               ui.ImageSource
 	githubAvatarCancel         context.CancelFunc
 	githubAvatarRequest        uint64
-	githubInstallations        []github.Installation
 	githubRepositories         []task.GitHubRepository
-	githubDeviceCode           string
-	githubVerificationURL      string
 	githubLoading              bool
 	githubLoaded               bool
 	githubDisconnecting        bool
-	githubAuthCancel           context.CancelFunc
 	githubRequestCancel        context.CancelFunc
 	githubManageRepositories   bool
 	githubRepositorySearch     string
@@ -193,7 +189,7 @@ func Run(dataDir string) error {
 	}
 	a := &app{db: db, dataDir: dataDir, prefs: prefs, savedPrefs: prefs, connectionRecords: loadConnectionRecords(dataDir), providerSelection: providerSelectionLabel(prefs.Provider),
 		remoteLoopMu: &sync.Mutex{}, remoteForgetMu: &sync.Mutex{},
-		githubService:      github.NewDefaultService(github.NewMyGoCredentialStore()),
+		githubService:      newGitHubServiceAndPurgeLegacy(),
 		computerUseService: computeruse.New(dataDir)}
 	a.computerUseInstalled = a.computerUseService.Installed()
 	if a.computerUseInstalled {
@@ -284,4 +280,11 @@ func (a *app) refresh() {
 			a.chatMessages = ui.ListState{FollowEnd: true}
 		}
 	}
+}
+
+// newGitHubServiceAndPurgeLegacy builds the gh-backed service and removes any
+// token an earlier GitHub App sign-in left in the system credential store.
+func newGitHubServiceAndPurgeLegacy() *github.Service {
+	go github.PurgeLegacyCredentials()
+	return github.NewService()
 }

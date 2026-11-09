@@ -265,14 +265,17 @@ type Database struct {
 	GitHubRepositories   []GitHubRepository `json:"github_repositories,omitempty"`
 	GitHubConnected      bool               `json:"github_connected,omitempty"`
 	GitHubLastVerifiedAt time.Time          `json:"github_last_verified_at,omitempty"`
-	MCPServers           []MCPServer        `json:"mcp_servers,omitempty"`
+	// GitHubAccount is the GitHub CLI login AETHER was connected with. A Dot's
+	// GitHub tools stop working if gh is later signed in as someone else.
+	GitHubAccount string      `json:"github_account,omitempty"`
+	MCPServers    []MCPServer `json:"mcp_servers,omitempty"`
 }
 
 // GitHubRepository is a non-secret, locally selected resource. Its stable ID
 // is the authorization key; owner/name are refreshed display and API fields.
 type GitHubRepository struct {
 	ID             int64  `json:"id"`
-	InstallationID int64  `json:"installation_id"`
+	InstallationID int64  `json:"installation_id,omitempty"` // legacy GitHub App field; unused with the GitHub CLI
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	FullName       string `json:"full_name"`

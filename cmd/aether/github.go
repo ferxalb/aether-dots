@@ -20,7 +20,7 @@ import (
 )
 
 func newGitHubService() *github.Service {
-	return github.NewDefaultService(github.NewMyGoCredentialStore())
+	return github.NewService()
 }
 
 func githubCommand(db *store.Store, args []string) error {
@@ -54,20 +54,13 @@ func githubCommand(db *store.Store, args []string) error {
 
 func githubLogin(db *store.Store) error {
 	service := newGitHubService()
-	if !service.ClientConfigured() {
+	if !service.Installed() {
 		return github.ErrCLINotInstalled
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if service.UsesCLI() {
-		fmt.Println("Using your GitHub CLI login (gh). AETHER stores no GitHub token.")
-	} else {
-		fmt.Println("Authorize AETHER Dots with GitHub. No client secret or personal access token is required.")
-	}
-	err := service.AuthorizeDevice(ctx, func(device github.DeviceAuthorization) {
-		fmt.Printf("Open %s and enter this code: %s\n", device.VerificationURI, device.UserCode)
-		fmt.Println("Waiting for GitHub authorization…")
-	})
+	fmt.Println("Using your GitHub CLI login (gh). AETHER stores no GitHub token.")
+	user, err := service.Connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -75,10 +68,6 @@ func githubLogin(db *store.Store) error {
 		return err
 	}
 	if err := refreshGitHubRepositoriesWithService(db, service); err != nil {
-		return err
-	}
-	user, err := service.GetAuthenticatedUser(ctx)
-	if err != nil {
 		return err
 	}
 	fmt.Printf("Connected as @%s. Select repositories with `aether github select <repo-id>...`.\n", user.Login)
@@ -97,6 +86,9 @@ func githubStatus(db *store.Store) error {
 	user, err := service.GetAuthenticatedUser(ctx)
 	if err != nil {
 		return err
+	}
+	if account := snapshot.GitHubAccount; account != "" && !strings.EqualFold(account, user.Login) {
+		return fmt.Errorf("GitHub was connected as @%s but the GitHub CLI is signed in as @%s: %w", account, user.Login, github.ErrAccountChanged)
 	}
 	selected := 0
 	for _, repository := range snapshot.GitHubRepositories {
@@ -128,19 +120,19 @@ func refreshGitHubRepositoriesWithService(db *store.Store, service *github.Servi
 	repositories := make([]task.GitHubRepository, 0, len(discovery.Repositories))
 	for _, repository := range discovery.Repositories {
 		repositories = append(repositories, task.GitHubRepository{
-			ID: repository.ID, InstallationID: repository.InstallationID,
+			ID:    repository.ID,
 			Owner: repository.Owner.Login, Name: repository.Name, FullName: repository.FullName,
 			Private: repository.Private, HTMLURL: repository.HTMLURL, DefaultBranch: repository.DefaultBranch,
 		})
 	}
+	if err := db.SetGitHubAccount(discovery.User.Login); err != nil {
+		return err
+	}
 	if err := db.ReplaceGitHubRepositories(repositories); err != nil {
 		return err
 	}
-	if len(discovery.Installations) == 0 && !service.UsesCLI() {
-		return errors.New("GitHub authorization succeeded, but no GitHub App installation is accessible; install the registered app on an account first")
-	}
 	if len(repositories) == 0 {
-		return errors.New("no repositories are accessible; review installation repository selection and app permissions")
+		return errors.New("no repositories are accessible to this GitHub CLI account; check `gh auth status`")
 	}
 	fmt.Printf("Refreshed %d accessible repositories.\n", len(repositories))
 	return nil
@@ -209,12 +201,10 @@ func parseGitHubRepositoryIDs(args []string) ([]int64, error) {
 
 func disconnectGitHub(db *store.Store) error {
 	localErr := db.DisconnectGitHub()
-	credentialErr := newGitHubService().Disconnect(context.Background())
-	if err := errors.Join(localErr, credentialErr); err != nil {
+	if err := localErr; err != nil {
 		return err
 	}
-	fmt.Println("GitHub was disconnected locally. This does not uninstall or revoke the GitHub App at GitHub.")
-	fmt.Println("Manage authorized apps at https://github.com/settings/apps/authorizations")
+	fmt.Println("GitHub was disconnected in AETHER: repository selections and Dot grants were removed. Your GitHub CLI login is untouched (`gh auth logout` signs it out).")
 	return nil
 }
 

@@ -10,11 +10,10 @@ import (
 	"aether-dots/internal/integrations"
 	"aether-dots/internal/integrations/github"
 	"aether-dots/internal/task"
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
-const authorizedGitHubAppsURL = "https://github.com/settings/apps/authorizations"
+const githubCLIURL = "https://cli.github.com"
 
 func (a *app) integrationSettings(c *ui.Context, theme *ui.Theme) {
 	a.startGitHubRefreshIfNeeded()
@@ -32,13 +31,13 @@ func (a *app) integrationSettings(c *ui.Context, theme *ui.Theme) {
 }
 
 func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
-	clientConfigured := a.githubService != nil && a.githubService.ClientConfigured()
+	installed := a.githubService.Installed()
 	status := strings.TrimSpace(a.githubStatus)
 	if status == "" {
-		if !clientConfigured {
-			status = "Not configured"
+		if !installed {
+			status = "GitHub CLI not found"
 		} else if a.snapshot.GitHubConnected {
-			status = "Refreshing credentials"
+			status = "Checking GitHub CLI"
 		} else {
 			status = "Disconnected"
 		}
@@ -52,7 +51,7 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 			serviceMark.Center().Children(func() { ui.Text(c, "◉").FontSize(21).Bold() })
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Text(c, "GitHub").FontSize(15).Bold()
-				ui.Text(c, githubCardBlurb(a.githubService)).
+				ui.Text(c, "Read repositories, issues, pull requests, and CI through your GitHub CLI login. AETHER stores no token.").
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			})
 			githubStatusBadge(c, theme, status)
@@ -77,50 +76,38 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 			})
 		}
 
-		if status == "Awaiting authorization" {
-			ui.Column(c).FillWidth().Gap(8).Padding(12, 14).Radius(11).
-				Background(theme.Background).Border(1, theme.Border).Children(func() {
-				ui.Text(c, "Enter this code on GitHub").FontSize(11).Bold()
-				ui.Text(c, a.githubDeviceCode).FontSize(22).Bold().LetterSpacing(1.4)
-				ui.Row(c).Wrap().Gap(8).Children(func() {
-					if ui.Button(c.Key("github-copy-code"), "Copy code").Padding(8, 11).Clicked() {
-						c.WriteClipboard(a.githubDeviceCode)
-						a.adt.Success("Code copied", "Enter the code on GitHub to authorize AETHER Dots.")
-					}
-					if ui.PrimaryButton(c.Key("github-open-verification"), "Open GitHub verification").Padding(8, 11).Clicked() {
-						c.OpenURL(a.githubVerificationURL)
-					}
-					if ui.Button(c.Key("github-cancel-auth"), "Cancel").Padding(8, 11).Clicked() {
-						a.cancelGitHubAuthorization()
-					}
-				})
-				ui.Text(c, "The code expires when GitHub's authorization window ends. AETHER checks only at GitHub's requested interval.").
-					FontSize(10).TextColor(theme.TextMuted).FillWidth()
+		switch {
+		case !installed:
+			ui.Text(c, "AETHER reads GitHub through the GitHub CLI so it never holds a token. Install it, run `gh auth login` in Terminal, then restart AETHER.").
+				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			ui.Link(c, "Get the GitHub CLI", githubCLIURL).FontSize(11).TextColor(theme.Accent)
+		case status == "Sign-in required":
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
+				ui.Text(c, "Run this in Terminal, then press Connect:").FontSize(11).TextColor(theme.TextMuted)
+				ui.Text(c, "gh auth login").FontSize(11).Bold()
+				if ui.Button(c.Key("github-copy-login"), "Copy command").Padding(6, 10).Clicked() {
+					c.WriteClipboard("gh auth login")
+					a.adt.Success("Command copied", "Paste it in Terminal and follow the prompts.")
+				}
 			})
 		}
 
-		if !clientConfigured {
-			ui.Text(c, "GitHub CLI not found. Install it from cli.github.com and run `gh auth login`, then restart AETHER.").
-				FontSize(11).TextColor(theme.TextMuted).FillWidth()
-		}
-
-		if a.snapshot.GitHubConnected && (status == "Connected" || status == "Permission required" || status == "Rate limited" || status == "Connection failed" || status == "Refreshing credentials" || status == "Session expired") {
+		if a.snapshot.GitHubConnected && (status == "Connected" || status == "Permission required" || status == "Rate limited" || status == "Connection failed" || status == "Checking GitHub CLI" || status == "Session expired" || status == "Account changed") {
 			a.githubConnectionDetails(c, theme)
 		}
 
 		ui.Divider(c)
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 			switch status {
-			case "Awaiting authorization":
-			case "Connecting", "Refreshing credentials":
-				ui.Text(c, "Connecting securely…").FontSize(11).TextColor(theme.TextMuted)
+			case "Connecting", "Checking GitHub CLI":
+				ui.Text(c, "Checking your GitHub CLI login…").FontSize(11).TextColor(theme.TextMuted)
 				if a.snapshot.GitHubConnected {
 					if ui.Button(c.Key("github-disconnect-loading"), "Disconnect").Padding(8, 12).Clicked() {
 						a.disconnectGitHub()
 					}
 				}
 			case "Disconnecting":
-				ui.Text(c, "Disconnecting securely…").FontSize(11).TextColor(theme.TextMuted)
+				ui.Text(c, "Disconnecting…").FontSize(11).TextColor(theme.TextMuted)
 			case "Connected":
 				if ui.PrimaryButton(c.Key("github-manage"), "Manage repositories").Padding(8, 12).Clicked() {
 					a.githubManageRepositories = !a.githubManageRepositories
@@ -132,8 +119,9 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 				if ui.Button(c.Key("github-disconnect"), "Disconnect").Padding(8, 12).Clicked() {
 					a.disconnectGitHub()
 				}
+			case "GitHub CLI not found":
 			case "Permission required", "Rate limited", "Connection failed":
-				if clientConfigured && !a.githubLoading {
+				if !a.githubLoading {
 					if ui.PrimaryButton(c.Key("github-retry"), "Refresh GitHub access").Padding(8, 12).Clicked() {
 						a.refreshGitHubConnection()
 					}
@@ -147,37 +135,29 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 						a.disconnectGitHub()
 					}
 				}
-				if clientConfigured {
-					label := "Connect GitHub"
-					if status == "Session expired" {
-						label = "Reconnect GitHub"
-					}
-					if ui.PrimaryButton(c.Key("github-connect"), label).Padding(8, 12).
-						Disabled(a.githubLoading || a.githubAuthCancel != nil || a.githubDisconnecting).Clicked() {
-						a.startGitHubAuthorization()
-					}
+				label := "Connect GitHub"
+				switch status {
+				case "Session expired", "Account changed":
+					label = "Reconnect GitHub"
+				}
+				if ui.PrimaryButton(c.Key("github-connect"), label).Padding(8, 12).
+					Disabled(a.githubLoading || a.githubDisconnecting).Clicked() {
+					a.connectGitHub()
 				}
 			}
-			if a.githubAuthCancel != nil && status != "Awaiting authorization" {
-				if ui.Button(c.Key("github-cancel-pending"), "Cancel connection").Padding(8, 12).Clicked() {
-					a.cancelGitHubAuthorization()
-				}
-			}
-			ui.Link(c, "GitHub authorized apps", authorizedGitHubAppsURL).FontSize(11).TextColor(theme.TextMuted)
 		})
 
 		if a.githubManageRepositories && a.snapshot.GitHubConnected {
 			a.githubRepositoryManager(c, theme)
 		}
 		if a.snapshot.GitHubConnected {
-			ui.Text(c, "Disconnecting removes AETHER's local token, repository selections, and Dot grants. It does not uninstall or revoke the GitHub App at GitHub.").
+			ui.Text(c, "Disconnecting removes AETHER's repository selections and Dot grants. Your GitHub CLI login is not touched; use `gh auth logout` to sign out of it.").
 				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 		}
 	})
 }
 
 func (a *app) githubConnectionDetails(c *ui.Context, theme *ui.Theme) {
-	installationCount := len(a.githubInstallations)
 	repositoryCount := len(a.githubRepositories)
 	selectedCount := 0
 	for _, repository := range a.githubRepositories {
@@ -186,35 +166,15 @@ func (a *app) githubConnectionDetails(c *ui.Context, theme *ui.Theme) {
 		}
 	}
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
-		ui.Text(c, fmt.Sprintf("%d installation(s) · %d accessible repositories · %d selected", installationCount, repositoryCount, selectedCount)).
+		ui.Text(c, fmt.Sprintf("%d accessible repositories · %d selected", repositoryCount, selectedCount)).
 			FontSize(11).TextColor(theme.TextMuted)
 		ui.Spacer(c)
 		ui.Text(c, "Read-only").FontSize(10).Bold().TextColor(theme.Accent)
 	})
-	if installationCount > 0 {
-		installationLabels := make([]string, 0, min(4, installationCount))
-		for _, installation := range a.githubInstallations[:min(4, installationCount)] {
-			label := installation.Account.Login
-			if installation.Account.Type != "" {
-				label += " · " + installation.Account.Type
-			}
-			installationLabels = append(installationLabels, label)
-		}
-		if installationCount > len(installationLabels) {
-			installationLabels = append(installationLabels, fmt.Sprintf("and %d more", installationCount-len(installationLabels)))
-		}
-		ui.Text(c, "Installed for · "+strings.Join(installationLabels, ", ")).
-			FontSize(10).TextColor(theme.TextMuted).FillWidth()
-	}
 	verifiedAt := a.snapshot.GitHubLastVerifiedAt
 	if !verifiedAt.IsZero() {
 		ui.Text(c, "Last successful verification · "+verifiedAt.Local().Format("Jan 2, 2006 at 3:04 PM")).
 			FontSize(10).TextColor(theme.TextMuted).FillWidth()
-	}
-	if a.githubStatus == "Permission required" && !a.githubService.UsesCLI() {
-		if installURL := githubInstallationURL(); installURL != "" {
-			ui.Link(c, "Install the AETHER GitHub App", installURL).FontSize(11).TextColor(theme.Accent)
-		}
 	}
 }
 
@@ -281,9 +241,9 @@ func githubStatusBadge(c *ui.Context, theme *ui.Theme, status string) {
 	switch status {
 	case "Connected":
 		color = ui.Hex("#168459")
-	case "Awaiting authorization", "Connecting", "Refreshing credentials", "Disconnecting":
+	case "Connecting", "Checking GitHub CLI", "Disconnecting":
 		color = theme.Accent
-	case "Permission required", "Session expired", "Rate limited", "Connection failed":
+	case "Permission required", "Session expired", "Rate limited", "Connection failed", "Account changed", "Sign-in required", "GitHub CLI not found":
 		color = theme.Danger
 	}
 	ui.Box(c).Shrink(0).Padding(6, 9).Radius(10).Background(color.Alpha(0.11)).TextColor(color).
@@ -294,9 +254,9 @@ func (a *app) startGitHubRefreshIfNeeded() {
 	if a.githubLoading || a.githubLoaded {
 		return
 	}
-	if a.githubService == nil || !a.githubService.ClientConfigured() {
-		a.githubStatus = "Not configured"
-		a.githubError = "Install the GitHub CLI (https://cli.github.com), run `gh auth login` in Terminal, then restart AETHER."
+	if !a.githubService.Installed() {
+		a.githubStatus = "GitHub CLI not found"
+		a.githubError = ""
 		a.githubLoaded = true
 		return
 	}
@@ -313,9 +273,9 @@ func (a *app) refreshGitHubConnection() {
 	if a.githubLoading || a.githubDisconnecting {
 		return
 	}
-	if a.githubService == nil || !a.githubService.ClientConfigured() {
-		a.githubStatus = "Not configured"
-		a.githubError = "Install the GitHub CLI (https://cli.github.com) and run `gh auth login`, then restart AETHER."
+	if !a.githubService.Installed() {
+		a.githubStatus = "GitHub CLI not found"
+		a.githubError = ""
 		a.githubLoaded = true
 		return
 	}
@@ -327,7 +287,7 @@ func (a *app) refreshGitHubConnection() {
 	}
 	a.githubLoading = true
 	a.githubLoaded = false
-	a.githubStatus = "Refreshing credentials"
+	a.githubStatus = "Checking GitHub CLI"
 	a.githubError = ""
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	a.githubRequestCancel = cancel
@@ -341,12 +301,15 @@ func (a *app) refreshGitHubConnection() {
 			repos = make([]task.GitHubRepository, 0, len(discovery.Repositories))
 			for _, repository := range discovery.Repositories {
 				repos = append(repos, task.GitHubRepository{
-					ID: repository.ID, InstallationID: repository.InstallationID,
+					ID:    repository.ID,
 					Owner: repository.Owner.Login, Name: repository.Name, FullName: repository.FullName,
 					Private: repository.Private, HTMLURL: repository.HTMLURL, DefaultBranch: repository.DefaultBranch,
 				})
 			}
-			err = database.ReplaceGitHubRepositories(repos)
+			err = database.SetGitHubAccount(discovery.User.Login)
+			if err == nil {
+				err = database.ReplaceGitHubRepositories(repos)
+			}
 		}
 		cancel()
 		finish := func() {
@@ -358,14 +321,10 @@ func (a *app) refreshGitHubConnection() {
 			a.githubRequestCancel = nil
 			if err != nil {
 				a.githubStatus, a.githubError = githubStatusForError(err)
-				if errors.Is(err, github.ErrSessionExpired) {
-					a.githubError = "Your GitHub session expired. Reconnect to restore repository access."
-				}
 				a.refresh()
 				return
 			}
 			a.githubUser = discovery.User
-			a.githubInstallations = discovery.Installations
 			a.githubRepositories = database.GitHubRepositories()
 			a.githubTruncated = discovery.Truncated
 			a.refresh()
@@ -375,12 +334,9 @@ func (a *app) refreshGitHubConnection() {
 				a.clearGitHubAvatar()
 			}
 			switch {
-			case len(discovery.Installations) == 0 && !service.UsesCLI():
-				a.githubStatus = "Permission required"
-				a.githubError = "GitHub authorized AETHER, but no GitHub App installation is accessible. Install the app on an account, then refresh."
 			case len(discovery.Repositories) == 0:
 				a.githubStatus = "Permission required"
-				a.githubError = "No repositories are accessible. Review the app installation's repository selection and read permissions."
+				a.githubError = "No repositories are accessible to this GitHub CLI account. Check `gh auth status` and that you are signed in as the right user."
 			default:
 				a.githubStatus = "Connected"
 				a.githubError = ""
@@ -441,69 +397,47 @@ func (a *app) clearGitHubAvatar() {
 	a.githubAvatar = nil
 }
 
-func (a *app) startGitHubAuthorization() {
-	if a.githubLoading || a.githubAuthCancel != nil || a.githubDisconnecting {
+// connectGitHub confirms the GitHub CLI is signed in, records which account it
+// is, and loads that account's repositories. There is no code or token to enter.
+func (a *app) connectGitHub() {
+	if a.githubLoading || a.githubDisconnecting {
 		return
 	}
-	if a.githubService == nil || !a.githubService.ClientConfigured() {
-		a.githubStatus = "Not configured"
-		a.githubError = "Install the GitHub CLI (https://cli.github.com) and run `gh auth login`, then restart AETHER."
+	if !a.githubService.Installed() {
+		a.githubStatus = "GitHub CLI not found"
+		a.githubError = ""
 		a.githubLoaded = true
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.githubAuthCancel = cancel
 	a.githubStatus = "Connecting"
 	a.githubError = ""
-	a.githubDeviceCode = ""
 	a.githubLoading = true
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	a.githubRequestCancel = cancel
 	win := a.win
 	service := a.githubService
 	database := a.db
 	go func() {
-		err := service.AuthorizeDevice(ctx, func(device github.DeviceAuthorization) {
-			setDevice := func() {
-				if a.githubDisconnecting {
-					return
-				}
-				a.githubStatus = "Awaiting authorization"
-				a.githubDeviceCode = device.UserCode
-				a.githubVerificationURL = device.VerificationURI
-			}
-			if win != nil {
-				win.Update(setDevice)
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if openErr := mygo.Shell.OpenExternal(github.DeviceVerificationURL); openErr != nil && win != nil {
-				win.Update(func() {
-					a.githubError = "The verification page could not be opened automatically. Use Open GitHub verification to continue."
-				})
-			}
-		})
+		user, err := service.Connect(ctx)
+		if err == nil {
+			err = database.SetGitHubConnected(true)
+		}
+		if err == nil {
+			err = database.SetGitHubAccount(user.Login)
+		}
 		cancel()
 		finish := func() {
 			if a.githubDisconnecting {
 				return
 			}
-			if err == nil {
-				err = database.SetGitHubConnected(true)
-			}
 			a.githubLoading = false
-			a.githubAuthCancel = nil
-			a.githubDeviceCode = ""
+			a.githubRequestCancel = nil
 			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					a.githubStatus = "Disconnected"
-					a.githubError = ""
-				} else {
-					a.githubStatus, a.githubError = githubStatusForError(err)
-				}
+				a.githubStatus, a.githubError = githubStatusForError(err)
 				a.githubLoaded = true
 				return
 			}
-			a.githubStatus = "Refreshing credentials"
+			a.githubStatus = "Checking GitHub CLI"
 			a.githubLoaded = false
 			a.refresh()
 			a.refreshGitHubConnection()
@@ -516,21 +450,12 @@ func (a *app) startGitHubAuthorization() {
 	}()
 }
 
-func (a *app) cancelGitHubAuthorization() {
-	if a.githubAuthCancel != nil {
-		a.githubAuthCancel()
-	}
-}
-
 func (a *app) disconnectGitHub() {
 	if a.githubDisconnecting {
 		return
 	}
 	if a.githubRequestCancel != nil {
 		a.githubRequestCancel()
-	}
-	if a.githubAuthCancel != nil {
-		a.githubAuthCancel()
 	}
 	a.clearGitHubAvatar()
 	a.githubLoading = true
@@ -545,32 +470,26 @@ func (a *app) disconnectGitHub() {
 	database := a.db
 	go func() {
 		localErr := database.DisconnectGitHub()
-		var credentialErr error
-		if service != nil {
-			credentialErr = service.Disconnect(context.Background())
-		}
+		credentialErr := service.Disconnect(context.Background())
 		finish := func() {
 			a.githubLoading = false
 			a.githubDisconnecting = false
 			a.githubLoaded = true
-			a.githubAuthCancel = nil
 			a.githubRequestCancel = nil
-			a.githubDeviceCode = ""
 			a.githubUser = github.User{}
 			a.githubAvatar = nil
-			a.githubInstallations = nil
 			a.githubRepositories = nil
 			a.githubManageRepositories = false
 			a.githubStatus = "Disconnected"
 			a.refresh()
 			if err := errors.Join(localErr, credentialErr); err != nil {
 				a.githubStatus = "Connection failed"
-				a.githubError = "Local GitHub access was blocked, but AETHER couldn't confirm that every local credential was removed. Try disconnecting again. " + err.Error()
+				a.githubError = "AETHER couldn't confirm that GitHub access was fully removed. Try disconnecting again. " + err.Error()
 				a.adt.Error("GitHub disconnect needs attention", a.githubError)
 				return
 			}
 			a.githubError = ""
-			a.adt.Push(ADTNotice{Title: "GitHub disconnected locally", Description: "AETHER removed its local token, repository selections, and Dot grants. The GitHub App may remain installed or authorized at GitHub.", Level: ADTInfo})
+			a.adt.Push(ADTNotice{Title: "GitHub disconnected locally", Description: "AETHER removed its repository selections and Dot grants. Your GitHub CLI login is untouched.", Level: ADTInfo})
 		}
 		if win != nil {
 			win.Update(finish)
@@ -602,38 +521,23 @@ func (a *app) setGitHubRepositorySelected(repositoryID int64, selected bool) {
 
 func githubStatusForError(err error) (string, string) {
 	switch {
-	case errors.Is(err, github.ErrInvalidClient):
-		return "Not configured", "GitHub App client ID is missing or invalid for this build."
-	case errors.Is(err, github.ErrAuthorizationDenied):
-		return "Disconnected", "GitHub authorization was canceled. You can connect again when ready."
-	case errors.Is(err, github.ErrDeviceCodeExpired):
-		return "Connection failed", "The GitHub device code expired. Start a new connection."
-	case errors.Is(err, github.ErrDeviceFlowDisabled):
-		return "Not configured", "Device Flow is disabled for this GitHub App. Enable it in the app registration, then try again."
+	case errors.Is(err, github.ErrCLINotInstalled):
+		return "GitHub CLI not found", ""
+	case errors.Is(err, github.ErrCLINotAuthenticated):
+		return "Sign-in required", "The GitHub CLI is not signed in. Run `gh auth login` in Terminal, then press Connect."
+	case errors.Is(err, github.ErrAccountChanged):
+		return "Account changed", err.Error()
 	case errors.Is(err, github.ErrSessionExpired):
-		return "Session expired", "Your GitHub session expired. Reconnect to restore access."
+		return "Session expired", "Your GitHub CLI session expired. Run `gh auth login`, then reconnect."
 	case errors.Is(err, github.ErrNotConnected):
-		return "Session expired", "No GitHub credentials are available for this saved connection. Reconnect to restore access."
+		return "Disconnected", "GitHub is disconnected in AETHER. Press Connect to use your GitHub CLI login."
 	case errors.Is(err, github.ErrPermissionDenied), errors.Is(err, github.ErrNotFound):
-		return "Permission required", "GitHub no longer allows this read operation. Check app permissions and installation repository access."
+		return "Permission required", "GitHub no longer allows this read operation for the GitHub CLI account. Check `gh auth status` and the account's access."
 	case errors.Is(err, github.ErrRateLimited):
 		return "Rate limited", err.Error()
 	default:
 		return "Connection failed", err.Error()
 	}
-}
-
-func githubInstallationURL() string {
-	slug := github.ConfiguredAppSlug()
-	if slug == "" || len(slug) > 100 {
-		return ""
-	}
-	for _, r := range slug {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
-			return ""
-		}
-	}
-	return "https://github.com/apps/" + slug + "/installations/new"
 }
 
 func filterGitHubRepositories(repositories []task.GitHubRepository, query string) []task.GitHubRepository {
@@ -648,11 +552,4 @@ func filterGitHubRepositories(repositories []task.GitHubRepository, query string
 		}
 	}
 	return filtered
-}
-
-func githubCardBlurb(service *github.Service) string {
-	if service.UsesCLI() {
-		return "Read repositories, issues, pull requests, and CI through your GitHub CLI login. AETHER stores no token."
-	}
-	return "Let your Dots inspect repositories, issues, pull requests, and CI activity."
 }

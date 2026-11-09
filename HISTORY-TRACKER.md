@@ -656,3 +656,17 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - **Known remaining O(N).** `change()` still clones the whole in-memory database and `Snapshot()` clones it per call; disk writes are O(changed) but memory work is linear. Next: targeted mutators / lazy message loading, then drop `cloneDatabase` from the hot path. Old binaries that only know `dots.json` will create a fresh empty store beside `dots.db`: do not run them against the same folder.
 - **GitHub via gh.** New `ghcli.go`: `Service` has a gh mode (`NewDefaultService` prefers gh when installed). No token held by AETHER; fixed `gh api --method GET` shape, pinned `GH_HOST`, minimal env, size cap, path validation. Discovery uses `/user/repos` (163 repos verified against the real login); access rechecks use `/repositories/{id}`. Tests use a fake `gh` script. Still read-only; write actions need a separate permission design (approval inbox is the next step). `AGENTS.md` updated with the new boundary.
 - Verified: go build/vet/test (all packages), `-race` on store/engine/github, `mygo vet`. Not verified: Desktop UI by eye.
+
+## 2026-11-08 (9) — README rewrite for users
+
+- README cut from ~240 to ~120 lines and refocused on users: getting started, providers, a capability/permission table, integrations, Skills/Routines, CLI basics, data location, build from source.
+- Dropped developer/release detail (linker flags, relay dev origins, schema migration history, Anthropic Threads internals, full GitHub App registration walkthrough, Apple Reminders plans). That material remains in git history and `AGENTS.md` covers the security boundary.
+
+## 2026-11-08 (9) — GitHub: `gh` CLI only; GitHub App removed
+
+- Removed Device Flow/OAuth, Keychain credentials, refresh tokens, Client ID/App slug config (`auth.go`, `config.go`, `mygo_store.go`), installation discovery, the HTTP transport, and the device-code UI. `Service` (`service.go`, `ghcli.go`) runs fixed `gh api --method GET` calls; `PurgeLegacyCredentials` deletes any token an earlier build left in the Keychain at startup.
+- **Account pinning.** `gh` is machine-wide state (`gh auth switch`), so `task.Database.GitHubAccount` records the login at connect/refresh. `WithGitHubTools` withholds tools if `Service.Login` differs; `Store.SetGitHubAccount` to a different login clears repositories, grants, disclosure and Routine opt-ins. `/user` doubles as the cached (20 s) session check, so a stale `gh` config is not mistaken for a working login.
+- Access recheck is now `GET /repositories/{id}` per repository (installation listings no longer exist). `InstallationID` stays in `task.GitHubRepository` only as an omitted legacy field.
+- UI states: GitHub CLI not found (with install link), Sign-in required (copyable `gh auth login`), Connected, Account changed, Rate limited, etc. CLI: `aether github login` just verifies gh and loads repositories.
+- Tests use a fake `gh` shell script (`internal/integrations/github/ghtest`, `AETHER_GH_PATH`), covering pagination, HTTP-status mapping, oversized/malformed output, cancellation killing the process, signed-out/missing gh, disconnect/reconnect, account change. Verified against the real `gh` (163 repositories) in an earlier step.
+- Not done: write operations (comment/issue/PR draft) — needs an approval-inbox permission design first.

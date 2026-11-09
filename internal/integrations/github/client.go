@@ -3,13 +3,13 @@ package github
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,16 +18,14 @@ import (
 )
 
 const (
-	APIBaseURL          = "https://api.github.com"
 	APIVersion          = "2026-03-10"
 	maxAPIResponseBytes = 2 * 1024 * 1024
 	maxPages            = 20
 	maxPageSize         = 100
-	defaultAPITimeout   = 20 * time.Second
 )
 
 var (
-	ErrPermissionDenied = errors.New("GitHub denied this read operation; check the app's permissions and installation access")
+	ErrPermissionDenied = errors.New("GitHub denied this read operation; check which repositories your GitHub CLI account can read")
 	ErrNotFound         = errors.New("the GitHub resource was not found or is no longer accessible")
 	ErrRateLimited      = errors.New("GitHub API rate limit reached; try again later")
 	ErrAPIUnavailable   = errors.New("GitHub API is temporarily unavailable")
@@ -41,24 +39,14 @@ type User struct {
 	HTMLURL   string `json:"html_url"`
 }
 
-type Installation struct {
-	ID      int64 `json:"id"`
-	Account struct {
-		Login string `json:"login"`
-		Type  string `json:"type"`
-	} `json:"account"`
-	RepositorySelection string `json:"repository_selection"`
-}
-
 type Repository struct {
-	ID             int64  `json:"id"`
-	InstallationID int64  `json:"installation_id,omitempty"`
-	Name           string `json:"name"`
-	FullName       string `json:"full_name"`
-	HTMLURL        string `json:"html_url"`
-	Private        bool   `json:"private"`
-	DefaultBranch  string `json:"default_branch,omitempty"`
-	Owner          struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	FullName      string `json:"full_name"`
+	HTMLURL       string `json:"html_url"`
+	Private       bool   `json:"private"`
+	DefaultBranch string `json:"default_branch,omitempty"`
+	Owner         struct {
 		Login string `json:"login"`
 	} `json:"owner"`
 }
@@ -177,15 +165,9 @@ type WorkflowJobs struct {
 // APIClient is a short-lived authenticated client. Production construction is
 // fixed to api.github.com and never follows redirects, so an Authorization
 // header cannot be forwarded to another host.
+// APIClient issues read-only GitHub REST requests through the GitHub CLI.
 type APIClient struct {
-	gh         *ghRunner // set when requests go through the GitHub CLI
-	token      string
-	httpClient *http.Client
-	base       *url.URL
-}
-
-func NewAPIClient(token string, httpClient *http.Client) *APIClient {
-	return newAPIClient(token, httpClient, APIBaseURL)
+	gh *ghRunner
 }
 
 // FetchAvatar retrieves only a small raster image from GitHub's avatar host.
@@ -227,14 +209,6 @@ func FetchAvatar(ctx context.Context, avatarURL string, httpClient *http.Client)
 		return nil, errors.New("GitHub account avatar dimensions are invalid")
 	}
 	return data, nil
-}
-
-func newAPIClient(token string, httpClient *http.Client, base string) *APIClient {
-	parsed, _ := url.Parse(base)
-	if parsed == nil {
-		parsed = &url.URL{Scheme: "https", Host: "api.github.com"}
-	}
-	return &APIClient{token: token, httpClient: noRedirectClient(httpClient, defaultAPITimeout), base: parsed}
 }
 
 type APIError struct {
@@ -295,92 +269,6 @@ func (c *APIClient) GetAuthenticatedUser(ctx context.Context) (User, error) {
 		err = errors.New("GitHub returned an incomplete account profile")
 	}
 	return user, err
-}
-
-func (c *APIClient) ListInstallations(ctx context.Context) ([]Installation, bool, error) {
-	var result []Installation
-	truncated := false
-	for page := 1; page <= maxPages; page++ {
-		query := url.Values{"per_page": {strconv.Itoa(maxPageSize)}, "page": {strconv.Itoa(page)}}
-		var response struct {
-			TotalCount    int            `json:"total_count"`
-			Installations []Installation `json:"installations"`
-		}
-		if err := c.getJSON(ctx, "/user/installations", query, &response); err != nil {
-			return nil, truncated, err
-		}
-		result = append(result, response.Installations...)
-		if len(response.Installations) < maxPageSize {
-			break
-		}
-		if page == maxPages {
-			truncated = true
-		}
-	}
-	for i := range result {
-		result[i].Account.Login = safeExternalText(result[i].Account.Login, 100)
-		result[i].Account.Type = safeExternalText(result[i].Account.Type, 32)
-	}
-	return result, truncated, nil
-}
-
-func (c *APIClient) ListInstallationRepositories(ctx context.Context, installationID int64) ([]Repository, bool, error) {
-	if installationID <= 0 {
-		return nil, false, errors.New("installation ID is invalid")
-	}
-	var result []Repository
-	truncated := false
-	for page := 1; page <= maxPages; page++ {
-		query := url.Values{"per_page": {strconv.Itoa(maxPageSize)}, "page": {strconv.Itoa(page)}}
-		var response struct {
-			TotalCount   int          `json:"total_count"`
-			Repositories []Repository `json:"repositories"`
-		}
-		path := "/user/installations/" + strconv.FormatInt(installationID, 10) + "/repositories"
-		if err := c.getJSON(ctx, path, query, &response); err != nil {
-			return nil, truncated, err
-		}
-		pageRepos := response.Repositories
-		for i := range pageRepos {
-			pageRepos[i].InstallationID = installationID
-			pageRepos[i] = cleanRepository(pageRepos[i])
-		}
-		result = append(result, pageRepos...)
-		if len(pageRepos) < maxPageSize {
-			break
-		}
-		if page == maxPages {
-			truncated = true
-		}
-	}
-	return result, truncated, nil
-}
-
-// RepositoryStillAccessible confirms membership in an installation's live
-// repository listing. It stops as soon as the requested stable ID is found.
-func (c *APIClient) RepositoryStillAccessible(ctx context.Context, installationID, repositoryID int64) (bool, error) {
-	if installationID <= 0 || repositoryID <= 0 {
-		return false, errors.New("GitHub repository identity is invalid")
-	}
-	for page := 1; page <= maxPages; page++ {
-		query := url.Values{"per_page": {strconv.Itoa(maxPageSize)}, "page": {strconv.Itoa(page)}}
-		var response struct {
-			Repositories []Repository `json:"repositories"`
-		}
-		path := "/user/installations/" + strconv.FormatInt(installationID, 10) + "/repositories"
-		if err := c.getJSON(ctx, path, query, &response); err != nil {
-			return false, err
-		}
-		for _, repository := range response.Repositories {
-			if repository.ID == repositoryID {
-				return true, nil
-			}
-		}
-		if len(response.Repositories) < maxPageSize {
-			return false, nil
-		}
-	}
-	return false, nil
 }
 
 func (c *APIClient) GetRepository(ctx context.Context, owner, repo string) (RepositoryMetadata, error) {
@@ -573,76 +461,13 @@ func (c *APIClient) GetWorkflowRunJobs(ctx context.Context, owner, repo string, 
 }
 
 func (c *APIClient) getJSON(ctx context.Context, path string, query url.Values, target any) error {
-	if c == nil || (c.gh == nil && (c.base == nil || !validOAuthToken(c.token))) {
+	if c == nil || c.gh == nil {
 		return ErrNotConnected
 	}
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.Contains(path, "..") || strings.ContainsAny(path, "\r\n\x00 ") {
 		return errors.New("GitHub API path is invalid")
 	}
-	if c.gh != nil {
-		return c.gh.api(ctx, path, query, target)
-	}
-	endpoint := *c.base
-	rawPath := strings.TrimRight(c.base.EscapedPath(), "/") + path
-	decodedPath, pathErr := url.PathUnescape(rawPath)
-	if pathErr != nil {
-		return errors.New("GitHub API path is invalid")
-	}
-	endpoint.Path = decodedPath
-	endpoint.RawPath = rawPath
-	if query != nil {
-		endpoint.RawQuery = query.Encode()
-	}
-	if (endpoint.Scheme != "https" && !(endpoint.Scheme == "http" && isLoopbackHost(endpoint.Host))) || endpoint.Host != c.base.Host {
-		return errors.New("GitHub API request host is invalid")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return errors.New("could not prepare GitHub API request")
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("X-GitHub-Api-Version", APIVersion)
-	req.Header.Set("User-Agent", "AETHER-Dots")
-	response, err := c.httpClient.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return ErrAPIUnavailable
-	}
-	defer response.Body.Close()
-	body, err := readBounded(response.Body, maxAPIResponseBytes)
-	if err != nil {
-		return ErrResponseTooLarge
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		retryAfter := time.Duration(0)
-		if raw := response.Header.Get("Retry-After"); raw != "" {
-			if seconds, parseErr := strconv.Atoi(raw); parseErr == nil && seconds > 0 && seconds <= 3600 {
-				retryAfter = time.Duration(seconds) * time.Second
-			}
-		}
-		if response.Header.Get("X-RateLimit-Remaining") == "0" {
-			if reset, parseErr := strconv.ParseInt(response.Header.Get("X-RateLimit-Reset"), 10, 64); parseErr == nil {
-				until := time.Until(time.Unix(reset, 0))
-				if until > 0 && until <= 24*time.Hour {
-					retryAfter = until
-				}
-			}
-		}
-		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusForbidden && (retryAfter > 0 || strings.Contains(strings.ToLower(string(body)), "rate limit")) {
-			if retryAfter == 0 {
-				retryAfter = time.Minute
-			}
-			return &APIError{StatusCode: response.StatusCode, RetryAfter: retryAfter}
-		}
-		return &APIError{StatusCode: response.StatusCode}
-	}
-	if err := json.Unmarshal(body, target); err != nil {
-		return errors.New("GitHub returned an invalid API response")
-	}
-	return nil
+	return c.gh.api(ctx, path, query, target)
 }
 
 func repositoryPath(owner, repo string) string {
@@ -785,4 +610,32 @@ func isLoopbackHost(host string) bool {
 	}
 	name := parsed.Hostname()
 	return name == "localhost" || name == "127.0.0.1" || name == "::1"
+}
+
+func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, errors.New("response too large")
+	}
+	return data, nil
+}
+
+func noRedirectClient(client *http.Client, timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	var transport http.RoundTripper
+	if client != nil {
+		transport = client.Transport
+		if client.Timeout > 0 && client.Timeout < timeout {
+			timeout = client.Timeout
+		}
+	}
+	return &http.Client{
+		Transport: transport, Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }

@@ -16,40 +16,50 @@ import (
 	"time"
 )
 
-// GitHub through the user's own GitHub CLI.
+// GitHub through the user's own GitHub CLI, and nothing else.
 //
-// AETHER does not hold a GitHub token in this mode: `gh` owns the login (its
-// keyring), and AETHER only runs `gh api --method GET <path>` with a fixed
-// argument shape. Dots still cannot choose a binary, a method, a host, flags or
-// a path outside the existing typed read operations; every call also keeps the
-// per-Dot repository grant and disclosure checks in the engine.
-
-// CLIInstallationID is the stand-in installation ID stored for repositories
-// reached through gh. A gh login has no GitHub App installation; the store only
-// requires a positive value.
-const CLIInstallationID int64 = 1
+// AETHER holds no GitHub token: `gh` owns the login (its keyring). The only
+// process started is the located gh binary, with `api --method GET -H ...
+// <validated /path>`; arguments, method and host (GH_HOST=github.com, minimal
+// environment) are fixed in code and never come from a model. Output is size
+// capped. Every call still passes through the typed read operations and the
+// per-Dot repository grants in the engine.
 
 var (
+	ErrNotConnected        = errors.New("GitHub is not connected")
+	ErrSessionExpired      = errors.New("GitHub CLI session expired; run `gh auth login` in Terminal, then connect again")
+	ErrAccountChanged      = errors.New("the GitHub CLI account changed since AETHER was connected; connect GitHub again to use the new account")
 	ErrCLINotInstalled     = errors.New("GitHub CLI (gh) is not installed. Install it from https://cli.github.com, then run `gh auth login`")
 	ErrCLINotAuthenticated = errors.New("GitHub CLI is not signed in. Run `gh auth login` in Terminal, then connect again")
 )
 
 var ghHTTPStatus = regexp.MustCompile(`\(HTTP (\d{3})\)`)
 
+const sessionCacheTTL = 20 * time.Second
+
 type ghRunner struct {
 	path string
 
-	mu       sync.Mutex
-	authAt   time.Time
-	authGood bool
+	mu        sync.Mutex
+	checkedAt time.Time
+	login     string
 }
 
 // findGH locates the gh binary. GUI apps start with a minimal PATH, so the
 // usual Homebrew and system locations are checked explicitly.
 func findGH() (string, bool) {
-	candidates := []string{"/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"}
-	if p, err := exec.LookPath("gh"); err == nil {
-		candidates = append([]string{p}, candidates...)
+	var candidates []string
+	if override, ok := os.LookupEnv("AETHER_GH_PATH"); ok {
+		// An explicit path is used exclusively; an empty value means "no gh".
+		if override == "" {
+			return "", false
+		}
+		candidates = []string{override}
+	} else {
+		candidates = []string{"/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"}
+		if p, err := exec.LookPath("gh"); err == nil {
+			candidates = append([]string{p}, candidates...)
+		}
 	}
 	for _, p := range candidates {
 		abs, err := filepath.Abs(p)
@@ -108,31 +118,39 @@ func (g *ghRunner) run(ctx context.Context, limit int, args ...string) (string, 
 	return out.buf.String(), errOut.buf.String(), err
 }
 
-// authenticated reports whether gh has a github.com login. The answer is
-// cached briefly so tool calls do not each spawn two processes.
-func (g *ghRunner) authenticated(ctx context.Context) bool {
+// session returns the signed-in login, or "" when gh is signed out. It calls
+// GET /user, which proves the token works (not merely that a config exists),
+// and is cached briefly so tool calls do not each spawn extra processes.
+func (g *ghRunner) session(ctx context.Context) string {
 	g.mu.Lock()
-	if time.Since(g.authAt) < 20*time.Second {
-		good := g.authGood
+	if !g.checkedAt.IsZero() && time.Since(g.checkedAt) < sessionCacheTTL {
+		login := g.login
 		g.mu.Unlock()
-		return good
+		return login
 	}
 	g.mu.Unlock()
-	_, _, err := g.run(ctx, 64*1024, "auth", "status", "--hostname", "github.com")
-	good := err == nil
+	var user struct {
+		Login string `json:"login"`
+	}
+	login := ""
+	if err := g.api(ctx, "/user", nil, &user); err == nil && validLogin(user.Login) {
+		login = user.Login
+	}
 	if ctx.Err() == nil {
 		g.mu.Lock()
-		g.authAt, g.authGood = time.Now(), good
+		g.checkedAt, g.login = time.Now(), login
 		g.mu.Unlock()
 	}
-	return good
+	return login
 }
 
-func (g *ghRunner) forgetAuth() {
+func (g *ghRunner) forgetSession() {
 	g.mu.Lock()
-	g.authAt = time.Time{}
+	g.checkedAt, g.login = time.Time{}, ""
 	g.mu.Unlock()
 }
+
+func validLogin(v string) bool { return validName(v) }
 
 // api performs one read-only GET. The path was already validated by getJSON.
 func (g *ghRunner) api(ctx context.Context, path string, query url.Values, target any) error {
@@ -152,17 +170,17 @@ func (g *ghRunner) api(ctx context.Context, path string, query url.Values, targe
 		if m := ghHTTPStatus.FindStringSubmatch(stderr); m != nil {
 			status, _ := strconv.Atoi(m[1])
 			apiErr := &APIError{StatusCode: status}
-			lower := strings.ToLower(stderr)
-			if status == 429 || status == 403 && strings.Contains(lower, "rate limit") {
+			if status == 429 || status == 403 && strings.Contains(strings.ToLower(stderr), "rate limit") {
 				apiErr.RetryAfter = time.Minute
 			}
 			if status == 401 {
-				g.forgetAuth()
+				g.forgetSession()
 			}
 			return apiErr
 		}
-		if strings.Contains(strings.ToLower(stderr), "gh auth login") || strings.Contains(strings.ToLower(stderr), "authentication") {
-			g.forgetAuth()
+		lower := strings.ToLower(stderr)
+		if strings.Contains(lower, "gh auth login") || strings.Contains(lower, "authentication") {
+			g.forgetSession()
 			return ErrCLINotAuthenticated
 		}
 		return ErrAPIUnavailable
@@ -171,77 +189,4 @@ func (g *ghRunner) api(ctx context.Context, path string, query url.Values, targe
 		return errors.New("GitHub returned an invalid API response")
 	}
 	return nil
-}
-
-// NewCLIService returns a Service backed by the GitHub CLI, or ok=false when gh
-// is not installed.
-func NewCLIService() (*Service, bool) {
-	path, ok := findGH()
-	if !ok {
-		return nil, false
-	}
-	return &Service{gh: &ghRunner{path: path}, now: time.Now, operations: make(map[uint64]context.CancelFunc)}, true
-}
-
-// NewDefaultService prefers the GitHub CLI when it is installed and otherwise
-// keeps the GitHub App device flow. Callers use the same Service either way.
-func NewDefaultService(vault CredentialStore) *Service {
-	if s, ok := NewCLIService(); ok {
-		return s
-	}
-	return NewService(ConfiguredClientID(), vault, nil)
-}
-
-// UsesCLI reports whether this service reads GitHub through gh.
-func (s *Service) UsesCLI() bool { return s != nil && s.gh != nil }
-
-// discoverCLI lists the repositories the gh login can read.
-func (s *Service) discoverCLI(ctx context.Context) (Discovery, error) {
-	var out Discovery
-	err := s.withClient(ctx, func(ctx context.Context, client *APIClient) error {
-		user, err := client.GetAuthenticatedUser(ctx)
-		if err != nil {
-			return err
-		}
-		out.User = user
-		for page := 1; page <= maxPages; page++ {
-			query := url.Values{
-				"per_page": {strconv.Itoa(maxPageSize)}, "page": {strconv.Itoa(page)},
-				"sort": {"pushed"}, "affiliation": {"owner,collaborator,organization_member"},
-			}
-			var repos []Repository
-			if err := client.getJSON(ctx, "/user/repos", query, &repos); err != nil {
-				return err
-			}
-			for _, repo := range repos {
-				if len(out.Repositories) == 2000 {
-					out.Truncated = true
-					return nil
-				}
-				repo.InstallationID = CLIInstallationID
-				out.Repositories = append(out.Repositories, cleanRepository(repo))
-			}
-			if len(repos) < maxPageSize {
-				return nil
-			}
-		}
-		out.Truncated = true
-		return nil
-	})
-	return out, err
-}
-
-// repositoryAccessibleCLI confirms the gh login can still read a repository.
-func (c *APIClient) repositoryAccessibleCLI(ctx context.Context, repositoryID int64) (bool, error) {
-	if repositoryID <= 0 {
-		return false, errors.New("GitHub repository identity is invalid")
-	}
-	var repo struct {
-		ID int64 `json:"id"`
-	}
-	err := c.getJSON(ctx, "/repositories/"+strconv.FormatInt(repositoryID, 10), nil, &repo)
-	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrPermissionDenied) {
-		return false, nil
-	}
-	return err == nil && repo.ID == repositoryID, err
 }

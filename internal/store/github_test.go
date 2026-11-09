@@ -241,8 +241,57 @@ func TestSchemaV4MigrationPreservesDotsAndRoutinesWithoutGitHubGrants(t *testing
 
 func githubRepoFixture(id, installationID int64, name string) task.GitHubRepository {
 	return task.GitHubRepository{
-		ID: id, InstallationID: installationID, Owner: "octocat", Name: name,
+		ID: id, Owner: "octocat", Name: name,
 		FullName: "octocat/" + name, HTMLURL: "https://github.com/octocat/" + name,
 		Private: true, DefaultBranch: "main",
+	}
+}
+
+func TestSwitchingGitHubAccountDropsPreviousAccountsGrants(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Repo Dot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetGitHubConnected(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetGitHubAccount("octocat"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ReplaceGitHubRepositories([]task.GitHubRepository{githubRepoFixture(101, 0, "alpha")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetGitHubRepositorySelection([]int64{101}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetConversationGitHubGrants(conversation.ID, []int64{101}, true); err != nil {
+		t.Fatal(err)
+	}
+	// Re-pinning the same account (any case) keeps everything.
+	if err := db.SetGitHubAccount("OctoCat"); err != nil {
+		t.Fatal(err)
+	}
+	if len(db.GitHubRepositories()) != 1 {
+		t.Fatal("re-confirming the same account dropped repositories")
+	}
+	if err := db.SetGitHubAccount("someone-else"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := db.Snapshot()
+	if len(snapshot.GitHubRepositories) != 0 || len(snapshot.Conversations[0].GitHubRepositoryIDs) != 0 || snapshot.Conversations[0].GitHubModelDisclosureAccepted {
+		t.Fatalf("grants from the previous GitHub account survived the switch: %#v", snapshot)
+	}
+	if snapshot.GitHubAccount != "someone-else" {
+		t.Fatalf("account=%q", snapshot.GitHubAccount)
+	}
+	if err := db.SetGitHubAccount("bad name/../x"); err == nil {
+		t.Fatal("invalid login accepted")
+	}
+	if err := db.DisconnectGitHub(); err != nil || db.GitHubAccount() != "" {
+		t.Fatalf("disconnect left the account pinned: %q %v", db.GitHubAccount(), err)
 	}
 }
