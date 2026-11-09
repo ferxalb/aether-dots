@@ -10,9 +10,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-var dotIcons = []string{"✦", "✧", "◈", "◉", "✳", "◆", "✹", "◌"}
-var dotColors = []string{"#7458D8", "#168459", "#1D69C8", "#C33E70", "#D27C31", "#37839A"}
-
 func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 	conversation, ok := findConversation(a.snapshot, a.selectedConversationID)
 	if !ok {
@@ -20,74 +17,38 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		return
 	}
 	a.profileDelegateIDs = validProfileDelegateIDs(a.snapshot, a.selectedConversationID, a.profileSpaceID, a.profileDelegateIDs)
-	ui.Column(c).FillWidth().MaxWidth(760).MinWidth(0).Gap(18).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
-			dotProfileAvatar(c, a.profileIcon, a.profileColor, 52)
-			ui.Column(c).Grow(1).Gap(3).Children(func() {
-				ui.Text(c, "Customize your Dot").FontSize(23).Bold()
-				ui.Text(c, "Set a clear role and working style. You can refine these details in chat at any time.").
-					FontSize(12).TextColor(theme.TextMuted).FillWidth()
+	icon, color := dotAppearance(conversation.ID, a.profileIcon, a.profileColor)
+	ui.Column(c).FillWidth().MaxWidth(760).MinWidth(0).Gap(12).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(14).Padding(14).
+			Radius(workspacePanelRadius).Background(theme.Surface).Children(func() {
+			dotProfileAvatar(c, icon, color, 62)
+			ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+				name := strings.TrimSpace(a.profileName)
+				if name == "" {
+					name = "Your Dot"
+				}
+				ui.Text(c, name).SingleLine().FontSize(18).Bold().FillWidth()
+				ui.Text(c, "Avatar preview").FontSize(11).TextColor(theme.TextMuted)
 			})
 		})
-
-		if a.conversationError != "" {
-			ui.Text(c, a.conversationError).FontSize(11).TextColor(theme.Danger).FillWidth()
-		}
-
-		profilePanel(c, theme, "Identity", func() {
-			ui.Field(c, "Name", func() {
-				ui.TextInputBase(c.Key("profile-name"), &a.profileName).
-					Placeholder("e.g. Research partner").FillWidth()
-			})
-			ui.Column(c).Gap(6).Children(func() {
-				ui.Text(c, "Icon").FontSize(11).Bold()
-				ui.Row(c).Wrap().Gap(7).Children(func() {
-					for i, icon := range dotIcons {
-						icon := icon
-						button := ui.Button(c.Key("profile-icon-"+string(rune('a'+i))), "").
-							Size(36, 36).Radius(11).Label("Choose icon " + icon)
-						button.Background(theme.Surface).Border(1, theme.Border)
-						if a.profileIcon == icon {
-							button.Background(theme.Accent.Alpha(0.14)).Border(1, theme.Accent)
-						}
-						button.Center().Children(func() { ui.Text(c, icon).FontSize(18) })
-						if button.Clicked() {
-							a.profileIcon = icon
-						}
-					}
-				})
-			})
-			ui.Column(c).Gap(6).Children(func() {
-				ui.Text(c, "Color").FontSize(11).Bold()
-				ui.Row(c).Wrap().Gap(8).Children(func() {
-					for i, color := range dotColors {
-						color := color
-						button := ui.Button(c.Key("profile-color-"+string(rune('a'+i))), "").
-							Size(26, 26).Radius(13).Label("Choose color " + color)
-						button.Background(ui.Hex(color)).Border(2, theme.Surface)
-						if a.profileColor == color {
-							button.Border(3, theme.Text)
-						}
-						if button.Clicked() {
-							a.profileColor = color
-						}
-					}
-				})
-			})
+		ui.Field(c, "Name", func() {
+			ui.TextInput(c.Key("profile-name"), &a.profileName).
+				Placeholder("e.g. Research partner").FillWidth()
 		})
+		a.profileAppearance(c, theme, conversation.ID, icon, color)
 
 		profilePanel(c, theme, "Role", func() {
 			ui.Field(c, "Objective", func() {
-				ui.TextAreaBase(c.Key("profile-objective"), &a.profilePurpose).
+				ui.TextArea(c.Key("profile-objective"), &a.profilePurpose).
 					Placeholder("What outcome should this Dot own?").
-					MinHeight(70).MaxHeight(130).FillWidth()
+					MinHeight(54).Lines(2, 6).FillWidth()
 			})
 			ui.Text(c, "Give the Dot one clear area of responsibility. A prompt in chat can start the work right away.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			ui.Field(c, "Working instructions", func() {
-				ui.TextAreaBase(c.Key("profile-instructions"), &a.profileInstructions).
+				ui.TextArea(c.Key("profile-instructions"), &a.profileInstructions).
 					Placeholder("Tone, format, process, boundaries, or preferences to follow each time…").
-					MinHeight(84).MaxHeight(160).FillWidth()
+					MinHeight(62).Lines(3, 7).FillWidth()
 			})
 		})
 
@@ -160,7 +121,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 				})
 				ui.Text(c, "Shared Space notes are sent with chat context to Dots in this Space. Add only information you want those Dots to use.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
-				ui.TextAreaBase(c.Key("profile-space-context"), &a.spaceContextDraft).
+				ui.TextArea(c.Key("profile-space-context"), &a.spaceContextDraft).
 					Placeholder("Shared project facts, terminology, or preferences…").
 					MinHeight(60).MaxHeight(120).FillWidth().Label("Shared Space notes")
 				if a.spaceContextTargetID != "" && a.spaceContextTargetID == a.profileSpaceID {
@@ -174,11 +135,10 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		profilePanel(c, theme, "Chat memory", func() {
 			ui.Text(c, "Compress older turns into this editable summary. Prompts include the summary and messages after its marker; the complete transcript remains saved on this device.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
-			ui.TextAreaBase(c.Key("profile-context-summary"), &a.profileContextSummary).
+			ui.TextArea(c.Key("profile-context-summary"), &a.profileContextSummary).
 				Placeholder("Durable facts, decisions, preferences, and open work…").
 				MinHeight(90).MaxHeight(180).FillWidth().Label("Saved Dot memory")
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-				conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 				compacting := a.summaryCompactRun[conversation.ID]
 				needsCompaction := len(messagesAfterCompaction(conversation)) > 0
 				buttonLabel := "Compress new transcript turns"
@@ -348,7 +308,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 								Disabled(conversation.SpaceID != a.profileSpaceID).FillWidth().Grow(1).Changed() {
 								grants, err := toggleMCPToolGrant(a.profileMCPToolGrants, match.server.ID, match.tool)
 								if err != nil {
-									a.conversationError = err.Error()
+									a.profileError = err.Error()
 								} else {
 									a.profileMCPToolGrants = grants
 									if len(grants) == 0 {
@@ -438,16 +398,17 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
 
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(9).Children(func() {
-			back := ui.Button(c.Key("profile-cancel"), "Back to chat").Padding(9, 12)
-			if back.Clicked() {
-				a.conversationDetailsOpen = false
-			}
-			ui.Spacer(c)
-			if ui.PrimaryButton(c.Key("profile-save"), "Save profile").Padding(9, 14).Clicked() {
-				a.saveConversationProfile()
-			}
+	})
+}
+
+func (a *app) profileActions(c *ui.Context, theme *ui.Theme) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(8, 12).
+		Background(theme.Surface).Children(func() {
+		appButton(c, theme, "profile-cancel", "Cancel", buttonGhost).OnClick(func() {
+			a.conversationDetailsOpen = false
 		})
+		ui.Spacer(c)
+		appButton(c, theme, "profile-save", "Save profile", buttonPrimary).OnClick(a.saveConversationProfile)
 	})
 }
 
@@ -506,25 +467,11 @@ func compactProfileText(value string, maxBytes int) string {
 }
 
 func profilePanel(c *ui.Context, theme *ui.Theme, title string, children func()) {
-	ui.Column(c).FillWidth().Gap(12).Padding(14, 16).Radius(14).
-		Background(theme.Surface).Border(1, theme.Border).Children(func() {
+	ui.Column(c).FillWidth().Gap(10).Padding(6, 4).Children(func() {
+		ui.Box(c).FillWidth().Height(1).Background(theme.Border)
 		ui.Text(c, title).FontSize(12).Bold()
 		children()
 	})
-}
-
-func dotProfileAvatar(c *ui.Context, icon, color string, size float32) {
-	if icon == "" {
-		icon = "✦"
-	}
-	if color == "" {
-		color = "#7458D8"
-	}
-	background := ui.Hex(color)
-	ink := contrastInk(background)
-	avatar := ui.Box(c).Size(size, size).Shrink(0).Radius(size * 0.34).
-		Background(background).TextColor(ink)
-	avatar.Center().Children(func() { ui.Text(c, icon).FontSize(size * 0.44).Bold().TextColor(ink) })
 }
 
 func contrastInk(background ui.Color) ui.Color {
@@ -540,10 +487,6 @@ func contrastInk(background ui.Color) ui.Color {
 		return ui.Hex("#171923")
 	}
 	return ui.Hex("#FFFFFF")
-}
-
-func profileAvatarForConversation(c *ui.Context, conversation task.Conversation, size float32) {
-	dotProfileAvatar(c, conversation.Icon, conversation.Color, size)
 }
 
 func profileSpaceSelect(c *ui.Context, theme *ui.Theme, a *app) {

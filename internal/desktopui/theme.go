@@ -111,7 +111,7 @@ func (a *app) theme(c *ui.Context) *ui.Theme {
 		theme.Focus.A = 255
 		theme.Scrollbar = theme.Scrollbar.Alpha(1.6)
 	}
-	theme.Radius = 10
+	theme.Radius = workspaceControlRadius
 	theme.Spacing = 4
 	c.SetTheme(theme)
 	return c.Theme()

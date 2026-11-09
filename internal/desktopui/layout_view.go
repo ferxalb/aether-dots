@@ -1,11 +1,32 @@
 package desktopui
 
-import "github.com/egoist/mygo/ui"
+import (
+	"aether-dots/internal/task"
+	"github.com/egoist/mygo/ui"
+)
+
+const (
+	workspaceSidebarWidth          = 252
+	workspaceRailWidth             = 80
+	workspaceHeaderHeight          = 44
+	profileInspectorWidth          = 336
+	profileInspectorMinWindowWidth = 900
+)
 
 func (a *app) view(c *ui.Context) {
 	c.OnShortcut(ui.Cmd, ui.KeyN, func() { a.startCreator() })
 	theme := a.theme(c)
 	latestDots := a.dotStatusByConversationID
+	width, _ := c.Size()
+	inspector := a.conversationDetailsOpen && a.selectedConversationID != "" &&
+		!a.settingsOpen && !a.activityOpen && !a.approvals.open && width >= profileInspectorMinWindowWidth
+	if !inspector {
+		c.OnShortcut(ui.Cmd, ui.KeyK, func() { a.sidebarSearchInput.Focus(c) })
+	}
+	sidebarWidth := float32(workspaceSidebarWidth)
+	if inspector {
+		sidebarWidth = workspaceRailWidth
+	}
 	bar := c.TitleBar()
 	dragHeight := max(bar.Height, 44)
 	vibrant := c.Vibrancy() && a.prefs.Appearance == "System"
@@ -19,13 +40,13 @@ func (a *app) view(c *ui.Context) {
 
 	root := ui.Row(c).Fill().AlignItems(ui.Stretch).Background(rootColor)
 	root.Children(func() {
-		a.sidebar(c, theme, dragHeight, vibrant, latestDots)
+		a.sidebar(c, theme, dragHeight, sidebarWidth, vibrant, inspector, latestDots)
 		ui.Box(c).Width(1).FillHeight().Background(theme.Border.Alpha(0.42))
 
 		// Only the sidebar may be translucent; the content pane is always opaque.
 		main := ui.Column(c).Grow(1).FillHeight().MinWidth(0).Background(theme.Background)
 		main.Children(func() {
-			a.header(c, theme, latestDots)
+			a.header(c, theme, latestDots, inspector)
 			ui.Box(c).FillWidth().Height(1).Background(theme.Border.Alpha(0.34))
 
 			switch {
@@ -35,8 +56,10 @@ func (a *app) view(c *ui.Context) {
 				a.activityView(c, theme)
 			case a.approvals.open:
 				a.githubApprovalsView(c, theme)
-			case a.hasConversationChat():
+			case inspector || a.hasConversationChat():
 				a.chatView(c, theme)
+			case a.conversationDetailsOpen:
+				a.profileContent(c, theme)
 			case a.hasWelcomePage():
 				a.workspaceWelcomeView(c, theme)
 			default:
@@ -47,11 +70,14 @@ func (a *app) view(c *ui.Context) {
 				})
 			}
 		})
-		// The main header is also draggable; this separate area covers the
-		// sidebar's clear titlebar band without blocking its controls.
-		ui.Box(c).Absolute().Top(0).Left(0).Width(272).Height(dragHeight).DragWindow()
+		if inspector {
+			ui.Box(c).Width(1).FillHeight().Background(theme.Border)
+			a.profileInspector(c, theme)
+		}
+		// Reserve the native window-control area at the left edge.
+		ui.Box(c).Absolute().Top(0).Left(0).Width(workspaceRailWidth).Height(dragHeight).DragWindow()
 	})
-	toastConfig := ADTConfig{Left: 286, MaxWidth: 320}
+	toastConfig := ADTConfig{Left: sidebarWidth + 14, MaxWidth: 320}
 	if a.settingsOpen {
 		toastConfig.Position = ADTBottomRight
 	}
@@ -71,22 +97,6 @@ func (a *app) hasWelcomePage() bool {
 }
 
 func (a *app) workspaceContent(c *ui.Context, theme *ui.Theme) {
-	if a.settingsOpen {
-		a.settingsView(c, theme)
-		return
-	}
-	if a.activityOpen {
-		a.activityView(c, theme)
-		return
-	}
-	if a.approvals.open {
-		a.githubApprovalsView(c, theme)
-		return
-	}
-	if a.conversationDetailsOpen {
-		a.conversationDetailsView(c, theme)
-		return
-	}
 	if dot, ok := findDot(a.snapshot, a.selectedDotID); ok {
 		a.dotView(c, theme, dot)
 		return
@@ -94,8 +104,8 @@ func (a *app) workspaceContent(c *ui.Context, theme *ui.Theme) {
 	a.workspaceWelcomeView(c, theme)
 }
 
-func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conversationStatusSummary) {
-	row := ui.Row(c).FillWidth().Height(52).Padding(0, 20).AlignItems(ui.Center).Gap(10).DragWindow()
+func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conversationStatusSummary, inspector bool) {
+	row := ui.Row(c).FillWidth().Height(workspaceHeaderHeight).Padding(0, 16).AlignItems(ui.Center).Gap(10).DragWindow()
 	row.Children(func() {
 		switch {
 		case a.settingsOpen:
@@ -114,16 +124,17 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 			}
 		case a.selectedConversationID != "":
 			if conversation, ok := findConversation(a.snapshot, a.selectedConversationID); ok {
-				profileAvatarForConversation(c, conversation, 32)
-				ui.Column(c).Gap(2).MinWidth(0).Children(func() {
-					ui.Text(c, conversation.Name).SingleLine().FontSize(13).Bold().
-						MaxWidth(300).Shrink(1).MinWidth(0)
-					status := "Ready"
-					if dot, ok := latestDots[conversation.ID]; ok {
-						status = humanStatus(dot.status)
+				profileAvatarForConversation(c, conversation, 22)
+				ui.Text(c, conversation.Name).SingleLine().FontSize(13).Bold().
+					MaxWidth(300).Shrink(1).MinWidth(0)
+				if dot, ok := latestDots[conversation.ID]; ok {
+					switch dot.status {
+					case task.Running, task.Ready:
+						ui.Text(c, "Working").FontSize(10).TextColor(theme.TextMuted)
+					case task.Failed:
+						ui.Text(c, "Needs attention").FontSize(10).TextColor(theme.Danger)
 					}
-					ui.Text(c, status).FontSize(10).TextColor(theme.TextMuted)
-				})
+				}
 			}
 		default:
 			ui.Text(c, "AETHER Dots").FontSize(13).Bold()
@@ -142,17 +153,18 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 			if ui.Button(c.Key("approvals-close"), "Back to workspace").Padding(7, 11).Clicked() {
 				a.approvals.open = false
 			}
+		} else if inspector {
+			if appIconButton(c, theme, "profile-back-to-chat", "Close Dot profile", iconSettings).
+				Tooltip("Close Dot profile").Background(theme.SurfaceHover).Clicked() {
+				a.conversationDetailsOpen = false
+			}
 		} else if a.conversationDetailsOpen {
-			if ui.Button(c.Key("profile-back-to-chat"), "Back to chat").Padding(7, 11).Clicked() {
+			if appButton(c, theme, "profile-back-to-chat", "Back to chat", buttonGhost).Clicked() {
 				a.conversationDetailsOpen = false
 			}
 		} else if a.selectedConversationID != "" {
-			customize := ui.Button(c.Key("conversation-customize"), "Customize").Padding(7, 11).
-				Label("Customize Dot profile")
-			if customize.Hovered() {
-				customize.Background(theme.SurfaceHover)
-			}
-			if customize.Clicked() {
+			if appButton(c, theme, "conversation-customize", "Customize", buttonSecondary).
+				Tooltip("Customize Dot profile").Clicked() {
 				a.openConversationProfile()
 			}
 		}

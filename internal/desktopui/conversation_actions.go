@@ -57,13 +57,14 @@ func (a *app) openConversationProfile() {
 	a.writeGrants = writeGrantDraft{}
 	a.profileIcon = conversation.Icon
 	a.profileColor = conversation.Color
+	_, a.profileColorInput = dotAppearance(conversation.ID, a.profileIcon, a.profileColor)
 	a.profileSpaceID = conversation.SpaceID
 	a.spaceManagementOpen = false
 	a.renameSpaceID = ""
 	a.spaceDraft = ""
 	a.spaceContextDraft = ""
 	a.spaceContextTargetID = ""
-	a.conversationError = ""
+	a.profileError = ""
 	a.conversationDetailsOpen = true
 	a.settingsOpen = false
 	a.activityOpen = false
@@ -72,7 +73,7 @@ func (a *app) openConversationProfile() {
 
 func (a *app) saveConversationProfile() {
 	if len(a.profileContextSummary) > task.MaxConversationSummaryBytes {
-		a.conversationError = "Dot memory must be 8 KiB or less."
+		a.profileError = "Dot memory must be 8 KiB or less."
 		return
 	}
 	githubRepositoryIDs := append([]int64(nil), a.profileGitHubRepositoryIDs...)
@@ -122,7 +123,7 @@ func (a *app) saveConversationProfile() {
 		a.profileMCPDisclosureAccepted,
 	)
 	if err != nil {
-		a.conversationError = err.Error()
+		a.profileError = err.Error()
 		a.adt.Error("Couldn't save the Dot profile", err.Error())
 		return
 	}
@@ -133,13 +134,13 @@ func (a *app) saveConversationProfile() {
 		a.computerUseService.StopAsync()
 	}
 	if err := a.db.SetConversationContextSummary(a.selectedConversationID, a.profileContextSummary); err != nil {
-		a.conversationError = err.Error()
+		a.profileError = err.Error()
 		a.adt.Error("Couldn't save chat memory", err.Error())
 		a.refresh()
 		return
 	}
 	a.selectedSpaceID = a.profileSpaceID
-	a.conversationError = ""
+	a.profileError = ""
 	a.conversationDetailsOpen = false
 	a.activityOpen = false
 	a.approvals.open = false

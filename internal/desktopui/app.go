@@ -45,6 +45,7 @@ type app struct {
 	selectedDotID           string
 	selectedConversationID  string
 	conversationDetailsOpen bool
+	sidebarSearchInput      ui.Handle
 	searchQuery             string
 	settingsOpen            bool
 	activityOpen            bool
@@ -73,6 +74,7 @@ type app struct {
 	profileComputerUseDisclosureAccepted bool
 	profileIcon                          string
 	profileColor                         string
+	profileColorInput                    string
 	profileSpaceID                       string
 	spaceDraft                           string
 	spaceContextDraft                    string
@@ -98,6 +100,8 @@ type app struct {
 	messageDrafts                        map[string]string
 	chatMessages                         ui.ListState
 	activityList                         ui.ListState
+	profileError                         string
+	sidebarResults                       *sidebarResults
 	conversationError                    string
 	apiKeyDraft                          string
 	apiKeyDrafts                         map[string]string
@@ -258,6 +262,7 @@ func Run(dataDir string) error {
 
 func (a *app) refresh() {
 	a.snapshot = a.db.Snapshot()
+	a.sidebarResults = nil
 	a.dotsByConversationID = conversationDotIndex(a.snapshot)
 	a.dotStatusByConversationID = latestConversationDots(a.snapshot)
 	if len(a.snapshot.Spaces) > 0 && !containsSpace(a.snapshot, a.selectedSpaceID) {

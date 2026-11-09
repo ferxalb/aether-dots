@@ -112,12 +112,24 @@ func newUIPreviewApps(t *testing.T) (*app, *app, *app) {
 	}
 	spaceID := db.Snapshot().Spaces[0].ID
 	conversation, err := db.CreateConversation(task.CreateConversation{
-		SpaceID: spaceID, Name: "Decision partner", Icon: "◈", Color: "#1D69C8",
+		SpaceID: spaceID, Name: "Decision partner", Icon: "dot:orbit", Color: "#51B8AA",
 		Purpose:      "Turn complicated discussions into short, useful decisions.",
 		Instructions: "Use plain language. State what is known and what still needs a decision.",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	for _, peer := range []task.CreateConversation{
+		{Name: "Inbox manager", Icon: "dot:comet", Color: "#7774FA", Purpose: "Triage mail and surface decisions."},
+		{Name: "Research", Icon: "dot:sprout", Color: "#A27AFF", Purpose: "Track sources and open questions."},
+		{Name: "Release notes", Icon: "dot:pebble", Color: "#FFA347", Purpose: "Turn changes into clear release notes."},
+		{Name: "Design review", Icon: "dot:puff", Color: "#5095FF", Purpose: "Review handoffs and find gaps."},
+	} {
+		peer.SpaceID = spaceID
+		if _, err := db.CreateConversation(peer); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	first, _, err := db.CreateConversationRun(conversation.ID, "Summarize the three open decisions.")
@@ -127,7 +139,7 @@ func newUIPreviewApps(t *testing.T) (*app, *app, *app) {
 	if err := db.SetStatus(first.ID, task.Running, "Reply started."); err != nil {
 		t.Fatal(err)
 	}
-	reply := "Three decisions remain: choose the launch date, assign a design reviewer, and confirm the export format."
+	reply := "Three decisions are still open:\n\n- **Launch date** · confirm the week with operations.\n- **Design review** · assign a reviewer.\n- **Export format** · pick a format for the handoff."
 	if err := db.AppendConversationResult(conversation.ID, first.ID, reply); err != nil {
 		t.Fatal(err)
 	}
@@ -155,8 +167,6 @@ func newUIPreviewApps(t *testing.T) (*app, *app, *app) {
 	chatApp.prefs.Model = "gpt-6.1-sol"
 	chatApp.refresh()
 	profileApp := *chatApp
-	profileApp.runCancels = nil
-	profileApp.liveReplies = nil
 	profileApp.openConversationProfile()
 	welcomeDB, err := store.Open(filepath.Join(root, "welcome-store"))
 	if err != nil {

@@ -61,7 +61,7 @@ func defaultPreferences() preferences {
 		MaxRetries:      strconv.Itoa(model.DefaultMaxRetries),
 		TimeoutSeconds:  "90",
 		Appearance:      "System",
-		Palette:         "midnight",
+		Palette:         "obsidian",
 	}
 	if validProvider(string(config.Provider)) {
 		current.Provider = string(config.Provider)
@@ -168,7 +168,7 @@ func loadPreferences(dataDir string) (preferences, error) {
 		current.Appearance = "System"
 	}
 	if !validPalette(current.Palette) {
-		current.Palette = "midnight"
+		current.Palette = defaultPreferences().Palette
 	}
 	return current, nil
 }

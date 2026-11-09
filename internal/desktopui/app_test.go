@@ -46,7 +46,7 @@ func TestDotProfileCanBeCustomizedFromChat(t *testing.T) {
 	if err := tester.Click("Customize"); err != nil {
 		t.Fatal(err)
 	}
-	if !tester.HasText("Customize your Dot") || !tester.HasText("Objective") || !tester.HasText("Working instructions") {
+	if !tester.HasText("Avatar preview") || !tester.HasText("Objective") || !tester.HasText("Working instructions") {
 		t.Fatalf("profile editor is missing core fields: %q", tester.Texts())
 	}
 	if err := tester.Click("Name"); err != nil {
@@ -176,24 +176,21 @@ func createTestConversation(t *testing.T, a *app, spaceID, name, purpose string)
 
 func clickUIControl(t *testing.T, tester *ui.Tester, label string, width, height int) {
 	t.Helper()
-	// Long forms (the Dot profile editor is ~2,100px tall) need many wheel
-	// steps at a small viewport, so allow enough of them to cover the page.
+	// Scroll within the control's own pane. The inspector has a fixed
+	// header and footer that can clip a control inside the window.
 	for attempt := 0; attempt < 60; attempt++ {
 		bounds, ok := tester.Find(label)
 		if !ok {
 			t.Fatalf("control %q is not present: %q", label, tester.Texts())
 		}
-		if bounds.Y >= 0 && bounds.Y+bounds.H <= float32(height) {
-			if err := tester.Click(label); err != nil {
-				t.Fatal(err)
-			}
+		if err := tester.Click(label); err == nil {
 			return
 		}
 		dy := float32(120)
-		if bounds.Y+bounds.H <= 0 {
+		if bounds.Y+bounds.H/2 < float32(height)/2 {
 			dy = -120
 		}
-		tester.Scroll(float32(width)-40, float32(height)-36, 0, dy)
+		tester.Scroll(bounds.X+bounds.W/2, float32(height)/2, 0, dy)
 		tester.Frame()
 	}
 	t.Fatalf("control %q did not scroll into the %dx%d viewport", label, width, height)

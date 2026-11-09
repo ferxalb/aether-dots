@@ -2,6 +2,7 @@ package desktopui
 
 import (
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"aether-dots/internal/task"
@@ -41,10 +42,12 @@ func (a *app) chatView(c *ui.Context, theme *ui.Theme) {
 			})
 		} else {
 			ui.List(c.Key("conversation-message-list"), &a.chatMessages, messageCount).
-				Grow(1).FillWidth().MinHeight(0).Padding(20, 24, 24, 24).Gap(14).
+				Grow(1).FillWidth().MinHeight(0).Padding(16, 20, 18, 20).Gap(11).
 				Rows(func(row ui.ListRow) {
 					if row.Index < len(conversation.Messages) {
-						conversationMessage(row.Context, theme, a, conversation, conversation.Messages[row.Index], dotsByID)
+						message := conversation.Messages[row.Index]
+						chatTimestamp(row.Context, theme, conversation.Messages, row.Index)
+						conversationMessage(row.Context, theme, a, conversation, message, dotsByID)
 						return
 					}
 					liveReplyBubble(row.Context, theme, a, conversation, liveDotID, liveReply)
@@ -70,6 +73,30 @@ func emptyConversationFeed(c *ui.Context, theme *ui.Theme, a *app, conversation 
 			a.openConversationProfile()
 		}
 	})
+}
+
+func chatTimestamp(c *ui.Context, theme *ui.Theme, messages []task.ConversationMessage, index int) {
+	at := messages[index].CreatedAt.Local()
+	if at.IsZero() {
+		return
+	}
+	previous := time.Time{}
+	if index > 0 {
+		previous = messages[index-1].CreatedAt.Local()
+	}
+	y, m, d := at.Date()
+	py, pm, pd := previous.Date()
+	newDay := y != py || m != pm || d != pd
+	if !newDay && at.Sub(previous) < 30*time.Minute {
+		return
+	}
+	label := at.Format("3:04 PM")
+	ny, nm, nd := time.Now().Local().Date()
+	if newDay && (y != ny || m != nm || d != nd) {
+		label = at.Format("Jan 2 · 3:04 PM")
+	}
+	ui.Text(c.Key("timestamp-"+messages[index].ID), label).FillWidth().TextAlign(ui.Center).
+		FontSize(11).TextColor(theme.TextMuted).Padding(2, 0, 7, 0)
 }
 
 func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conversation, message task.ConversationMessage, dots map[string]task.Dot) {
@@ -101,28 +128,24 @@ func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation ta
 		if isUser {
 			ui.Spacer(c)
 		}
-		bubble := ui.Column(c.Key(bubbleKey)).MaxWidth(720).MinWidth(0).
-			Gap(7).Padding(12, 15).Radius(16)
+		bubble := chatBubble(c, bubbleKey)
 		if isUser {
-			bubble.Background(theme.Accent).TextColor(theme.AccentText)
+			bubble.Background(theme.Text).TextColor(contrastInk(theme.Text))
 		} else {
-			bubble.Background(theme.Surface).Border(1, theme.Border.Alpha(0.55))
+			bubble.Background(theme.Surface)
 		}
 		bubble.Children(func() {
-			if !isUser {
-				ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
-					profileAvatarForConversation(c, speaker, 20)
-					label := speaker.Name
-					if message.Role == "handoff" {
-						label += " · specialist result"
-					}
-					ui.Text(c, label).FontSize(10).Bold().TextColor(theme.TextMuted)
-				})
-			} else if message.SourceDotID != "" {
-				ui.Text(c, "Handoff from "+speaker.Name).FontSize(10).Bold().TextColor(theme.AccentText)
+			if message.Role == "handoff" {
+				chatSpeaker(c, theme, speaker, speaker.Name+" · specialist result")
+			} else if !isUser && message.SourceDotID != "" {
+				chatSpeaker(c, theme, speaker, speaker.Name)
 			}
 			if isUser {
-				ui.Text(c, message.Content).FontSize(13).FillWidth()
+				ink := contrastInk(theme.Text)
+				if message.SourceDotID != "" {
+					ui.Text(c, "Handoff from "+speaker.Name).FontSize(10).Bold().TextColor(ink)
+				}
+				ui.Text(c, message.Content).FontSize(14).TextColor(ink).FillWidth()
 			} else {
 				markdown.View(c, message.Content, a.markdownDisplayOptions()).FillWidth()
 			}
@@ -139,16 +162,24 @@ func conversationMessage(c *ui.Context, theme *ui.Theme, a *app, conversation ta
 func liveReplyBubble(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conversation, dotID, draft string) {
 	row := ui.Row(c.Key("assistant-reply-row-" + dotID)).FillWidth().AlignItems(ui.Start)
 	row.Children(func() {
-		bubble := ui.Column(c.Key("assistant-reply-bubble-"+dotID)).MaxWidth(720).MinWidth(0).
-			Gap(7).Padding(12, 15).Radius(16).Background(theme.Surface).Border(1, theme.Border)
+		bubble := chatBubble(c, "assistant-reply-bubble-"+dotID).
+			Background(theme.Surface)
 		bubble.Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(7).Children(func() {
-				profileAvatarForConversation(c, conversation, 20)
-				ui.Text(c, conversation.Name+" is replying").FontSize(10).Bold().TextColor(theme.TextMuted)
-			})
+			chatSpeaker(c, theme, conversation, conversation.Name+" is replying")
 			markdown.Stream(c, draft, a.markdownDisplayOptions()).FillWidth()
 		})
 		ui.Spacer(c)
+	})
+}
+
+func chatBubble(c *ui.Context, key string) ui.Element {
+	return ui.Column(c.Key(key)).MaxWidth(620).MinWidth(0).Gap(6).Padding(9, 12).Radius(workspacePanelRadius)
+}
+
+func chatSpeaker(c *ui.Context, theme *ui.Theme, speaker task.Conversation, label string) {
+	ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+		profileAvatarForConversation(c, speaker, 16)
+		ui.Text(c, label).SingleLine().MinWidth(0).FontSize(10).Bold().TextColor(theme.TextMuted)
 	})
 }
 
@@ -174,7 +205,7 @@ func conversationRunActivity(c *ui.Context, theme *ui.Theme, a *app, dot task.Do
 			activity = "Consulting " + strings.TrimPrefix(dot.Checkpoint, "consulting ")
 		}
 	case task.Done:
-		activity = "Replied"
+		return
 	case task.WaitingInput:
 		activity = "Needs setup"
 	case task.Failed:
@@ -203,7 +234,7 @@ func conversationRunActivity(c *ui.Context, theme *ui.Theme, a *app, dot task.Do
 func chatComposer(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conversation) {
 	activeDotID := a.activeRunDotIDForConversation(conversation.ID)
 	busy := activeDotID != ""
-	footer := ui.Column(c).FillWidth().Gap(6).Padding(8, 24, 16, 24)
+	footer := ui.Column(c).FillWidth().Gap(6).Padding(6, 20, 12, 20)
 	footer.Children(func() {
 		if a.conversationError != "" {
 			ui.Text(c, a.conversationError).FontSize(11).TextColor(theme.Danger).FillWidth()
@@ -218,19 +249,18 @@ func chatComposer(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conv
 				}
 			})
 		}
-		composer := ui.Row(c).FillWidth().AlignItems(ui.End).Gap(8).Padding(9, 12, 9, 14).Radius(24).
-			Background(theme.Surface).Border(1, theme.Border.Alpha(0.48)).
-			Shadow(0, 0, 0, 0, ui.RGBA(0, 0, 0, 0.14))
+		composer := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(5, 6, 5, 12).Radius(workspacePanelRadius).
+			Background(theme.Surface).Border(1, theme.Border)
 		composer.Children(func() {
 			ui.TextAreaBase(c.Key("chat-message-"+conversation.ID), &a.messageDraft).
-				MinHeight(38).MaxHeight(120).Grow(1).MinWidth(0).
+				Lines(1, 6).Grow(1).MinWidth(0).
 				Placeholder("Message "+conversation.Name).Label("Message "+conversation.Name).
 				OnShortcut(ui.Cmd, ui.KeyEnter, func() {
 					if !busy && strings.TrimSpace(a.messageDraft) != "" {
 						a.sendConversationMessage()
 					}
 				})
-			button := ui.PrimaryButton(c.Key("send-conversation-message"), "Send").
+			button := appButton(c, theme, "send-conversation-message", "Send", buttonPrimary).
 				Label("Send message").Tooltip("Send message · ⌘↵")
 			button.Disabled(strings.TrimSpace(a.messageDraft) == "" || busy)
 			if button.Clicked() {
@@ -240,9 +270,6 @@ func chatComposer(c *ui.Context, theme *ui.Theme, a *app, conversation task.Conv
 		if composer.FocusWithin() {
 			composer.BorderColor(theme.Focus)
 		}
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "⌘↵ to send · Shift+↵ for a new line").FontSize(10).TextColor(theme.TextMuted)
-		})
 	})
 }
 

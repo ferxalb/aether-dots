@@ -13,84 +13,119 @@ import (
 
 var iconSearch = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg>`))
 
-func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top float32, vibrant bool, latestDots map[string]conversationStatusSummary) {
-	panel := ui.Column(c).Width(272).FillHeight().Gap(11).
-		Padding(top, 12, 12, 12).Background(sidebarColor(theme, vibrant, a.prefs.Palette))
+func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top, width float32, vibrant, compact bool, latestDots map[string]conversationStatusSummary) {
+	panel := ui.Column(c).Width(width).Shrink(0).FillHeight().Gap(8).
+		Padding(0, 10, 10, 10).Background(sidebarColor(theme, vibrant, a.prefs.Palette))
 	panel.Children(func() {
-		createRow := ui.Row(c).FillWidth().Height(34).AlignItems(ui.Center).Gap(8)
-		createRow.Children(func() {
-			ui.Text(c, "AETHER").FontSize(12).Bold().TextColor(theme.Text)
-			ui.Spacer(c)
-			create := ui.Button(c.Key("sidebar-create-dot"), "").Height(30).Padding(7, 10).Radius(9).
-				Label("Create a new Dot")
-			create.Background(theme.Accent).TextColor(theme.AccentText)
-			if create.Hovered() {
-				create.Background(theme.AccentHover)
-			}
-			create.Children(func() {
-				ui.Icon(c, iconPlus).Size(14, 14)
-				ui.Text(c, "New Dot").FontSize(11).Bold()
+		if compact {
+			ui.Box(c).Height(top - 8).Shrink(0)
+		} else {
+			ui.Row(c.Key("sidebar-heading")).FillWidth().Height(top - 8).Shrink(0).
+				AlignItems(ui.Center).DragWindow().Children(func() {
+				ui.Spacer(c)
+				appIconButton(c, theme, "sidebar-create-dot", "New Dot", iconPlus).
+					Tooltip("Create a new Dot · ⌘N").OnClick(a.startCreator)
 			})
-			if create.Clicked() {
-				a.startCreator()
-			}
-		})
+			a.sidebarSearch(c, theme)
+		}
 
-		search := ui.Row(c).FillWidth().Height(34).AlignItems(ui.Center).Gap(7).
-			Padding(0, 9).Radius(9).Background(theme.Surface).Border(1, theme.Border)
-		search.Children(func() {
-			ui.Icon(c, iconSearch).Size(14, 14).TextColor(theme.TextMuted)
-			input := ui.TextInput(c.Key("sidebar-search"), &a.searchQuery).
-				FillWidth().MinWidth(0).Placeholder("Search").Label("Search Dots")
-			input.Background(ui.Transparent).Border(1, ui.Transparent).Padding(5, 0)
-		})
-
-		ui.Text(c, "YOUR DOTS").FontSize(9).Bold().TextColor(theme.TextMuted).Padding(1, 4)
-		ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).Children(func() {
-			ui.Column(c).FillWidth().MinWidth(0).Gap(4).Children(func() {
-				a.dotList(c, theme, latestDots)
+		a.dotList(c, theme, compact, latestDots)
+		if compact {
+			ui.Row(c.Key("rail-create")).FillWidth().Center().Children(func() {
+				if appIconButton(c, theme, "sidebar-create-dot", "New Dot", iconPlus).
+					Tooltip("Create a new Dot · ⌘N").Clicked() {
+					a.startCreator()
+				}
 			})
-		})
-
-		a.sidebarFooter(c, theme)
+		}
+		a.sidebarFooter(c, theme, compact)
 	})
 }
 
-func (a *app) dotList(c *ui.Context, theme *ui.Theme, latestDots map[string]conversationStatusSummary) {
+func (a *app) sidebarSearch(c *ui.Context, theme *ui.Theme) {
+	ui.Row(c.Key("dot-search-field")).FillWidth().Height(32).AlignItems(ui.Center).Gap(7).
+		Padding(0, 9).Radius(workspaceControlRadius).Background(theme.Surface).Border(1, theme.Border).Children(func() {
+		ui.Icon(c, iconSearch).Size(14, 14).TextColor(theme.TextMuted)
+		input := ui.TextInput(c.Key("sidebar-search"), &a.searchQuery).
+			FillWidth().MinWidth(0).Placeholder("Search Dots").Label("Search Dots").
+			Bind(&a.sidebarSearchInput)
+		input.Background(ui.Transparent).Border(1, ui.Transparent).Padding(5, 0)
+	})
+}
+
+func (a *app) dotList(c *ui.Context, theme *ui.Theme, compact bool, latestDots map[string]conversationStatusSummary) {
 	query := strings.TrimSpace(strings.ToLower(a.searchQuery))
-	conversations := recentConversations(a.snapshot, query)
-	legacyDots := recentLegacyDots(a.snapshot, query)
+	if compact {
+		query = ""
+	}
+	if a.sidebarResults == nil || a.sidebarResults.query != query {
+		a.sidebarResults = &sidebarResults{
+			query:         query,
+			conversations: recentConversations(a.snapshot, query),
+			legacyDots:    recentLegacyDots(a.snapshot, query),
+		}
+	}
+	conversations, legacyDots := a.sidebarResults.conversations, a.sidebarResults.legacyDots
 	if len(conversations) == 0 && len(legacyDots) == 0 {
 		message := "No Dots yet"
 		if query != "" {
 			message = "No Dots match your search"
 		}
-		ui.Text(c, message).FontSize(11).TextColor(theme.TextMuted).Padding(7, 8).FillWidth()
+		ui.Text(c, message).FontSize(11).TextColor(theme.TextMuted).Padding(7, 8).FillWidth().Grow(1)
 		return
 	}
-	for _, conversation := range conversations {
-		a.conversationRow(c, theme, conversation, latestDots)
+
+	conversationCount := len(conversations)
+	legacyStart := conversationCount
+	if !compact && len(legacyDots) > 0 {
+		legacyStart++
 	}
-	if len(legacyDots) > 0 {
-		if len(conversations) > 0 {
-			ui.Divider(c)
-		}
-		ui.Text(c, "OLDER TASKS").FontSize(9).Bold().TextColor(theme.TextMuted).Padding(4, 6)
-		for _, dot := range legacyDots {
-			a.legacyDotRow(c, theme, dot)
-		}
+	listKey := "workspace-dot-list"
+	if compact {
+		listKey = "workspace-dot-rail"
 	}
+	ui.List(c.Key(listKey), nil, legacyStart+len(legacyDots)).
+		Grow(1).FillWidth().MinHeight(0).Gap(3).
+		ItemKey(func(i int) any {
+			switch {
+			case i < conversationCount:
+				return "conversation-" + conversations[i].ID
+			case i < legacyStart:
+				return "older-tasks-heading"
+			default:
+				return "legacy-dot-" + legacyDots[i-legacyStart].ID
+			}
+		}).
+		Rows(func(row ui.ListRow) {
+			switch {
+			case row.Index < conversationCount:
+				a.conversationRow(row.Context, theme, conversations[row.Index], compact, latestDots)
+			case row.Index < legacyStart:
+				ui.Text(row.Context, "OLDER TASKS").FontSize(9).Bold().TextColor(theme.TextMuted).Padding(6, 7)
+			default:
+				a.legacyDotRow(row.Context, theme, legacyDots[row.Index-legacyStart], compact)
+			}
+		})
+}
+
+// sidebarResults belongs to the current snapshot and normalized filter.
+type sidebarResults struct {
+	query         string
+	conversations []task.Conversation
+	legacyDots    []task.Dot
 }
 
 func recentConversations(db task.Database, query string) []task.Conversation {
 	items := make([]task.Conversation, 0, len(db.Conversations))
 	for _, conversation := range db.Conversations {
-		spaceName := selectedSpaceName(db, conversation.SpaceID)
-		searchable := strings.ToLower(strings.Join([]string{
-			conversation.Name, boundedSidebarText(conversation.Purpose), spaceName, conversationPreview(conversation),
-		}, " "))
-		if query != "" && !strings.Contains(searchable, query) {
-			continue
+		if query != "" {
+			searchable := strings.ToLower(strings.Join([]string{
+				conversation.Name, boundedSidebarText(conversation.Purpose), selectedSpaceName(db, conversation.SpaceID),
+				conversationPreview(conversation),
+			}, " "))
+			if !strings.Contains(searchable, query) {
+				continue
+			}
 		}
 		items = append(items, conversation)
 	}
@@ -110,12 +145,13 @@ func recentLegacyDots(db task.Database, query string) []task.Dot {
 				continue
 			}
 		}
-		spaceName := selectedSpaceName(db, dot.SpaceID)
-		searchable := strings.ToLower(strings.Join([]string{
-			dot.Name, boundedSidebarText(dot.Objective), spaceName, legacyDotPreview(dot), string(dot.Status),
-		}, " "))
-		if query != "" && !strings.Contains(searchable, query) {
-			continue
+		if query != "" {
+			searchable := strings.ToLower(strings.Join([]string{
+				dot.Name, boundedSidebarText(dot.Objective), selectedSpaceName(db, dot.SpaceID), legacyDotPreview(dot), string(dot.Status),
+			}, " "))
+			if !strings.Contains(searchable, query) {
+				continue
+			}
 		}
 		items = append(items, dot)
 	}
@@ -123,61 +159,36 @@ func recentLegacyDots(db task.Database, query string) []task.Dot {
 	return items
 }
 
-func (a *app) conversationRow(c *ui.Context, theme *ui.Theme, conversation task.Conversation, latestDots map[string]conversationStatusSummary) {
-	selected := conversation.ID == a.selectedConversationID
-	button := ui.Button(c.Key("conversation-"+conversation.ID), "").FillWidth().Height(60).
-		Padding(8, 9).Gap(10).Radius(11).Label(conversation.Name).
-		Tooltip(conversation.Name)
-	styleConversationRow(button, theme, selected)
-	button.Children(func() {
-		profileAvatarForConversation(c, conversation, 36)
-		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-				ui.Text(c, conversation.Name).SingleLine().FontSize(12).Bold().FillWidth().MinWidth(0)
-				ui.Text(c, sidebarTime(conversation.UpdatedAt)).Width(58).Shrink(0).
-					SingleLine().FontSize(9).TextColor(theme.TextMuted)
-			})
-			preview := conversationPreview(conversation)
-			if dot, ok := latestDots[conversation.ID]; ok {
-				switch dot.status {
-				case task.Running:
-					preview = "Working · " + preview
-				case task.Failed:
-					preview = "Needs attention · " + preview
-				case task.Paused:
-					preview = "Paused · " + preview
-				case task.WaitingInput, task.WaitingApproval, task.WaitingDevice:
-					preview = "Waiting · " + preview
-				}
-			}
-			ui.Text(c, preview).SingleLine().FontSize(10).TextColor(theme.TextMuted).
-				FillWidth().Tooltip(conversationPreview(conversation))
-		})
-	})
-	if button.Clicked() {
-		a.selectConversation(conversation.ID)
+func (a *app) conversationRow(c *ui.Context, theme *ui.Theme, conversation task.Conversation, compact bool, latestDots map[string]conversationStatusSummary) {
+	preview := ""
+	if !compact {
+		preview = conversationPreview(conversation)
 	}
+	if dot, ok := latestDots[conversation.ID]; ok {
+		switch dot.status {
+		case task.Running:
+			preview = "Working · " + preview
+		case task.Failed:
+			preview = "Needs attention · " + preview
+		case task.Paused:
+			preview = "Paused · " + preview
+		case task.WaitingInput, task.WaitingApproval, task.WaitingDevice:
+			preview = "Waiting · " + preview
+		}
+	}
+	workspaceDotRow(c, theme, "conversation-"+conversation.ID, conversation.Name, preview, conversation.UpdatedAt,
+		compact, conversation.ID == a.selectedConversationID, func() {
+			profileAvatarForConversation(c, conversation, 30)
+		}).OnClick(func() {
+		a.selectConversation(conversation.ID)
+	})
 }
 
-func (a *app) legacyDotRow(c *ui.Context, theme *ui.Theme, dot task.Dot) {
-	selected := dot.ID == a.selectedDotID
-	button := ui.Button(c.Key("legacy-dot-"+dot.ID), "").FillWidth().Height(56).
-		Padding(7, 8).Gap(9).Radius(10).Label(dot.Name).
-		Tooltip(dot.Name + " · " + selectedSpaceName(a.snapshot, dot.SpaceID))
-	styleConversationRow(button, theme, selected)
-	button.Children(func() {
-		a.conversationAvatar(c, dot.Name, dot.ID, 34)
-		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-				ui.Text(c, dot.Name).SingleLine().FontSize(12).Bold().FillWidth().MinWidth(0)
-				ui.Text(c, sidebarTime(dot.UpdatedAt)).Width(58).Shrink(0).
-					SingleLine().FontSize(9).TextColor(theme.TextMuted)
-			})
-			ui.Text(c, legacyDotPreview(dot)).SingleLine().FontSize(10).TextColor(theme.TextMuted).
-				FillWidth().Tooltip(legacyDotPreview(dot))
-		})
-	})
-	if button.Clicked() {
+func (a *app) legacyDotRow(c *ui.Context, theme *ui.Theme, dot task.Dot, compact bool) {
+	workspaceDotRow(c, theme, "legacy-dot-"+dot.ID, dot.Name, legacyDotPreview(dot), dot.UpdatedAt,
+		compact, dot.ID == a.selectedDotID, func() {
+			a.conversationAvatar(c, dot.Name, dot.ID, 30)
+		}).OnClick(func() {
 		a.rememberCurrentConversationState()
 		a.selectedDotID = dot.ID
 		a.selectedConversationID = ""
@@ -186,8 +197,32 @@ func (a *app) legacyDotRow(c *ui.Context, theme *ui.Theme, dot task.Dot) {
 		a.conversationDetailsOpen = false
 		a.selectedSpaceID = dot.SpaceID
 		a.settingsOpen = false
+		a.activityOpen = false
+		a.approvals.open = false
 		a.refresh()
+	})
+}
+
+func workspaceDotRow(c *ui.Context, theme *ui.Theme, key, name, preview string, updated time.Time, compact, selected bool, avatar func()) ui.Element {
+	button := ui.Button(c.Key(key), "").FillWidth().Height(49).
+		Padding(6, 8).Gap(8).Radius(workspaceControlRadius).Label(name).Tooltip(name)
+	styleConversationRow(button, theme, selected)
+	if compact {
+		button.Height(42).Radius(workspaceControlRadius).Center().Children(avatar)
+		return button
 	}
+	button.Children(func() {
+		avatar()
+		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+				ui.Text(c, name).SingleLine().FontSize(13).Grow(1).MinWidth(0)
+				ui.Text(c, sidebarTime(updated)).Shrink(0).SingleLine().FontSize(10).TextColor(theme.TextMuted)
+			})
+			ui.Text(c, preview).SingleLine().FontSize(11).TextColor(theme.TextMuted).
+				FillWidth().Tooltip(preview)
+		})
+	})
+	return button
 }
 
 func (a *app) conversationAvatar(c *ui.Context, name, id string, size float32) {
@@ -288,60 +323,57 @@ func sidebarTime(at time.Time) string {
 	return local.Format("Jan 2")
 }
 
-func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme) {
-	footer := ui.Column(c).FillWidth().Gap(4)
-	footer.Children(func() {
+func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme, compact bool) {
+	ui.Column(c.Key("sidebar-footer")).FillWidth().Gap(3).Children(func() {
 		if a.snapshot.GitHubConnected || len(a.snapshot.GitHubProposals) > 0 {
-			approvals := ui.Button(c.Key("open-approvals"), "").FillWidth().Height(38).
-				Padding(8, 10).Gap(9).Radius(9).Label("GitHub approvals").Tooltip("GitHub approvals")
-			styleSidebarItem(approvals, theme, a.approvals.open)
-			approvals.Children(func() {
-				ui.Icon(c, iconCheck).Size(16, 16).TextColor(theme.TextMuted)
-				ui.Text(c, "GitHub approvals").FontSize(12)
-				ui.Spacer(c)
-				if waiting := a.pendingApprovalCount(); waiting > 0 {
-					ui.Badge(c, fmt.Sprint(waiting)).TextColor(theme.Accent)
-				}
-			})
-			if approvals.Clicked() {
-				a.openApprovals()
+			sidebarAction(c, theme, "open-approvals", "GitHub approvals", iconCheck,
+				compact, a.approvals.open, a.pendingApprovalCount()).OnClick(a.openApprovals)
+		}
+		activeCount := 0
+		for _, dot := range a.snapshot.Dots {
+			if dot.Status == task.Running || dot.Status == task.Ready {
+				activeCount++
 			}
 		}
-		activity := ui.Button(c.Key("open-activity"), "").FillWidth().Height(38).
-			Padding(8, 10).Gap(9).Radius(9).Label("Activity").Tooltip("Activity")
-		styleSidebarItem(activity, theme, a.activityOpen)
-		activity.Children(func() {
-			ui.Icon(c, iconClock).Size(16, 16).TextColor(theme.TextMuted)
-			ui.Text(c, "Activity").FontSize(12)
-			ui.Spacer(c)
-			activeCount := 0
-			for _, dot := range a.snapshot.Dots {
-				if dot.Status == task.Running || dot.Status == task.Ready {
-					activeCount++
-				}
-			}
-			if activeCount > 0 {
-				ui.Badge(c, fmt.Sprint(activeCount)).TextColor(theme.Accent)
-			}
-		})
-		if activity.Clicked() {
+		sidebarAction(c, theme, "open-activity", "Activity", iconClock, compact, a.activityOpen, activeCount).OnClick(func() {
 			a.rememberCurrentConversationState()
 			a.activityOpen = true
 			a.approvals.open = false
 			a.settingsOpen = false
 			a.conversationDetailsOpen = false
 			a.selectedDotID = ""
-		}
-		settings := ui.Button(c.Key("open-settings"), "").FillWidth().Height(38).
-			Padding(8, 10).Gap(9).Radius(9).Label("Settings").Tooltip("Settings")
-		styleSidebarItem(settings, theme, a.settingsOpen)
-		settings.Children(func() {
-			ui.Icon(c, iconSettings).Size(16, 16).TextColor(theme.TextMuted)
-			ui.Text(c, "Settings").FontSize(12)
 		})
-		if settings.Clicked() {
+		sidebarAction(c, theme, "open-settings", "Settings", iconSettings, compact, a.settingsOpen, 0).OnClick(func() {
 			a.openSettings()
 			a.conversationDetailsOpen = false
+		})
+	})
+}
+
+func sidebarAction(c *ui.Context, theme *ui.Theme, key, label string, icon *ui.SVG, compact, selected bool, count int) ui.Element {
+	tooltip := label
+	if count > 0 {
+		tooltip += fmt.Sprintf(" (%d)", count)
+	}
+	button := ui.Button(c.Key(key), "").FillWidth().Height(32).
+		Padding(6, 9).Gap(8).Radius(workspaceControlRadius).Label(label).Tooltip(tooltip)
+	styleSidebarItem(button, theme, selected)
+	if compact {
+		button.Center()
+	}
+	button.Children(func() {
+		ui.Icon(c, icon).Size(15, 15).TextColor(theme.TextMuted)
+		if !compact {
+			ui.Text(c, label).FontSize(11)
+			ui.Spacer(c)
+		}
+		if count > 0 {
+			badge := fmt.Sprint(count)
+			if compact && count > 99 {
+				badge = "99+"
+			}
+			ui.Badge(c, badge).TextColor(theme.Accent)
 		}
 	})
+	return button
 }

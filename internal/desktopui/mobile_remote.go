@@ -444,7 +444,7 @@ func (a *app) executeRemoteCommand(ctx context.Context, command remote.Command) 
 				lastMessage = truncateUTF8Bytes(conversation.Messages[count-1].Content, 64)
 			}
 			dots = append(dots, map[string]any{
-				"id": conversation.ID, "name": conversation.Name, "icon": conversation.Icon,
+				"id": conversation.ID, "name": conversation.Name, "icon": mobileDotIcon(conversation.Icon),
 				"color": conversation.Color, "lastMessage": lastMessage, "updatedAt": conversation.UpdatedAt,
 			})
 		}
@@ -463,7 +463,7 @@ func (a *app) executeRemoteCommand(ctx context.Context, command remote.Command) 
 			})
 		}
 		return map[string]any{"dot": map[string]any{
-			"id": conversation.ID, "name": conversation.Name, "icon": conversation.Icon,
+			"id": conversation.ID, "name": conversation.Name, "icon": mobileDotIcon(conversation.Icon),
 			"color": conversation.Color, "messages": messages,
 		}}, nil
 	case "send_message":

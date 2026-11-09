@@ -99,3 +99,45 @@ func TestCommandNCreatesDotDirectly(t *testing.T) {
 		t.Fatalf("Command-N did not create and open a Dot: conversations=%d selection=%q", len(snapshot.Conversations), a.selectedConversationID)
 	}
 }
+
+func TestProfileLayoutKeepsChatAtWideWidthsAndPreservesDraft(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		width     int
+		inspector bool
+	}{
+		{"wide", 960, true},
+		{"minimum", 760, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newMessengerTestApp(t)
+			dot := createTestConversation(t, a, a.selectedSpaceID, "Research", "Review new results.")
+			a.selectConversation(dot.ID)
+			a.messageDraft = "An unsent message"
+			tester := ui.NewTester(a.view, tc.width, 560)
+			if err := tester.Click("Customize"); err != nil {
+				t.Fatal(err)
+			}
+			_, chatVisible := tester.Find("Message Research")
+			if chatVisible != tc.inspector || !tester.HasText("Save profile") {
+				t.Fatalf("chat visible = %v, expected %v, profile save visible = %v", chatVisible, tc.inspector, tester.HasText("Save profile"))
+			}
+			if err := tester.Click("Cancel"); err != nil {
+				t.Fatal(err)
+			}
+			if !a.hasConversationChat() || a.messageDraft != "An unsent message" {
+				t.Fatalf("closing profile left chat = %v, draft = %q", a.hasConversationChat(), a.messageDraft)
+			}
+		})
+	}
+}
+
+func TestCommandKFocusesDotSearch(t *testing.T) {
+	a := newMessengerTestApp(t)
+	tester := ui.NewTester(a.view, 960, 720)
+	tester.Key(ui.Cmd, ui.KeyK)
+	tester.Type("Research")
+	if a.searchQuery != "Research" {
+		t.Fatalf("search query = %q", a.searchQuery)
+	}
+}

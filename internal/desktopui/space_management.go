@@ -27,24 +27,24 @@ func (a *app) openSpaceRename(spaceID, name string) {
 func (a *app) saveSpaceDraft() {
 	name := strings.TrimSpace(a.spaceDraft)
 	if name == "" {
-		a.conversationError = "Space name is required."
+		a.profileError = "Space name is required."
 		return
 	}
 	if a.renameSpaceID != "" {
 		if err := a.db.UpdateSpace(a.renameSpaceID, name, a.spaceContextDraft); err != nil {
-			a.conversationError = err.Error()
+			a.profileError = err.Error()
 			return
 		}
-		a.conversationError = ""
+		a.profileError = ""
 		a.adt.Success("Space renamed", "The new name is saved.")
 	} else {
 		space, err := a.db.CreateSpaceWithContext(name, a.spaceContextDraft)
 		if err != nil {
-			a.conversationError = err.Error()
+			a.profileError = err.Error()
 			return
 		}
 		a.profileSpaceID = space.ID
-		a.conversationError = ""
+		a.profileError = ""
 		a.adt.Success("Space created", "Your new space is ready.")
 	}
 	a.refresh()
@@ -63,15 +63,15 @@ func (a *app) saveSpaceContextDraft() {
 	spaceID := a.spaceContextTargetID
 	name := selectedSpaceName(a.snapshot, spaceID)
 	if spaceID == "" || spaceID != a.profileSpaceID || name == "" {
-		a.conversationError = "Select and load a Space before saving its shared notes."
+		a.profileError = "Select and load a Space before saving its shared notes."
 		return
 	}
 	if err := a.db.UpdateSpace(spaceID, name, a.spaceContextDraft); err != nil {
-		a.conversationError = err.Error()
+		a.profileError = err.Error()
 		a.adt.Error("Couldn't save Space notes", err.Error())
 		return
 	}
-	a.conversationError = ""
+	a.profileError = ""
 	a.refresh()
 	a.adt.Success("Space notes saved", "Dots in this Space will use these notes as shared context.")
 }

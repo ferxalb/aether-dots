@@ -713,3 +713,16 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - Docs: AGENTS.md contract updated; README GitHub row and section describe proposals.
 - Side effect to know about: running the new CLI once against the real data folder upgrades `dots.db` to schema 8 (additive table; older builds will refuse to open it).
 - Still open: visual pass of the tray in the running app, duplicate-issue search (`/search/issues`) for `issue_create`.
+
+## 2026-11-08 (15) — Desktop chat workspace redesign
+
+- Reworked the workspace around the screenshot references with a search-first Dot list, compact titlebar and composer, and separate styling for outgoing messages and specialist handoffs. Obsidian is the default palette for new preferences, and saved palettes are respected.
+- Added a Dot profile inspector with an avatar rail and persistent Save and Cancel actions. At widths below 900 points, the profile uses the main pane. Chat and profile errors have separate display state.
+- Reused shared row, sidebar action, profile form, and message components. Virtualized Dot rows and cached filtered and sorted results for the current snapshot to reduce rebuild work.
+- Added MyGo tester coverage for the wide and minimum layouts, draft retention, and Command-K search. Rendered dark and light previews at both window sizes. Live macOS window chrome and performance timings were not measured.
+
+## 2026-11-08 (16) — Dot avatar personalization
+
+- Added five rounded vector character shapes, eight color swatches, custom hex colors, a live profile preview, and a reset to automatic appearance. Existing stock avatars derive their desktop appearance from the Dot ID. Previously customized glyphs still render, and new shape IDs map to text symbols for phone clients.
+- Reused 14-point control and 18-point surface corners across the workspace. The same avatar component renders in the rail, sidebar, chat header, and profile.
+- Verified avatar selection, custom color persistence, reset, and compatibility with existing glyphs using MyGo tests. Rendered light and dark previews at both window sizes. Live macOS window chrome was not exercised.

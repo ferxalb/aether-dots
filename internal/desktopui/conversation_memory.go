@@ -17,7 +17,7 @@ func (a *app) compactConversationHistory() {
 	}
 	messages := messagesAfterCompaction(conversation)
 	if len(messages) == 0 {
-		a.conversationError = "This memory already covers the saved conversation. Send more messages before compressing it again."
+		a.profileError = "This memory already covers the saved conversation. Send more messages before compressing it again."
 		return
 	}
 	if a.summaryCompactRun == nil {
@@ -27,7 +27,7 @@ func (a *app) compactConversationHistory() {
 		return
 	}
 	a.summaryCompactRun[conversation.ID] = true
-	a.conversationError = ""
+	a.profileError = ""
 	a.adt.Loading("compact-history-"+conversation.ID, "Compressing Dot chat", "A summary will replace covered older turns in future prompts; the full transcript stays on this device.")
 	prefs := a.prefs
 	win := a.win
