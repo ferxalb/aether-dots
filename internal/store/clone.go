@@ -24,6 +24,10 @@ func cloneDatabase(source task.Database) task.Database {
 		conversation.Messages = cloneSlice(original.Messages)
 		conversation.DelegatedDotIDs = cloneSlice(original.DelegatedDotIDs)
 		conversation.GitHubRepositoryIDs = cloneSlice(original.GitHubRepositoryIDs)
+		conversation.GitHubWriteGrants = cloneSlice(original.GitHubWriteGrants)
+		for j := range conversation.GitHubWriteGrants {
+			conversation.GitHubWriteGrants[j].Kinds = cloneSlice(original.GitHubWriteGrants[j].Kinds)
+		}
 		conversation.ComputerUseScopes = cloneSlice(original.ComputerUseScopes)
 		conversation.MCPToolGrants = cloneSlice(original.MCPToolGrants)
 	}
@@ -35,6 +39,13 @@ func cloneDatabase(source task.Database) task.Database {
 	}
 	out.RoutineRunStarts = cloneSlice(source.RoutineRunStarts)
 	out.GitHubRepositories = cloneSlice(source.GitHubRepositories)
+	out.GitHubProposals = cloneSlice(source.GitHubProposals)
+	for i := range out.GitHubProposals {
+		if source.GitHubProposals[i].Result != nil {
+			result := *source.GitHubProposals[i].Result
+			out.GitHubProposals[i].Result = &result
+		}
+	}
 	out.MCPServers = cloneSlice(source.MCPServers)
 	for i := range out.MCPServers {
 		out.MCPServers[i].Tools = cloneSlice(source.MCPServers[i].Tools)

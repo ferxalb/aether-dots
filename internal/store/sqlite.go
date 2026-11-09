@@ -35,6 +35,7 @@ CREATE INDEX IF NOT EXISTS messages_by_id ON messages (id);
 CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS routines (id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS github_repositories (id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS github_proposals (id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, pos INTEGER NOT NULL, body TEXT NOT NULL);
 `
 
@@ -142,6 +143,9 @@ func loadAll(ctx context.Context, q queryer) (db task.Database, ok bool, err err
 		return db, false, err
 	}
 	if err := loadBodies(ctx, q, "github_repositories", &db.GitHubRepositories); err != nil {
+		return db, false, err
+	}
+	if err := loadBodies(ctx, q, "github_proposals", &db.GitHubProposals); err != nil {
 		return db, false, err
 	}
 	if err := loadBodies(ctx, q, "mcp_servers", &db.MCPServers); err != nil {
@@ -261,6 +265,9 @@ func writeDiff(ctx context.Context, x execer, prev, next task.Database) error {
 	}
 	if err := diffRows(ctx, x, "github_repositories", prev.GitHubRepositories, next.GitHubRepositories,
 		func(v task.GitHubRepository) string { return strconv.FormatInt(v.ID, 10) }, nil); err != nil {
+		return err
+	}
+	if err := diffRows(ctx, x, "github_proposals", prev.GitHubProposals, next.GitHubProposals, func(v task.GitHubProposal) string { return v.ID }, nil); err != nil {
 		return err
 	}
 	if err := diffRows(ctx, x, "mcp_servers", prev.MCPServers, next.MCPServers, func(v task.MCPServer) string { return v.ID }, nil); err != nil {

@@ -171,6 +171,16 @@ func reflectEqualState(a, b task.Database) bool {
 // migrateDatabase upgrades an older task schema in memory. Newer opt-in
 // features start closed: no migration grants any access.
 func migrateDatabase(db *task.Database) {
+	if db.SchemaVersion < 8 {
+		// GitHub write approvals are opt-in: no Dot starts with a write grant
+		// and the tray starts empty.
+		db.GitHubProposals = nil
+		for i := range db.Conversations {
+			db.Conversations[i].GitHubWriteGrants = nil
+			db.Conversations[i].GitHubWriteGrantSpaceID = ""
+			db.Conversations[i].GitHubWriteDisclosureAccepted = false
+		}
+	}
 	if db.SchemaVersion < 7 {
 		// MCP connections and Dot-specific model overrides are opt-in. No
 		// existing profile receives a server connection or tool grant.
@@ -454,6 +464,7 @@ func (s *Store) change(fn func(*task.Database) error) error {
 	if err := fn(&next); err != nil {
 		return err
 	}
+	reconcileGitHubProposals(&next, time.Now().UTC())
 	if err := writeDiff(ctx, conn, s.db, next); err != nil {
 		return fmt.Errorf("write task store: %w", err)
 	}

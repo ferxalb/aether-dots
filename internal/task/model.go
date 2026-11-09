@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 const (
 	MaxConversationNameBytes         = 128
@@ -127,9 +127,14 @@ type Conversation struct {
 	DelegatedDotIDs []string `json:"delegated_dot_ids,omitempty"`
 	// GitHub access is separately granted by stable repository ID. Grants are
 	// bound to the current Space and default to empty.
-	GitHubRepositoryIDs                []int64               `json:"github_repository_ids,omitempty"`
-	GitHubGrantSpaceID                 string                `json:"github_grant_space_id,omitempty"`
-	GitHubModelDisclosureAccepted      bool                  `json:"github_model_disclosure_accepted,omitempty"`
+	GitHubRepositoryIDs           []int64 `json:"github_repository_ids,omitempty"`
+	GitHubGrantSpaceID            string  `json:"github_grant_space_id,omitempty"`
+	GitHubModelDisclosureAccepted bool    `json:"github_model_disclosure_accepted,omitempty"`
+	// GitHub write grants are separate from the read grants above: they only
+	// allow proposing writes for human approval, never sending them.
+	GitHubWriteGrants                  []GitHubWriteGrant    `json:"github_write_grants,omitempty"`
+	GitHubWriteGrantSpaceID            string                `json:"github_write_grant_space_id,omitempty"`
+	GitHubWriteDisclosureAccepted      bool                  `json:"github_write_disclosure_accepted,omitempty"`
 	ComputerUseScopes                  []string              `json:"computer_use_scopes,omitempty"`
 	ComputerUseGrantSpaceID            string                `json:"computer_use_grant_space_id,omitempty"`
 	ComputerUseModelDisclosureAccepted bool                  `json:"computer_use_model_disclosure_accepted,omitempty"`
@@ -269,6 +274,8 @@ type Database struct {
 	// GitHub tools stop working if gh is later signed in as someone else.
 	GitHubAccount string      `json:"github_account,omitempty"`
 	MCPServers    []MCPServer `json:"mcp_servers,omitempty"`
+	// GitHubProposals is the approval tray: pending and finished writes.
+	GitHubProposals []GitHubProposal `json:"github_proposals,omitempty"`
 }
 
 // GitHubRepository is a non-secret, locally selected resource. Its stable ID
