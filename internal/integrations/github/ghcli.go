@@ -104,11 +104,20 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func (g *ghRunner) run(ctx context.Context, limit int, args ...string) (string, string, error) {
+	return g.runInput(ctx, limit, nil, args...)
+}
+
+// runInput is run with an optional stdin payload. Only the typed write path
+// passes one (a request body built in code, never model-chosen arguments).
+func (g *ghRunner) runInput(ctx context.Context, limit int, stdin []byte, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, g.path, args...)
 	cmd.Env = ghEnvironment()
 	cmd.Stdin = nil
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	out, errOut := &limitedBuffer{limit: limit}, &limitedBuffer{limit: 16 * 1024}
 	cmd.Stdout, cmd.Stderr = out, errOut
 	err := cmd.Run()

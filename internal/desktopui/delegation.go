@@ -36,5 +36,10 @@ func buildConversationRunGenerator(ctx context.Context, prefs preferences, db *s
 		return provider
 	}
 	provider := providerForDot(dotID)
+	if includeMCP {
+		// Proposal-only GitHub write tools exist for interactive desktop runs
+		// only; Routines, iPhone messages and delegated Dots never get them.
+		provider = engine.WithGitHubWriteTools(db, dotID, provider, githubService)
+	}
 	return engine.WithSpecialistDelegationFactory(db, dotID, provider, providerForDot, onProgress)
 }

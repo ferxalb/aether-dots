@@ -58,6 +58,7 @@ func ScriptAs(t testing.TB, login string, routes ...Route) (binary, log string) 
 		user = `/user) echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 4 ;;`
 	}
 	script := "#!/bin/sh\necho \"$GH_HOST|$*\" >> " + fmt.Sprintf("%q", log) + "\n" +
+		"case \"$*\" in *\"--input -\"*) cat >> " + fmt.Sprintf("%q", log+".stdin") + " ;; esac\n" +
 		"for last; do :; done\ncase \"$last\" in\n  " + user + "\n" + cases.String() +
 		"  *) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;\nesac\n"
 	binary = filepath.Join(dir, "gh")
@@ -101,4 +102,11 @@ func APICalls(log string) []string {
 		}
 	}
 	return out
+}
+
+// Stdin returns everything the fake gh received on stdin (the request bodies
+// of calls made with `--input -`), one call after another.
+func Stdin(log string) string {
+	b, _ := os.ReadFile(log + ".stdin")
+	return string(b)
 }

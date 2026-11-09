@@ -589,7 +589,7 @@ func interactiveGenerator(ctx context.Context, db *store.Store, id string) model
 		provider := engine.WithGitHubTools(db, dotID, model.NewProvider(model.FromEnvironment()), service)
 		return engine.WithMCPTools(ctx, db, dotID, provider)
 	}
-	return engine.WithSpecialistDelegationFactory(db, id, providerForDot(id), func(delegateID string) model.Provider {
+	return engine.WithSpecialistDelegationFactory(db, id, engine.WithGitHubWriteTools(db, id, providerForDot(id), service), func(delegateID string) model.Provider {
 		// Delegated Dots never receive MCP tools.
 		return engine.WithGitHubTools(db, delegateID, model.NewProvider(model.FromEnvironment()), service)
 	}, nil)
