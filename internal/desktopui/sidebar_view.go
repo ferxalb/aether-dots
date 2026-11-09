@@ -43,13 +43,17 @@ func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top, width float32, vibran
 }
 
 func (a *app) sidebarSearch(c *ui.Context, theme *ui.Theme) {
+	border := theme.Border
+	if a.sidebarSearchInput.Focused(c) {
+		border = theme.TextMuted
+	}
 	ui.Row(c.Key("dot-search-field")).FillWidth().Height(32).AlignItems(ui.Center).Gap(7).
-		Padding(0, 9).Radius(workspaceControlRadius).Background(theme.Surface).Border(1, theme.Border).Children(func() {
+		Padding(0, 9).Radius(workspaceControlRadius).Border(1, border).Children(func() {
 		ui.Icon(c, iconSearch).Size(14, 14).TextColor(theme.TextMuted)
-		input := ui.TextInput(c.Key("sidebar-search"), &a.searchQuery).
+		ui.TextInputBase(c.Key("sidebar-search"), &a.searchQuery).
 			FillWidth().MinWidth(0).Placeholder("Search Dots").Label("Search Dots").
+			Padding(5, 0).FocusRing(false).
 			Bind(&a.sidebarSearchInput)
-		input.Background(ui.Transparent).Border(1, ui.Transparent).Padding(5, 0)
 	})
 }
 

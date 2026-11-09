@@ -726,3 +726,7 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - Added five rounded vector character shapes, eight color swatches, custom hex colors, a live profile preview, and a reset to automatic appearance. Existing stock avatars derive their desktop appearance from the Dot ID. Previously customized glyphs still render, and new shape IDs map to text symbols for phone clients.
 - Reused 14-point control and 18-point surface corners across the workspace. The same avatar component renders in the rail, sidebar, chat header, and profile.
 - Verified avatar selection, custom color persistence, reset, and compatibility with existing glyphs using MyGo tests. Rendered light and dark previews at both window sizes. Live macOS window chrome was not exercised.
+
+## 2026-11-09 — Transparent sidebar search
+
+- Replaced the styled input nested inside the search container with a transparent base input. The outer border is the only focus indicator.
