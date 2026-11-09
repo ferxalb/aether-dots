@@ -30,7 +30,9 @@ func providerLogo(c *ui.Context, provider string, size float32) {
 	case model.ProviderCompatible:
 		icon, bg = logoCompatible, ui.Hex("#64748B")
 	}
-	ui.Row(c).Size(size, size).Padding(0).Shrink(0).Radius(size * 0.3).Background(bg).TextColor(ui.Hex("#FFFFFF")).Children(func() {
-		ui.Icon(c, icon).Size(size*0.56, size*0.56)
+	// Explicit padding centers the glyph in the tile.
+	glyph := size * 0.56
+	ui.Row(c).Size(size, size).Padding((size - glyph) / 2).Shrink(0).Radius(size * 0.3).Background(bg).TextColor(ui.Hex("#FFFFFF")).Children(func() {
+		ui.Icon(c, icon).Size(glyph, glyph)
 	})
 }

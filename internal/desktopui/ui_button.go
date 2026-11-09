@@ -44,8 +44,8 @@ func appButton(c *ui.Context, theme *ui.Theme, key, label string, kind buttonKin
 // appIconButton is a square, centered icon-only button; label is its
 // accessible name.
 func appIconButton(c *ui.Context, theme *ui.Theme, key, label string, icon *ui.SVG) ui.Element {
-	b := ui.Button(c.Key(key), "").Size(30, 30).Padding(0).Shrink(0).Radius(9).Label(label).
-		AlignItems(ui.Center).Justify(ui.Center).Background(ui.Transparent).Border(1, theme.Border)
+	b := ui.Button(c.Key(key), "").Size(30, 30).Padding(8).Shrink(0).Radius(9).Label(label).
+		Background(ui.Transparent).Border(1, theme.Border)
 	if b.Hovered() {
 		b.Background(theme.SurfaceHover)
 	}

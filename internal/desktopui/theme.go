@@ -21,6 +21,13 @@ type themePalette struct {
 func paletteOptions() []themePalette {
 	return []themePalette{
 		{
+			// Midnight: true black with a restrained indigo accent. Surfaces are
+			// near-black with a faint cool tint, never gray.
+			id: "midnight", name: "Midnight", lightAccent: "#4A5AE8", darkAccent: "#7C8BFF",
+			light: paletteColors{"#F4F5F9", "#FFFFFF", "#EAECF3", "#DEE1EB", "#D5D8E3", "#14161F", "#6C7184", "#4A5AE8", "#3E4DD3", "#3341BA", "#FFFFFF"},
+			dark:  paletteColors{"#000000", "#0A0A0D", "#141418", "#1B1B21", "#22222A", "#F2F3F7", "#8D909C", "#7C8BFF", "#95A1FF", "#6574EE", "#05060F"},
+		},
+		{
 			id: "obsidian", name: "Obsidian", lightAccent: "#3A424D", darkAccent: "#D0D0D0",
 			light: paletteColors{"#F3F4F6", "#FFFFFF", "#E9EBEF", "#DDE1E7", "#D4D9E0", "#252A31", "#6F7783", "#3A424D", "#303741", "#252B33", "#FFFFFF"},
 			dark:  paletteColors{"#222222", "#2C2C2C", "#333333", "#3A3A3A", "#3B3B3B", "#F0F0F0", "#A0A0A0", "#D0D0D0", "#DEDEDE", "#BABABA", "#191919"},
@@ -111,6 +118,9 @@ func (a *app) theme(c *ui.Context) *ui.Theme {
 }
 
 func sidebarColor(theme *ui.Theme, vibrant bool, paletteID string) ui.Color {
+	if paletteID == "midnight" && theme.Dark {
+		return ui.Hex("#000000")
+	}
 	if paletteID == "obsidian" && theme.Dark {
 		return ui.Hex("#141414")
 	}

@@ -18,7 +18,7 @@ func TestWriteLogoZoom(t *testing.T) {
 	_ = os.MkdirAll(dir, 0o755)
 	view := func(c *ui.Context) {
 		ui.Row(c).Fill().Gap(12).Padding(12).Background(ui.Hex("#151A17")).Children(func() {
-			for _, p := range []string{"openai", "anthropic", "xai", "openrouter", "compatible"} {
+			for _, p := range []string{"openai", "anthropic", "xai", "openrouter", "openai_compatible"} {
 				providerLogo(c, p, 40)
 			}
 		})

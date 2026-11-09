@@ -638,3 +638,13 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 
 - `ui_button.go`: `appButton(c, theme, key, label, kind)` with kinds Secondary/Primary/Ghost/Danger and `appIconButton` (centered, 30×30). Settings Save/Test/Remove and the model picker's Close/Refresh/Load/Cancel/Use now use them.
 - Provider logo tile was a `ui.Box`, which does not lay out children with flex alignment, so the glyph sat top-left; it is now a centered `ui.Row` with zero padding. Icon buttons also drop the default padding.
+
+## 2026-11-08 (6) — Provider logo fix
+
+- Root cause of the off-center glyph: flex centering did not apply to the icon inside the tile; the tile now uses explicit padding ((tile − glyph) / 2) and icon buttons use fixed 8px padding.
+- OpenRouter mark redrawn (source node splitting into two arrows, no overlapping strokes). `logo_zoom_test.go` renders all provider marks at 4× when `AETHER_UI_PREVIEW_DIR` is set.
+
+## 2026-11-08 (7) — Midnight theme (new default)
+
+- New `midnight` palette, first in the picker and the default for new/unset preferences (invalid values fall back to it). Dark: true black `#000000` background, near-black cool surfaces (`#0A0A0D`), indigo accent `#7C8BFF`; the sidebar is solid black in dark mode (no vibrancy gray). Light variant: `#F4F5F9` with accent `#4A5AE8`.
+- Existing saved palettes are untouched; only new installs/unset preferences get Midnight.
