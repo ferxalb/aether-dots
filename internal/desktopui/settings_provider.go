@@ -34,18 +34,13 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 				}
 				ui.Text(c, label).FontSize(12).TextColor(theme.TextMuted)
 			})
-			test := ui.Button(c.Key("settings-test-provider"), "").Shrink(0).Padding(6, 11).Radius(8).
-				Background(ui.Transparent).Border(1, theme.Border).
-				Label("Test connection").Disabled(busy || strings.TrimSpace(*modelName) == "")
-			if test.Hovered() {
-				test.Background(theme.SurfaceHover)
-			}
-			test.Busy(a.modelConnection == "Checking…")
 			testLabel := "Test"
 			if a.modelConnection == "Connected" || a.modelConnection == "Connection failed" {
 				testLabel = "Retest"
 			}
-			test.Children(func() { ui.Text(c, testLabel).FontSize(12) })
+			test := appButton(c, theme, "settings-test-provider", testLabel, buttonSecondary).Shrink(0).
+				Padding(6, 11).Busy(a.modelConnection == "Checking…").
+				Disabled(busy || strings.TrimSpace(*modelName) == "")
 			if test.Clicked() {
 				a.testModel()
 			}
@@ -99,13 +94,8 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 				ui.Box(c).Size(6, 6).Shrink(0).Radius(3).Background(credentialColor(theme, a))
 				ui.Text(c, statusText).FontSize(11).TextColor(theme.TextMuted).Grow(1).MinWidth(0)
 				if a.credentialSaved {
-					remove := ui.Button(c.Key("settings-remove-provider-key"), "").Shrink(0).Padding(3, 7).Radius(6).
-						Background(ui.Transparent).Label("Remove saved key").
+					remove := appButton(c, theme, "settings-remove-provider-key", "Remove", buttonDanger).Shrink(0).Padding(3, 7).
 						Disabled(a.settingsSaving || a.credentialLoading || a.modelConnection == "Checking…")
-					if remove.Hovered() {
-						remove.Background(theme.Danger.Alpha(0.12))
-					}
-					remove.Children(func() { ui.Text(c, "Remove").FontSize(11).TextColor(theme.Danger) })
 					if remove.Clicked() {
 						a.removeAPIKey()
 					}

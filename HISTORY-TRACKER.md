@@ -622,3 +622,19 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - Save button only appears when there are unsaved preference edits or a typed key (`savedPrefs` snapshot); otherwise the header shows "All changes saved".
 - Provider tile uses a per-provider mark/color instead of the generic sparkles icon (`provider_logo.go`).
 - MyGo 0.7.3 → 0.8.3: build, vet and all tests pass unchanged. Adopted `Invalid` (endpoint URL) and `Busy` (Test button). Candidates not yet adopted: `Sticky` header, richer `Menu` items (icon/subtitle) for the provider picker, `MixOklab`, `MaskLinearGradient` fades, `Scrollbars`/`KeepScrollbars`.
+
+## 2026-11-08 (3) — OpenRouter model picker redesign
+
+- Picker moved from `ui.Modal` to `ui.DialogBase` with a MyGo 0.8 backdrop-blur shader (`BackdropBlur: 14` plus a theme-aware tint); Esc/click-outside still dismiss.
+- Fixed-size panel (540×520, capped at 92%/88% of the window) so it no longer jumps as the catalog loads or search narrows: header, search + Refresh, scrolling list (compact rows with context/Tools/Reasoning chips), footer with exact-ID field, Cancel and "Use model". Empty/loading/error states are centered in the same body.
+- `picker_preview_test.go` is an opt-in preview helper (`AETHER_UI_PREVIEW_DIR`).
+
+## 2026-11-08 (4) — Opaque content pane in System theme; cleaner modal scrim
+
+- Bug: with Appearance=System and window vibrancy, `layout_view.go` painted the main content pane transparent, so macOS's gray material showed through. Rule restored: only the sidebar may be translucent; the content pane always uses `theme.Background`.
+- Model picker scrim: backdrop is desaturated (85%) before tinting, blur reduced 14→6 and tint strengthened, which removes the colored halos/bloom around bright controls.
+
+## 2026-11-08 (5) — Reusable button component, logo alignment
+
+- `ui_button.go`: `appButton(c, theme, key, label, kind)` with kinds Secondary/Primary/Ghost/Danger and `appIconButton` (centered, 30×30). Settings Save/Test/Remove and the model picker's Close/Refresh/Load/Cancel/Use now use them.
+- Provider logo tile was a `ui.Box`, which does not lay out children with flex alignment, so the glyph sat top-left; it is now a centered `ui.Row` with zero padding. Icon buttons also drop the default padding.

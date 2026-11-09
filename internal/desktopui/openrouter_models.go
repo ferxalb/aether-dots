@@ -8,6 +8,7 @@ import (
 
 	"aether-dots/internal/model"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/shader"
 )
 
 func (a *app) openRouterModelSettings(c *ui.Context, theme *ui.Theme, modelName *string) {
@@ -63,118 +64,148 @@ func (a *app) openRouterModelSettings(c *ui.Context, theme *ui.Theme, modelName 
 	})
 }
 
+// modelPickerFrost blurs what the window drew behind the picker and tints it.
+var modelPickerFrost = shader.MustCompile(`package main
+
+var Tint vec4
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	b := backdropSample(pos)
+	// Drain the color first so bright accents don't bloom into halos.
+	l := b.r*0.299 + b.g*0.587 + b.b*0.114
+	g := mix(b.rgb, vec3(l, l, l), 0.85)
+	return vec4(mix(g, Tint.rgb, Tint.a), 1)
+}
+`)
+
 func (a *app) openRouterModelPickerModal(c *ui.Context, theme *ui.Theme, modelName *string) {
-	ui.Modal(c, &a.openRouterModelPickerOpen, func() {
+	ui.DialogBase(c, &a.openRouterModelPickerOpen, func(backdrop, panel ui.Element) {
+		busy := a.settingsSaving || a.modelConnection == "Checking…"
+		tint := ui.RGBA(0, 0, 0, 0.62)
+		if !theme.Dark {
+			tint = ui.RGBA(16, 20, 28, 0.42)
+		}
+		backdrop.Draw(func(p *ui.Painter, r ui.Rect) {
+			modelPickerFrost.Draw(p, r, shader.Options{BackdropBlur: 6, Uniforms: map[string]any{"Tint": tint}})
+		})
+		// Fixed size: the dialog never grows or shrinks as the catalog loads or the search narrows.
+		panel.Width(540).MaxWidthPercent(92).Height(520).MaxHeightPercent(88).
+			Radius(18).Background(theme.Background).Border(1, theme.Border).Clip().
+			Shadow(0, 18, 48, 0, ui.RGBA(0, 0, 0, 0.35))
+
 		results := a.openRouterModelResults()
 		a.openRouterModelList.Key = func(i int) any { return results[i].ID }
-		panel := ui.Column(c).Width(680).MaxWidth(740).MaxHeight(720).Gap(12)
-		panel.Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
-				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-					ui.Text(c, "Choose an OpenRouter model").FontSize(18).Bold()
-					ui.Text(c, "Search text chat models by name or model ID.").FontSize(11).TextColor(theme.TextMuted)
+		hasCatalog := len(a.openRouterCatalog) > 0
+
+		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+			// Header
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Padding(18, 20, 12, 22).Shrink(0).Children(func() {
+				providerLogo(c, string(model.ProviderOpenRouter), 32)
+				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+					ui.Text(c, "Choose a model").FontSize(16).Bold()
+					subtitle := "Browse OpenRouter's text models."
+					if hasCatalog {
+						subtitle = fmt.Sprintf("%d text models · search by name or ID", len(a.openRouterCatalog))
+					}
+					ui.Text(c, subtitle).FontSize(11).TextColor(theme.TextMuted)
 				})
-				if ui.Button(c.Key("settings-openrouter-model-close"), "Close").Padding(7, 10).Clicked() {
+				close := appIconButton(c, theme, "settings-openrouter-model-close", "Close", iconClose)
+				if close.Clicked() {
 					a.openRouterModelPickerOpen = false
 				}
 			})
-			ui.Divider(c)
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				button := ui.Button(c.Key("settings-openrouter-model-catalog"), "").Grow(1).Padding(9, 11).
-					Radius(9).Background(theme.Background).Border(1, theme.Border).
-					Disabled(a.openRouterCatalogLoading || a.settingsSaving || a.modelConnection == "Checking…")
-				button.Children(func() {
-					label := "Load model catalog"
-					if a.openRouterCatalogLoaded {
-						label = "Refresh model catalog"
-					}
+			// Search + refresh
+			if hasCatalog {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(0, 20, 12, 22).Shrink(0).Children(func() {
+					ui.TextInput(c.Key("settings-openrouter-model-search"), &a.openRouterSearch).
+						Placeholder("Search models").Grow(1).Label("Search models").AutoFocus().ReadOnly(busy)
+					refreshLabel := "Refresh"
 					if a.openRouterCatalogLoading {
-						label = "Loading OpenRouter models…"
+						refreshLabel = "Loading…"
 					}
-					ui.Text(c, label).FontSize(12)
+					refresh := appButton(c, theme, "settings-openrouter-model-catalog", refreshLabel, buttonSecondary).Shrink(0).
+						Disabled(a.openRouterCatalogLoading || busy)
+					if refresh.Clicked() {
+						a.refreshOpenRouterModelCatalog()
+					}
 				})
-				if button.Clicked() {
-					a.refreshOpenRouterModelCatalog()
-				}
-				if len(a.openRouterCatalog) > 0 {
-					ui.Text(c, fmt.Sprintf("%d models", len(a.openRouterCatalog))).FontSize(11).TextColor(theme.TextMuted)
-				}
-			})
-			if a.openRouterCatalogError != "" {
-				ui.Text(c, a.openRouterCatalogError).FontSize(11).TextColor(theme.Warning).FillWidth()
-			} else if len(a.openRouterCatalog) == 0 && !a.openRouterCatalogLoaded {
-				ui.Text(c, "Enter an OpenRouter API key in Settings before loading the catalog.").
-					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			}
-			if len(a.openRouterCatalog) > 0 {
-				ui.TextInput(c.Key("settings-openrouter-model-search"), &a.openRouterSearch).
-					Placeholder("Search all text chat models").FillWidth().Label("Search models").
-					AutoFocus().ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
-			}
-			modelField := ui.TextInput(c.Key("settings-provider-model-openrouter"), &a.openRouterModelDraft).
-				Placeholder("Or enter an exact OpenRouter model ID").FillWidth().Label("Model ID").
-				ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
-			if modelField.Changed() {
-				a.syncConnectionState()
-			}
-			if metadata, ok := a.openRouterModelByID(a.openRouterModelDraft); ok {
-				tools := "No native functions"
-				if metadata.SupportsTools {
-					tools = "Native functions supported"
-				}
-				reasoning := "Uses model default"
-				if metadata.ReasoningMetadataKnown && metadata.SupportsReasoning {
-					reasoning = "Reasoning effort supported"
-				} else if !metadata.ReasoningMetadataKnown {
-					reasoning = "Reasoning support unknown"
-				}
-				ui.Text(c, fmt.Sprintf("Context: %s tokens · %s · %s", modelContextLabel(metadata.ContextLength), tools, reasoning)).
-					FontSize(11).TextColor(theme.TextMuted).FillWidth()
-			}
-			ui.List(c.Key("settings-openrouter-model-list"), &a.openRouterModelList, len(results), func(i int) {
-				item := results[i]
-				selected := item.ID == strings.TrimSpace(a.openRouterModelDraft)
-				row := ui.Button(c.Key("model-select"), "").
-					FillWidth().Padding(9, 11).Radius(9).Background(theme.Background).Border(1, theme.Border)
-				if selected {
-					row.Background(theme.Accent.Alpha(0.12)).Border(1, theme.Accent)
-				}
-				row.Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-						ui.Text(c, item.Name).FontSize(12).Bold().FillWidth().SingleLine()
-						ui.Text(c, item.ID).FontSize(10).TextColor(theme.TextMuted).FillWidth().SingleLine()
+			settingsDivider(c, theme)
+			// Body: the list, or an empty state, always filling the same space.
+			ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+				if !hasCatalog {
+					ui.Column(c).FillWidth().Grow(1).AlignItems(ui.Center).Justify(ui.Center).Gap(10).Padding(24).Children(func() {
+						switch {
+						case a.openRouterCatalogLoading:
+							ui.Text(c, "Loading OpenRouter models…").FontSize(13).TextColor(theme.TextMuted)
+						case a.openRouterCatalogError != "":
+							ui.Text(c, a.openRouterCatalogError).FontSize(12).TextColor(theme.Warning).FillWidth()
+						default:
+							ui.Text(c, "Load the catalog to browse models").FontSize(13).Bold()
+							ui.Text(c, "Uses your saved OpenRouter API key. You can also type an exact model ID below.").
+								FontSize(11).TextColor(theme.TextMuted).FillWidth()
+						}
+						load := appButton(c, theme, "settings-openrouter-model-catalog", "Load model catalog", buttonPrimary).
+							Disabled(a.openRouterCatalogLoading || busy)
+						if load.Clicked() {
+							a.refreshOpenRouterModelCatalog()
+						}
 					})
-					ui.Column(c).Shrink(0).Gap(3).Children(func() {
-						ui.Text(c, modelContextLabel(item.ContextLength)+" ctx").FontSize(10).TextColor(theme.TextMuted)
-						capability := "No functions"
+					return
+				}
+				if len(results) == 0 {
+					ui.Text(c, "No models match that search.").FontSize(12).TextColor(theme.TextMuted).Padding(24)
+					return
+				}
+				ui.List(c.Key("settings-openrouter-model-list"), &a.openRouterModelList, len(results), func(i int) {
+					item := results[i]
+					selected := item.ID == strings.TrimSpace(a.openRouterModelDraft)
+					row := ui.Button(c.Key("model-select"), "").FillWidth().Padding(8, 11).Radius(9).
+						Background(ui.Transparent).Border(1, ui.Transparent)
+					if selected {
+						row.Background(theme.Accent.Alpha(0.12)).Border(1, theme.Accent.Alpha(0.5))
+					} else if row.Hovered() {
+						row.Background(theme.SurfaceHover)
+					}
+					row.Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+							ui.Text(c, item.Name).FontSize(12).Bold().FillWidth().SingleLine()
+							ui.Text(c, item.ID).FontSize(10).TextColor(theme.TextMuted).FillWidth().SingleLine()
+						})
+						chips := []string{modelContextLabel(item.ContextLength)}
 						if item.SupportsTools {
-							capability = "Functions"
+							chips = append(chips, "Tools")
 						}
-						ui.Text(c, capability).FontSize(10).TextColor(theme.TextMuted)
-						reasoning := "Default effort"
 						if item.ReasoningMetadataKnown && item.SupportsReasoning {
-							reasoning = "Effort control"
-						} else if !item.ReasoningMetadataKnown {
-							reasoning = "Effort unknown"
+							chips = append(chips, "Reasoning")
 						}
-						ui.Text(c, reasoning).FontSize(10).TextColor(theme.TextMuted)
+						ui.Row(c).Shrink(0).Gap(5).Children(func() {
+							for _, chip := range chips {
+								ui.Text(c, chip).FontSize(10).TextColor(theme.TextMuted).Padding(2, 7).Radius(6).
+									Background(theme.Surface).Border(1, theme.Border)
+							}
+						})
 					})
-				})
-				if row.Clicked() {
-					a.selectOpenRouterModel(item)
-					a.openRouterModelDraft = item.ID
+					if row.Clicked() {
+						a.selectOpenRouterModel(item)
+						a.openRouterModelDraft = item.ID
+						a.openRouterModelPickerOpen = false
+					}
+				}).FillWidth().Grow(1).MinHeight(0).Gap(2).Padding(8, 12)
+			})
+			settingsDivider(c, theme)
+			// Footer: exact ID + actions.
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(12, 20, 14, 22).Shrink(0).Children(func() {
+				modelField := ui.TextInput(c.Key("settings-provider-model-openrouter"), &a.openRouterModelDraft).
+					Placeholder("Or paste an exact model ID").Grow(1).MinWidth(0).Label("Model ID").ReadOnly(busy)
+				if modelField.Changed() {
+					a.syncConnectionState()
+				}
+				if appButton(c, theme, "settings-openrouter-model-cancel", "Cancel", buttonSecondary).Shrink(0).Clicked() {
 					a.openRouterModelPickerOpen = false
 				}
-			}).FillWidth().MaxHeight(380).MinHeight(0).Gap(7)
-			if len(a.openRouterCatalog) > 0 && len(results) == 0 {
-				ui.Text(c, "No models match that search.").FontSize(12).TextColor(theme.TextMuted).Padding(14, 8)
-			}
-			ui.Row(c).Justify(ui.End).Gap(8).Children(func() {
-				if ui.Button(c.Key("settings-openrouter-model-cancel"), "Cancel").Padding(8, 12).Clicked() {
-					a.openRouterModelPickerOpen = false
-				}
-				useID := ui.PrimaryButton(c.Key("settings-openrouter-model-use"), "Use this model ID").Padding(8, 12)
-				useID.Disabled(strings.TrimSpace(a.openRouterModelDraft) == "" || a.settingsSaving || a.modelConnection == "Checking…")
+				useID := appButton(c, theme, "settings-openrouter-model-use", "Use model", buttonPrimary).Shrink(0)
+				useID.Disabled(strings.TrimSpace(a.openRouterModelDraft) == "" || busy)
 				if useID.Clicked() {
 					a.setOpenRouterModel(a.openRouterModelDraft)
 					a.openRouterModelDraft = a.prefs.OpenRouterModel

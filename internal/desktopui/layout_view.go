@@ -22,7 +22,8 @@ func (a *app) view(c *ui.Context) {
 		a.sidebar(c, theme, dragHeight, vibrant, latestDots)
 		ui.Box(c).Width(1).FillHeight().Background(theme.Border.Alpha(0.42))
 
-		main := ui.Column(c).Grow(1).FillHeight().MinWidth(0).Background(rootColor)
+		// Only the sidebar may be translucent; the content pane is always opaque.
+		main := ui.Column(c).Grow(1).FillHeight().MinWidth(0).Background(theme.Background)
 		main.Children(func() {
 			a.header(c, theme, latestDots)
 			ui.Box(c).FillWidth().Height(1).Background(theme.Border.Alpha(0.34))

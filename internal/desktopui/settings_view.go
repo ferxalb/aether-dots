@@ -59,7 +59,7 @@ func (a *app) settingsAction(c *ui.Context, theme *ui.Theme) {
 			ui.Text(c, "Saving securely…").FontSize(11).TextColor(theme.TextMuted)
 		case a.settingsDirty():
 			ui.Text(c, "Unsaved changes").FontSize(11).TextColor(theme.TextMuted)
-			save := ui.PrimaryButton(c.Key("settings-save"), "Save changes").Padding(9, 14).
+			save := appButton(c, theme, "settings-save", "Save changes", buttonPrimary).
 				Disabled(a.modelConnection == "Checking…")
 			if save.Clicked() {
 				a.saveSettings()
