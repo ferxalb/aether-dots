@@ -3,127 +3,163 @@ package desktopui
 import (
 	"os"
 	"strings"
+	"time"
 
 	"aether-dots/internal/model"
 	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
-	if providerFromSelection(a.providerSelection) != a.prefs.Provider {
+	if a.providerSelection == "" || providerFromSelection(a.providerSelection) != a.prefs.Provider {
 		a.providerSelection = providerSelectionLabel(a.prefs.Provider)
 	}
 	providerName := providerDisplayName(a.prefs.Provider)
 	modelName := a.prefs.selectedModel()
-	card := ui.Column(c).FillWidth().Gap(15).Padding(18).Radius(16).
-		Background(theme.Surface).Border(1, theme.Border)
+	busy := a.settingsSaving || a.modelConnection == "Checking…"
+	card := ui.Column(c).FillWidth().Radius(16).Background(theme.Surface).Border(1, theme.Border)
 	card.Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			ui.Box(c).Size(34, 34).Shrink(0).Radius(11).
-				Background(theme.Accent.Alpha(0.14)).TextColor(theme.Accent).Children(func() {
-				ui.Icon(c, iconSparkles).Size(18, 18)
-			})
-			ui.Column(c).Gap(3).Children(func() {
-				ui.Text(c, providerName).FontSize(15).Bold()
+		// Identity + connection status. Testing is a quiet secondary action here.
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Padding(18, 20).Children(func() {
+			providerLogo(c, a.prefs.Provider, 40)
+			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+				ui.Text(c, providerName).FontSize(17).Bold()
 				ui.Text(c, "Choose a provider for replies and scheduled runs.").FontSize(12).TextColor(theme.TextMuted)
 			})
-			ui.Spacer(c)
 			state, color := connectionBadge(theme, a.modelConnection)
-			ui.Badge(c, state).TextColor(color)
+			ui.Row(c).AlignItems(ui.Center).Gap(6).Shrink(0).Children(func() {
+				ui.Box(c).Size(7, 7).Shrink(0).Radius(4).Background(color)
+				label := state
+				if when := relativeTime(a.modelConnectionAt, time.Now()); when != "" && (state == "Connected" || state == "Connection failed") {
+					label += " · " + when
+				}
+				ui.Text(c, label).FontSize(12).TextColor(theme.TextMuted)
+			})
+			test := ui.Button(c.Key("settings-test-provider"), "").Shrink(0).Padding(6, 11).Radius(8).
+				Background(ui.Transparent).Border(1, theme.Border).
+				Label("Test connection").Disabled(busy || strings.TrimSpace(*modelName) == "")
+			if test.Hovered() {
+				test.Background(theme.SurfaceHover)
+			}
+			test.Busy(a.modelConnection == "Checking…")
+			testLabel := "Test"
+			if a.modelConnection == "Connected" || a.modelConnection == "Connection failed" {
+				testLabel = "Retest"
+			}
+			test.Children(func() { ui.Text(c, testLabel).FontSize(12) })
+			if test.Clicked() {
+				a.testModel()
+			}
 		})
-		ui.Divider(c)
-		ui.Field(c, "Provider", func() {
+		settingsDivider(c, theme)
+
+		settingsRow(c, theme, "Provider", "Who runs your Dots' replies.", func() {
 			selector := dropdownSelect(c, theme, "settings-provider-select", "AI provider", &a.providerSelection,
-				stringDropdownOptions([]string{"OpenAI", "Anthropic Claude", "xAI Grok", "OpenRouter", "Custom OpenAI-compatible"}, nil),
-				a.settingsSaving || a.modelConnection == "Checking…")
+				stringDropdownOptions([]string{"OpenAI", "Anthropic Claude", "xAI Grok", "OpenRouter", "Custom OpenAI-compatible"}, nil), busy)
 			if selector.Changed() {
 				a.switchProvider(providerFromSelection(a.providerSelection))
 			}
 		})
 		if a.prefs.Provider == string(model.ProviderCompatible) {
-			ui.Field(c, "Endpoint URL", func() {
+			settingsDivider(c, theme)
+			settingsRow(c, theme, "Endpoint", "OpenAI-compatible base URL.", func() {
 				field := ui.TextInput(c.Key("settings-compatible-endpoint"), &a.prefs.CompatibleBaseURL).
 					Placeholder("https://api.example.com/v1 or http://localhost:11434/v1").
-					FillWidth().Label("OpenAI-compatible API base URL").
-					ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
+					FillWidth().Label("OpenAI-compatible API base URL").ReadOnly(busy).
+					Invalid(strings.TrimSpace(a.prefs.CompatibleBaseURL) != "" && !validEndpoint(a.prefs.CompatibleBaseURL))
 				if field.Changed() {
-					a.modelConnection = "Not tested"
+					a.syncConnectionState()
 				}
 			})
 		}
+		settingsDivider(c, theme)
 		if a.prefs.Provider == string(model.ProviderOpenRouter) {
 			a.openRouterModelSettings(c, theme, modelName)
 		} else {
-			ui.Field(c, "Model", func() {
+			settingsRow(c, theme, "Model", "The model used for new replies.", func() {
 				field := ui.TextInput(c.Key("settings-provider-model-"+a.prefs.Provider), modelName).
-					Placeholder(providerModelPlaceholder(a.prefs.Provider)).FillWidth().Label(providerName + " model").
-					ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
+					Placeholder(providerModelPlaceholder(a.prefs.Provider)).FillWidth().Label(providerName + " model").ReadOnly(busy)
 				if field.Changed() {
-					a.modelConnection = "Not tested"
+					a.syncConnectionState()
 				}
 			})
 		}
-		ui.Field(c, "API key", func() {
+		settingsDivider(c, theme)
+		settingsRow(c, theme, "API key", "Stored in your system keychain.", func() {
 			field := ui.TextInput(c.Key("settings-provider-key-"+a.prefs.Provider), &a.apiKeyDraft).
 				Placeholder(apiKeyPlaceholder(a.credentialSaved)).FillWidth().Label(providerKeyLabel(a.prefs.Provider)).
-				Password().ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
+				Password().ReadOnly(busy)
 			if field.Changed() {
-				a.modelConnection = "Not tested"
+				a.invalidateConnection()
 			}
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				statusText := a.credentialDescription()
+				if strings.TrimSpace(a.apiKeyDraft) != "" {
+					statusText = "New key ready · saved when you save changes"
+				}
+				ui.Box(c).Size(6, 6).Shrink(0).Radius(3).Background(credentialColor(theme, a))
+				ui.Text(c, statusText).FontSize(11).TextColor(theme.TextMuted).Grow(1).MinWidth(0)
+				if a.credentialSaved {
+					remove := ui.Button(c.Key("settings-remove-provider-key"), "").Shrink(0).Padding(3, 7).Radius(6).
+						Background(ui.Transparent).Label("Remove saved key").
+						Disabled(a.settingsSaving || a.credentialLoading || a.modelConnection == "Checking…")
+					if remove.Hovered() {
+						remove.Background(theme.Danger.Alpha(0.12))
+					}
+					remove.Children(func() { ui.Text(c, "Remove").FontSize(11).TextColor(theme.Danger) })
+					if remove.Clicked() {
+						a.removeAPIKey()
+					}
+				}
+			})
 		})
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			statusText := a.credentialDescription()
-			if strings.TrimSpace(a.apiKeyDraft) != "" {
-				statusText = "A new key is ready to test and save securely"
-			}
-			ui.Box(c).Size(7, 7).Shrink(0).Radius(4).Background(credentialColor(theme, a))
-			ui.Text(c, statusText).FontSize(11).TextColor(theme.TextMuted).FillWidth()
-		})
-		ui.Column(c).FillWidth().Gap(5).Padding(12, 14).Radius(11).
-			Background(theme.Background).Border(1, theme.Border).Children(func() {
-			ui.Text(c, "Your data and privacy").FontSize(11).Bold()
-			privacyDescription := providerPrivacyDescription(a.prefs.Provider)
-			if a.prefs.Provider == string(model.ProviderAnthropic) && a.prefs.AnthropicMessageThreads {
-				privacyDescription += " Message Threads are enabled: Anthropic keeps the encrypted thread in memory, expires it after 5 minutes idle, and deletes it no later than 1 hour after last use. There is no early-delete API; this feature is not ZDR eligible."
-			}
-			ui.Text(c, privacyDescription).
-				FontSize(11).TextColor(theme.TextMuted).FillWidth()
-			if a.prefs.Provider == string(model.ProviderAnthropic) {
+		if a.prefs.Provider == string(model.ProviderAnthropic) {
+			settingsDivider(c, theme)
+			settingsRow(c, theme, "Message Threads", "Beta · off by default.", func() {
 				ui.Checkbox(c.Key("anthropic-message-threads"), &a.prefs.AnthropicMessageThreads,
 					"Use short-lived Anthropic Message Threads").FillWidth()
-				ui.Text(c, "Beta; off by default. While its in-memory thread is active, later turns send only new messages. Anthropic expires it after 5 minutes idle and deletes it within 1 hour of last use; the SDK replays from local memory if it expires. Restarting AETHER also drops its local thread reference. Turning this off drops AETHER's local reference, but Anthropic has no early-delete API. Standard billing is unchanged; this feature is not eligible for Zero Data Retention.").
-					FontSize(10).TextColor(theme.TextMuted).FillWidth()
-			}
-			if a.prefs.Provider == string(model.ProviderOpenRouter) {
-				if selected, ok := a.selectedOpenRouterModel(); ok && !selected.SupportsTools {
-					ui.Text(c, "The selected model does not declare native function support, so AETHER omits the function definitions for it.").
-						FontSize(11).TextColor(theme.TextMuted).FillWidth()
-				}
-			}
-			ui.Text(c, "API keys are stored in the system credential store and are never written to preferences, Dot data, or logs.").
-				FontSize(11).TextColor(theme.TextMuted).FillWidth()
-		})
-		ui.Row(c).Gap(9).Children(func() {
-			test := ui.Button(c.Key("settings-test-provider"), "").Grow(1).Padding(10, 12).Gap(8).Radius(10).
-				Label("Test connection").Disabled(a.settingsSaving || a.modelConnection == "Checking…" || strings.TrimSpace(*modelName) == "")
-			test.Children(func() {
-				ui.Icon(c, iconPlay).Size(15, 15).TextColor(theme.Accent)
-				ui.Text(c, "Test connection").FontSize(12)
+				ui.Text(c, "Later turns send only new messages. Anthropic expires the thread after 5 minutes idle and deletes it within 1 hour; there is no early-delete API and it is not eligible for Zero Data Retention.").
+					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			})
-			if test.Clicked() {
-				a.testModel()
+		}
+	})
+	// Privacy is reference material: quiet footnote, not a framed box.
+	ui.Column(c).FillWidth().Gap(4).Padding(2, 6, 0, 6).Children(func() {
+		privacyDescription := providerPrivacyDescription(a.prefs.Provider)
+		if a.prefs.Provider == string(model.ProviderAnthropic) && a.prefs.AnthropicMessageThreads {
+			privacyDescription += " Message Threads are enabled: Anthropic keeps the encrypted thread in memory, expires it after 5 minutes idle, and deletes it no later than 1 hour after last use."
+		}
+		if a.prefs.Provider == string(model.ProviderOpenRouter) {
+			if selected, ok := a.selectedOpenRouterModel(); ok && !selected.SupportsTools {
+				privacyDescription += " The selected model does not declare native function support, so AETHER omits the function definitions for it."
 			}
-			if a.credentialSaved {
-				remove := ui.Button(c.Key("settings-remove-provider-key"), "Remove saved key").Padding(10, 12).
-					Label("Remove saved key").Disabled(a.settingsSaving || a.credentialLoading || a.modelConnection == "Checking…")
-				if remove.Clicked() {
-					a.removeAPIKey()
-				}
-			}
-		})
+		}
+		ui.Text(c, "Your data and privacy").FontSize(11).Bold().TextColor(theme.TextMuted)
+		ui.Text(c, privacyDescription+" API keys are never written to preferences, Dot data, or logs.").
+			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 	})
 	if a.prefs.Provider == string(model.ProviderOpenRouter) {
 		a.openRouterModelPickerModal(c, theme, modelName)
 	}
+}
+
+// settingsRow lays out one setting: title and hint on the left, control on the right.
+func settingsRow(c *ui.Context, theme *ui.Theme, title, hint string, control func()) {
+	ui.Row(c).FillWidth().Gap(24).Padding(16, 20).Children(func() {
+		ui.Column(c).Width(170).Shrink(0).Gap(3).Children(func() {
+			ui.Text(c, title).FontSize(13).Bold()
+			ui.Text(c, hint).FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		})
+		ui.Column(c).Grow(1).MinWidth(0).Gap(8).Children(control)
+	})
+}
+
+func settingsDivider(c *ui.Context, theme *ui.Theme) {
+	ui.Box(c).FillWidth().Height(1).Shrink(0).Background(theme.Border.Alpha(0.6))
+}
+
+func validEndpoint(raw string) bool {
+	_, err := model.ValidateBaseURL(raw)
+	return err == nil
 }
 
 func githubToolsKnownUnsupported(prefs preferences) bool {

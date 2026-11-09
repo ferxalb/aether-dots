@@ -11,8 +11,7 @@ import (
 )
 
 func (a *app) openRouterModelSettings(c *ui.Context, theme *ui.Theme, modelName *string) {
-	ui.Column(c).FillWidth().Gap(7).Children(func() {
-		ui.Text(c, "Model").FontSize(11).Bold()
+	settingsRow(c, theme, "Model", "Browse OpenRouter's live text-model catalog.", func() {
 		selectedName := strings.TrimSpace(*modelName)
 		if selectedName == "" {
 			selectedName = "Choose a model"
@@ -24,38 +23,43 @@ func (a *app) openRouterModelSettings(c *ui.Context, theme *ui.Theme, modelName 
 				}
 			}
 		}
-		button := ui.Button(c.Key("settings-openrouter-model-open"), "").FillWidth().Padding(10, 12).
+		button := ui.Button(c.Key("settings-openrouter-model-open"), "").FillWidth().Padding(9, 12).
 			Gap(10).Radius(10).Background(theme.Background).Border(1, theme.Border).
-			Disabled(a.settingsSaving || a.modelConnection == "Checking…")
+			Label("Browse models").Disabled(a.settingsSaving || a.modelConnection == "Checking…")
+		if button.Hovered() {
+			button.Background(theme.SurfaceHover)
+		}
 		button.Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-				ui.Text(c, selectedName).FontSize(12).Bold().FillWidth().SingleLine()
-				if strings.TrimSpace(*modelName) != "" {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				ui.Text(c, selectedName).FontSize(13).Bold().FillWidth().SingleLine()
+				if strings.TrimSpace(*modelName) != "" && selectedName != strings.TrimSpace(*modelName) {
 					ui.Text(c, *modelName).FontSize(10).TextColor(theme.TextMuted).FillWidth().SingleLine()
 				}
 			})
-			ui.Text(c, "Browse models…").FontSize(11).TextColor(theme.Accent)
+			ui.Text(c, "Change").FontSize(11).TextColor(theme.Accent)
 		})
 		if button.Clicked() {
 			a.openRouterModelDraft = *modelName
 			a.openRouterModelPickerOpen = true
 		}
 		if metadata, ok := a.selectedOpenRouterModel(); ok {
-			tools := "Native functions unavailable"
+			tools := "No native functions"
 			if metadata.SupportsTools {
-				tools = "Native functions supported"
+				tools = "Native functions"
 			}
-			reasoning := "Model default reasoning"
+			reasoning := "Default reasoning"
 			if metadata.ReasoningMetadataKnown && metadata.SupportsReasoning {
-				reasoning = "Reasoning effort configurable"
+				reasoning = "Configurable reasoning"
 			} else if !metadata.ReasoningMetadataKnown {
-				reasoning = "Reasoning support unknown"
+				reasoning = "Reasoning unknown"
 			}
-			ui.Text(c, fmt.Sprintf("Model context: %s tokens · %s · %s", modelContextLabel(metadata.ContextLength), tools, reasoning)).
-				FontSize(11).TextColor(theme.TextMuted).FillWidth()
+			ui.Row(c).Gap(6).Wrap().Children(func() {
+				for _, chip := range []string{modelContextLabel(metadata.ContextLength) + " context", tools, reasoning} {
+					ui.Text(c, chip).FontSize(10).TextColor(theme.TextMuted).Padding(2, 8).Radius(6).
+						Background(theme.Background).Border(1, theme.Border)
+				}
+			})
 		}
-		ui.Text(c, "OpenRouter’s text model catalog is available from the model picker. Replies use the model’s default token limit unless you set an optional cap.").
-			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 	})
 }
 
@@ -111,7 +115,7 @@ func (a *app) openRouterModelPickerModal(c *ui.Context, theme *ui.Theme, modelNa
 				Placeholder("Or enter an exact OpenRouter model ID").FillWidth().Label("Model ID").
 				ReadOnly(a.settingsSaving || a.modelConnection == "Checking…")
 			if modelField.Changed() {
-				a.modelConnection = "Not tested"
+				a.syncConnectionState()
 			}
 			if metadata, ok := a.openRouterModelByID(a.openRouterModelDraft); ok {
 				tools := "No native functions"
@@ -258,7 +262,7 @@ func (a *app) setOpenRouterModel(id string) {
 			break
 		}
 	}
-	a.modelConnection = "Not tested"
+	a.syncConnectionState()
 }
 
 func (a *app) applyOpenRouterModelMetadata(item model.OpenRouterModel) {

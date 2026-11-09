@@ -6,7 +6,7 @@ tool github.com/egoist/mygo/cmd/mygo
 
 require (
 	github.com/anthropics/anthropic-sdk-go/v2 v2.5.0
-	github.com/egoist/mygo v0.7.3
+	github.com/egoist/mygo v0.8.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go/v3 v3.91.0
 )

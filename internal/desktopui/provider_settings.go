@@ -188,7 +188,8 @@ func (a *app) switchProvider(provider string) {
 	a.credentialLoading = false
 	a.credentialSaved = false
 	a.credentialError = ""
-	a.modelConnection = "Not tested"
+	a.modelConnection = ""
+	a.syncConnectionState()
 	a.checkCredential()
 }
 
@@ -209,6 +210,7 @@ func (a *app) openSettings() {
 	a.activityOpen = false
 	a.settingsTab = 0
 	a.providerSelection = providerSelectionLabel(a.prefs.Provider)
+	a.syncConnectionState()
 	a.checkCredential()
 }
 
@@ -262,6 +264,8 @@ func (a *app) saveSettings() {
 	// thread. Drop local references so a later switch back replays local chat.
 	model.ClearAnthropicThreads()
 	a.publishRoutinePreferences()
+	a.savedPrefs = a.prefs
+	a.syncConnectionState()
 	key := strings.TrimSpace(a.apiKeyDraft)
 	if key == "" {
 		description := "Your preferences are ready to use."
@@ -355,7 +359,7 @@ func (a *app) removeAPIKey() {
 			a.credentialChecked = true
 			a.credentialSaved = false
 			a.credentialError = ""
-			a.modelConnection = "Not tested"
+			a.invalidateConnection()
 			a.adt.Push(ADTNotice{ID: toastID, Title: "API key removed", Description: "The saved key was removed from the system credential store.", Level: ADTSuccess})
 		})
 	}()
@@ -394,6 +398,7 @@ func (a *app) testModel() {
 	provider := a.prefs.Provider
 	a.adt.Loading(toastID, "Checking connection", "Testing the selected "+providerDisplayName(provider)+" model.")
 	prefs := a.prefs
+	prefs.OpenRouterModel = strings.TrimSpace(prefs.OpenRouterModel)
 	keyDraft := a.apiKeyDraft
 	win := a.win
 	go func() {
@@ -402,14 +407,15 @@ func (a *app) testModel() {
 		err := generatorForPreferences(prefs, keyDraft).Test(ctx)
 		if win != nil {
 			win.Update(func() {
+				a.modelConnection = ""
+				a.recordConnection(prefs, err == nil)
+				a.syncConnectionState()
 				if a.prefs.Provider != provider {
 					return
 				}
 				if err != nil {
-					a.modelConnection = "Connection failed"
 					a.adt.Push(ADTNotice{ID: toastID, Title: "Connection failed", Description: err.Error(), Level: ADTError})
 				} else {
-					a.modelConnection = "Connected"
 					a.adt.Push(ADTNotice{ID: toastID, Title: "Connection verified", Description: providerDisplayName(provider) + " is ready for your Dots.", Level: ADTSuccess})
 				}
 			})

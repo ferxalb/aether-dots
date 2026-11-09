@@ -573,7 +573,6 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - The app remains local-first. MCP configuration, cloud sync, device handoff, OS keychain storage, and arbitrary-app control were not implemented.
 - No production signing, notarization, DMG, or non-macOS build was verified.
 
-
 ## 2026-11-06 — Midnight integration (CLI)
 
 - New CLI commands: `mcp [list|add|refresh|remove|grant|revoke]`, `midnight enable`, `memory [remember|recall|list|forget]`, `doctor`/`status`, `init`, `model show`. Interactive CLI runs now load the Dot's granted loopback MCP tools through `engine.WithMCPTools`, the same path and grant/fingerprint/disclosure checks as Desktop; Routines and delegated Dots still get none. The shared tool-catalog converter moved to `internal/integrations/mcp` and `store.SetConversationMCPGrants` mirrors the profile editor's validation.
@@ -605,7 +604,21 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 - Validation: go vet/gofmt/test all green, real-binary E2E OK; recall p50/p95/p99 CLI 10.5/12.8/13.1 ms, grounded send 46.1/54.3/55.7 ms (no regression vs 10.8/14.4/15.5 and 46.8/58.2/59.7).
 
 ## 2026-11-07 — Store performance pass
+
 - `reloadLocked` skips reading/hashing `dots.json` when its stat fingerprint (size, mtime, inode) is unchanged, so `Snapshot()` polling no longer re-reads the file.
 - Event hash chains are verified incrementally per Dot (only new events plus the previously verified tail), not on every reload.
 - A reply now costs 2 writes instead of ~6: `StartRun` (status + checkpoint) and `CompleteRun` (metrics + reply + checkpoint clear + Done).
 - Not done: SQLite/WAL migration and version-invalidated snapshot cache; deferred as a larger separate change.
+
+## 2026-11-08 — AI & responses settings redesign
+
+- Provider card rebuilt as a settings list: identity header with status dot + small secondary "Test" button (was a full-width primary-looking action), then label/hint-left, control-right rows (Provider, Model, API key, Message Threads for Anthropic).
+- "Remove saved key" is now an inline danger text action beside the key status; model metadata is shown as chips; the privacy text is a quiet footnote instead of a framed box. No behavior or permission changes.
+- Provider dropdown now re-syncs when its selection is empty.
+
+## 2026-11-08 (2) — Persistent connection state, dirty tracking, provider logos, MyGo 0.8.3
+
+- Test result is stored in `connection-state.json` (no secrets), keyed per provider and fingerprinted by provider+model(+endpoint). It survives restarts and shows "Connected · 2h ago"; changing the model/endpoint reads "Not tested", and changing or removing the key invalidates it.
+- Save button only appears when there are unsaved preference edits or a typed key (`savedPrefs` snapshot); otherwise the header shows "All changes saved".
+- Provider tile uses a per-provider mark/color instead of the generic sparkles icon (`provider_logo.go`).
+- MyGo 0.7.3 → 0.8.3: build, vet and all tests pass unchanged. Adopted `Invalid` (endpoint URL) and `Busy` (Test button). Candidates not yet adopted: `Sticky` header, richer `Menu` items (icon/subtitle) for the provider picker, `MixOklab`, `MaskLinearGradient` fades, `Scrollbars`/`KeepScrollbars`.

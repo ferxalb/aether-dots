@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -171,6 +172,9 @@ type app struct {
 	mcpDiscoveryError          string
 	settingsSaving             bool
 	modelConnection            string
+	modelConnectionAt          time.Time
+	connectionRecords          map[string]connectionRecord
+	savedPrefs                 preferences
 	routineSchedulerStarted    bool
 	routinePreferences         *atomic.Pointer[preferences]
 }
@@ -187,7 +191,7 @@ func Run(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	a := &app{db: db, dataDir: dataDir, prefs: prefs, providerSelection: providerSelectionLabel(prefs.Provider),
+	a := &app{db: db, dataDir: dataDir, prefs: prefs, savedPrefs: prefs, connectionRecords: loadConnectionRecords(dataDir), providerSelection: providerSelectionLabel(prefs.Provider),
 		remoteLoopMu: &sync.Mutex{}, remoteForgetMu: &sync.Mutex{},
 		githubService:      github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil),
 		computerUseService: computeruse.New(dataDir)}

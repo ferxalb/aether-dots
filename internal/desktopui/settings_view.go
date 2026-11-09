@@ -54,13 +54,19 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 func (a *app) settingsAction(c *ui.Context, theme *ui.Theme) {
 	switch a.settingsTab {
 	case 0, 1:
-		if a.settingsSaving {
+		switch {
+		case a.settingsSaving:
 			ui.Text(c, "Saving securely…").FontSize(11).TextColor(theme.TextMuted)
-		}
-		save := ui.PrimaryButton(c.Key("settings-save"), "Save changes").Padding(9, 14).
-			Disabled(a.settingsSaving || a.modelConnection == "Checking…")
-		if save.Clicked() {
-			a.saveSettings()
+		case a.settingsDirty():
+			ui.Text(c, "Unsaved changes").FontSize(11).TextColor(theme.TextMuted)
+			save := ui.PrimaryButton(c.Key("settings-save"), "Save changes").Padding(9, 14).
+				Disabled(a.modelConnection == "Checking…")
+			if save.Clicked() {
+				a.saveSettings()
+			}
+		default:
+			ui.Icon(c, iconCheck).Size(13, 13).TextColor(theme.Success)
+			ui.Text(c, "All changes saved").FontSize(11).TextColor(theme.TextMuted)
 		}
 	case 3:
 		if a.skillEditorOpen {
