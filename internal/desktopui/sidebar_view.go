@@ -291,6 +291,22 @@ func sidebarTime(at time.Time) string {
 func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme) {
 	footer := ui.Column(c).FillWidth().Gap(4)
 	footer.Children(func() {
+		if a.snapshot.GitHubConnected || len(a.snapshot.GitHubProposals) > 0 {
+			approvals := ui.Button(c.Key("open-approvals"), "").FillWidth().Height(38).
+				Padding(8, 10).Gap(9).Radius(9).Label("GitHub approvals").Tooltip("GitHub approvals")
+			styleSidebarItem(approvals, theme, a.approvals.open)
+			approvals.Children(func() {
+				ui.Icon(c, iconCheck).Size(16, 16).TextColor(theme.TextMuted)
+				ui.Text(c, "GitHub approvals").FontSize(12)
+				ui.Spacer(c)
+				if waiting := a.pendingApprovalCount(); waiting > 0 {
+					ui.Badge(c, fmt.Sprint(waiting)).TextColor(theme.Accent)
+				}
+			})
+			if approvals.Clicked() {
+				a.openApprovals()
+			}
+		}
 		activity := ui.Button(c.Key("open-activity"), "").FillWidth().Height(38).
 			Padding(8, 10).Gap(9).Radius(9).Label("Activity").Tooltip("Activity")
 		styleSidebarItem(activity, theme, a.activityOpen)
@@ -311,6 +327,7 @@ func (a *app) sidebarFooter(c *ui.Context, theme *ui.Theme) {
 		if activity.Clicked() {
 			a.rememberCurrentConversationState()
 			a.activityOpen = true
+			a.approvals.open = false
 			a.settingsOpen = false
 			a.conversationDetailsOpen = false
 			a.selectedDotID = ""

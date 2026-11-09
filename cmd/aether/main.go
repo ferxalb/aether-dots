@@ -288,7 +288,7 @@ Commands:
   memory [remember|recall|list|forget] <dot-id> ...  User-initiated Midnight memory operations (scope dot:<id>)
   skills [list|create|update|inspect|delete]  Manage reusable playbooks
   routines [list|create|update|pause|resume|test|inspect|delete|serve]  Manage schedules
-  github [login|status|refresh|repositories|select|grant|revoke|disconnect]  Manage the read-only GitHub connection
+  github [login|status|refresh|repositories|select|grant|write-grant|proposals|revoke|disconnect]  Manage GitHub: read grants, write proposals, approvals
 
 Profile options:
   --name <name>

@@ -208,6 +208,7 @@ func secondsPreference(value string, fallback int64) time.Duration {
 func (a *app) openSettings() {
 	a.settingsOpen = true
 	a.activityOpen = false
+	a.approvals.open = false
 	a.settingsTab = 0
 	a.providerSelection = providerSelectionLabel(a.prefs.Provider)
 	a.syncConnectionState()

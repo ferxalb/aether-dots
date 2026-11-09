@@ -465,6 +465,7 @@ func (s *Store) change(fn func(*task.Database) error) error {
 		return err
 	}
 	reconcileGitHubProposals(&next, time.Now().UTC())
+	pruneGitHubWriteGrants(&next)
 	if err := writeDiff(ctx, conn, s.db, next); err != nil {
 		return fmt.Errorf("write task store: %w", err)
 	}

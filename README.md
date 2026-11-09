@@ -26,7 +26,7 @@ By default, a Dot can only chat. It **cannot** read your files or folders, run c
 | Capability | What it allows | How to enable |
 | --- | --- | --- |
 | Specialist Dots | Hand a task to up to 12 other Dots in the same Space (max 3 handoffs per reply) | Customize → Specialist access |
-| GitHub | Read-only: repositories, issues, pull requests, commits, CI checks and runs | Settings → Integrations, then Customize |
+| GitHub | Read: repositories, issues, pull requests, commits, CI checks and runs. Write: comments, issues and draft pull requests only as proposals you approve | Settings → Integrations, then Customize |
 | MCP tools | Use specific tools from MCP servers already running on this Mac | Settings → MCP, then Customize |
 | Computer Use | Read the open Apple Notes window, or play/pause/skip in Apple Music | Settings → Integrations, then Customize |
 
@@ -40,7 +40,9 @@ Each reply uses the Dot's profile, its saved memory, shared Space notes, and rec
 
 ### GitHub
 
-Install the [GitHub CLI](https://cli.github.com), run `gh auth login`, then select **Connect GitHub** in Settings. AETHER stores no GitHub token. Choose which repositories AETHER may use under **Manage repositories**, then grant specific repositories to a Dot in Customize. Access is read-only. **Disconnect** stops AETHER from using `gh` but doesn't sign you out of it.
+Install the [GitHub CLI](https://cli.github.com), run `gh auth login`, then select **Connect GitHub** in Settings. AETHER stores no GitHub token. Choose which repositories AETHER may use under **Manage repositories**, then grant specific repositories to a Dot in Customize. Granted repositories can be read by that Dot. **Disconnect** stops AETHER from using `gh` but doesn't sign you out of it.
+
+**Writing to GitHub is separate and always approved by you.** In Customize, a Dot can also be allowed to *propose* a comment, a new issue or a draft pull request (from a branch that already exists on GitHub) for repositories it can read. A proposal is only text waiting in **GitHub approvals** in the sidebar: nothing is sent until you read the exact text and choose **Approve and send**. It is then published under your own GitHub account, which may be public. Proposals expire after 24 hours, and Routines, delegated Dots and the iPhone cannot create them. The CLI offers the same flow: `aether github write-grant`, then `aether github proposals [show|approve|reject]` (approving needs a terminal and typing back part of the content hash).
 
 If you switch `gh` to a different account (`gh auth switch`), AETHER stops giving Dots GitHub tools until you reconnect, and reconnecting as the new account clears the old account's repository selections and grants. If `gh` lives somewhere unusual, set `AETHER_GH_PATH` to its full path. A direct GitHub API integration may come later; for now `gh` is the only way AETHER reaches GitHub.
 

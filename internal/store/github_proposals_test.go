@@ -384,3 +384,30 @@ func TestPrunesOldestFinishedProposalAtCapacity(t *testing.T) {
 		t.Fatalf("tray holds %d proposals", n)
 	}
 }
+
+func TestWriteGrantsDoNotOutliveTheirReadGrant(t *testing.T) {
+	f := newWriteFixture(t, task.GitHubIssueComment)
+	if err := f.db.SetConversationGitHubGrants(f.conversation.ID, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	conv, _ := findConversation(f.db.Snapshot(), f.conversation.ID)
+	if len(conv.GitHubWriteGrants) != 0 || conv.GitHubWriteGrantSpaceID != "" || conv.GitHubWriteDisclosureAccepted {
+		t.Fatalf("write grant survived its read grant: %#v", conv)
+	}
+	// Granting read again must not silently bring writes back.
+	if err := f.db.SetConversationGitHubGrants(f.conversation.ID, []int64{101}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.db.GitHubWriteGrants(f.dot.ID); ok {
+		t.Fatal("re-granting read revived a revoked write grant")
+	}
+}
+
+func findConversation(db task.Database, id string) (task.Conversation, bool) {
+	for _, c := range db.Conversations {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return task.Conversation{}, false
+}

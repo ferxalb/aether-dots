@@ -305,6 +305,8 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			}
 		})
 
+		a.githubWritePanel(c, theme)
+
 		profilePanel(c, theme, "MCP tools", func() {
 			conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
 			ui.Text(c, "Choose exact tools from loopback MCP servers. Each input and returned result may be sent to this Dot's selected model. A granted tool can perform actions within its server's own scope.").

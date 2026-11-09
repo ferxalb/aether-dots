@@ -26,6 +26,7 @@ func (a *app) selectConversation(id string) {
 	a.conversationDetailsOpen = false
 	a.settingsOpen = false
 	a.activityOpen = false
+	a.approvals.open = false
 	a.conversationError = ""
 	a.refresh()
 }

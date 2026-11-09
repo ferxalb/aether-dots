@@ -162,6 +162,8 @@ type app struct {
 	githubRepositoryLimit      int
 	githubTruncated            bool
 	profileGitHubRepositoryIDs []int64
+	approvals                  approvalsUI
+	writeGrants                writeGrantDraft
 	mcpDiscoveryLoading        bool
 	mcpDiscoveryScanned        bool
 	mcpDiscoveryProgress       int

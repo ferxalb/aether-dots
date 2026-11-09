@@ -263,6 +263,30 @@ func reconcileGitHubProposals(db *task.Database, now time.Time) {
 	}
 }
 
+// pruneGitHubWriteGrants drops write grants whose read grant is gone
+// (revocation, deselected repository, disconnect, Space move), so a write
+// grant can never outlive the access it depends on.
+func pruneGitHubWriteGrants(db *task.Database) {
+	for i := range db.Conversations {
+		conv := &db.Conversations[i]
+		if len(conv.GitHubWriteGrants) == 0 && conv.GitHubWriteGrantSpaceID == "" && !conv.GitHubWriteDisclosureAccepted {
+			continue
+		}
+		kept := make([]task.GitHubWriteGrant, 0, len(conv.GitHubWriteGrants))
+		for _, grant := range conv.GitHubWriteGrants {
+			if db.GitHubConnected && hasReadGrant(db, conv, grant.RepositoryID) {
+				kept = append(kept, grant)
+			}
+		}
+		conv.GitHubWriteGrants = kept
+		if len(kept) == 0 {
+			conv.GitHubWriteGrants = nil
+			conv.GitHubWriteGrantSpaceID = ""
+			conv.GitHubWriteDisclosureAccepted = false
+		}
+	}
+}
+
 // SweepGitHubProposals applies expiry and recovery without another change.
 func (s *Store) SweepGitHubProposals() error {
 	return s.change(func(*task.Database) error { return nil })

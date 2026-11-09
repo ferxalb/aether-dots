@@ -87,6 +87,7 @@ func activityCard(c *ui.Context, theme *ui.Theme, a *app, dot task.Dot) {
 			if dot.ConversationID != "" {
 				if ui.Button(c.Key("activity-open-chat-"+dot.ID), "Open chat").Padding(6, 9).Clicked() {
 					a.activityOpen = false
+					a.approvals.open = false
 					a.selectConversation(dot.ConversationID)
 				}
 			}

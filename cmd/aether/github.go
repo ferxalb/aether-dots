@@ -25,7 +25,7 @@ func newGitHubService() *github.Service {
 
 func githubCommand(db *store.Store, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: aether github [login|status|refresh|repositories|select|grant|revoke|disconnect]")
+		return errors.New("usage: aether github [login|status|refresh|repositories|select|grant|write-grant|proposals|revoke|disconnect]")
 	}
 	switch args[0] {
 	case "login":
@@ -40,6 +40,10 @@ func githubCommand(db *store.Store, args []string) error {
 		return selectGitHubRepositories(db, args[1:])
 	case "grant":
 		return grantGitHubRepositories(db, args[1:])
+	case "write-grant":
+		return grantGitHubWrites(db, args[1:])
+	case "proposals":
+		return githubProposalsCommand(db, newGitHubService(), os.Stdin, os.Stdout, stdinIsTerminal(), args[1:])
 	case "revoke":
 		if len(args) != 2 {
 			return errors.New("usage: aether github revoke <dot-id>")
@@ -96,7 +100,7 @@ func githubStatus(db *store.Store) error {
 			selected++
 		}
 	}
-	fmt.Printf("Connected as @%s · %d accessible repositories · %d selected · read-only\n", user.Login, len(snapshot.GitHubRepositories), selected)
+	fmt.Printf("Connected as @%s · %d accessible repositories · %d selected · writes only through approved proposals\n", user.Login, len(snapshot.GitHubRepositories), selected)
 	if !snapshot.GitHubLastVerifiedAt.IsZero() {
 		fmt.Printf("Last verified: %s\n", snapshot.GitHubLastVerifiedAt.Local().Format(time.RFC3339))
 	}

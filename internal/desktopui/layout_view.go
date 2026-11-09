@@ -33,6 +33,8 @@ func (a *app) view(c *ui.Context) {
 				a.settingsView(c, theme)
 			case a.activityOpen:
 				a.activityView(c, theme)
+			case a.approvals.open:
+				a.githubApprovalsView(c, theme)
 			case a.hasConversationChat():
 				a.chatView(c, theme)
 			case a.hasWelcomePage():
@@ -57,7 +59,7 @@ func (a *app) view(c *ui.Context) {
 }
 
 func (a *app) hasConversationChat() bool {
-	if a.settingsOpen || a.activityOpen || a.conversationDetailsOpen || a.selectedDotID != "" {
+	if a.settingsOpen || a.activityOpen || a.approvals.open || a.conversationDetailsOpen || a.selectedDotID != "" {
 		return false
 	}
 	_, ok := findConversation(a.snapshot, a.selectedConversationID)
@@ -65,7 +67,7 @@ func (a *app) hasConversationChat() bool {
 }
 
 func (a *app) hasWelcomePage() bool {
-	return !a.settingsOpen && !a.activityOpen && !a.conversationDetailsOpen && a.selectedDotID == "" && a.selectedConversationID == ""
+	return !a.settingsOpen && !a.activityOpen && !a.approvals.open && !a.conversationDetailsOpen && a.selectedDotID == "" && a.selectedConversationID == ""
 }
 
 func (a *app) workspaceContent(c *ui.Context, theme *ui.Theme) {
@@ -75,6 +77,10 @@ func (a *app) workspaceContent(c *ui.Context, theme *ui.Theme) {
 	}
 	if a.activityOpen {
 		a.activityView(c, theme)
+		return
+	}
+	if a.approvals.open {
+		a.githubApprovalsView(c, theme)
 		return
 	}
 	if a.conversationDetailsOpen {
@@ -96,6 +102,8 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 			ui.Text(c, "Settings").FontSize(13).Bold()
 		case a.activityOpen:
 			ui.Text(c, "Activity").FontSize(13).Bold()
+		case a.approvals.open:
+			ui.Text(c, "GitHub approvals").FontSize(13).Bold()
 		case a.selectedDotID != "":
 			if dot, ok := findDot(a.snapshot, a.selectedDotID); ok {
 				a.conversationAvatar(c, dot.Name, dot.ID, 30)
@@ -129,6 +137,10 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 		} else if a.activityOpen {
 			if ui.Button(c.Key("activity-close"), "Back to workspace").Padding(7, 11).Clicked() {
 				a.activityOpen = false
+			}
+		} else if a.approvals.open {
+			if ui.Button(c.Key("approvals-close"), "Back to workspace").Padding(7, 11).Clicked() {
+				a.approvals.open = false
 			}
 		} else if a.conversationDetailsOpen {
 			if ui.Button(c.Key("profile-back-to-chat"), "Back to chat").Padding(7, 11).Clicked() {

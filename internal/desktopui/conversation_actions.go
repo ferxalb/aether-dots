@@ -10,6 +10,7 @@ import (
 func (a *app) startCreator() {
 	a.rememberCurrentConversationState()
 	a.activityOpen = false
+	a.approvals.open = false
 	if !containsSpace(a.snapshot, a.selectedSpaceID) && len(a.snapshot.Spaces) > 0 {
 		a.selectedSpaceID = a.snapshot.Spaces[0].ID
 	}
@@ -53,6 +54,7 @@ func (a *app) openConversationProfile() {
 	a.profileGitHubDisclosureAccepted = conversation.GitHubModelDisclosureAccepted
 	a.profileComputerUseScopes = append([]string(nil), conversation.ComputerUseScopes...)
 	a.profileComputerUseDisclosureAccepted = conversation.ComputerUseModelDisclosureAccepted
+	a.writeGrants = writeGrantDraft{}
 	a.profileIcon = conversation.Icon
 	a.profileColor = conversation.Color
 	a.profileSpaceID = conversation.SpaceID
@@ -65,6 +67,7 @@ func (a *app) openConversationProfile() {
 	a.conversationDetailsOpen = true
 	a.settingsOpen = false
 	a.activityOpen = false
+	a.approvals.open = false
 }
 
 func (a *app) saveConversationProfile() {
@@ -139,6 +142,7 @@ func (a *app) saveConversationProfile() {
 	a.conversationError = ""
 	a.conversationDetailsOpen = false
 	a.activityOpen = false
+	a.approvals.open = false
 	a.adt.Success("Dot profile saved", "New replies will follow these instructions.")
 	accessAdded := computerUseAccessAdded(
 		current.ComputerUseScopes,
