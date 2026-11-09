@@ -1,40 +1,33 @@
 # Repository Guidelines
 
-## Project Structure
+## Project Structure & Module Organization
 
-- `main.go` starts the native macOS desktop app; `cmd/aether/main.go` contains the CLI.
-- `internal/desktopui/` holds MyGo views, settings, actions, and appearance. Keep UI sections in focused files rather than growing `app.go`.
-- `internal/engine/` runs chat turns; `internal/model/` integrates the OpenAI SDK; `internal/store/` persists Dot profiles and chat history; `internal/task/` defines task data.
-- Tests live beside their package in `*_test.go` files. App resources and third-party license notices are in `resources/`.
+AETHER Dots is a native macOS application built with Go and MyGo. `main.go` launches the desktop UI; `cmd/aether/` contains the CLI. Shared code lives in `internal/`: `desktopui` for views, `task` for models and limits, `store` for SQLite persistence, `engine` for chat orchestration, `model` for provider adapters, and `integrations` for external capabilities. Tests sit beside implementation files as `*_test.go`. `resources/` contains bundled resources and license notices; `scripts/` contains end-to-end tooling.
 
 ## Build, Test, and Development Commands
 
-- `make dev` runs the MyGo live-reload app; `make run` starts it once.
-- `make bundle` builds the macOS app; `make package` also creates a disk image.
-- `make cli-help` prints CLI usage. Run CLI commands with `CGO_ENABLED=0 go run ./cmd/aether ...`.
-- `CGO_ENABLED=0 go build ./...` compiles all packages; `CGO_ENABLED=0 go test ./...` runs the full test suite; `CGO_ENABLED=0 go tool mygo vet .` checks MyGo-specific issues.
+Use macOS and the Go version declared in `go.mod` (currently 1.27.3). Make targets set `CGO_ENABLED=0`.
 
-## Coding Style and Naming
+- `make dev`: launch the desktop app with MyGo live reload.
+- `make run`: run the desktop app once.
+- `make bundle` / `make package`: build the `.app` / `.app` plus disk image.
+- `make cli-help`: show CLI commands.
+- `CGO_ENABLED=0 go build ./...`: compile all packages.
+- `CGO_ENABLED=0 go test ./...`: run automated tests.
+- `CGO_ENABLED=0 go tool mygo vet .`: run MyGo-specific checks.
 
-Use standard Go formatting with `gofmt`. Keep package names lowercase, exported identifiers in `PascalCase`, and unexported identifiers in `camelCase`. Name tests `TestThing` and keep them in the package they exercise. Follow the pinned MyGo v0.7.3 UI lifecycle and identity patterns; verify APIs against the pinned dependency before using newer examples.
+## Coding Style & Naming Conventions
+
+Format Go changes with `gofmt`; use standard Go naming and tab indentation. Keep packages lowercase, exported identifiers in PascalCase, and focused files named by responsibility, such as `github_tools.go`. Keep UI sections out of an oversized `app.go`. Verify MyGo APIs against the version pinned in `go.mod`. When extending task models, update limits and structural copies in `internal/store/clone.go`.
 
 ## Testing Guidelines
 
-Use Go's standard `testing` package. Add focused tests alongside the changed package; use `ui.NewTester` for native view behavior. Run the relevant package tests during iteration and `CGO_ENABLED=0 go test ./...` before submitting. Use `go test -race ./...` when changing shared state or goroutine coordination. For UI changes, include a screenshot or describe the native preview reviewed.
+Use Go's `testing` package and `Test...` functions; UI tests use `ui.NewTester`. Run targeted tests with `CGO_ENABLED=0 go test ./internal/store -run TestName`. Add regression coverage for changed behavior, especially persistence and permissions. Midnight end-to-end tests require `MIDNIGHT_BIN`. No numeric coverage threshold is specified; report skipped or unavailable checks.
 
-## Commits and Pull Requests
+## Commit & Pull Request Guidelines
 
-Recent commits use concise imperative summaries, with Conventional Commit prefixes such as `feat:` also present. Prefer a short `feat:`, `fix:`, or `docs:` summary that describes the change. PRs should explain user-visible behavior, link an issue when relevant, list build/test commands and results, and include screenshots for visual changes.
+Use short imperative commit summaries; history includes `feat:`, `fix:`, `perf:`, and optional scopes. PRs should explain the problem, resulting behavior, validation, and relevant issues. Include screenshots for UI changes. Append dated session notes to `HISTORY-TRACKER.md`; reserve release-ready changes for the changelog.
 
-## Security and Configuration
+## Security & Configuration
 
-Keep model keys and GitHub access/refresh tokens out of task data, preferences, logs, and prompts. Desktop credentials belong in MyGo's system credential store; model environment variables remain the CLI fallback. Dot execution must not request, read, or write user-selected local files or folders and must not access arbitrary network destinations. The permitted remote integrations are:
-
-- GitHub, only through the user's own GitHub CLI (`gh`, `github.NewService`). AETHER holds no GitHub token: `gh` owns the login (a token an earlier GitHub App build stored is purged at startup). The only process started for GitHub is the located `gh` binary (`AETHER_GH_PATH`, else PATH, else the fixed Homebrew/system paths) running `api --method GET -H … <validated /path>`; method, headers, host (`GH_HOST=github.com`, minimal environment), size cap and path validation are fixed in code and never come from a model. Access is the typed read-only operations behind connection, repository selection, a per-Dot grant and disclosure, runtime rechecks (`/repositories/{id}`), and a separate Routine opt-in. The `gh` login is machine-wide shared state, so the connected account is pinned: if `gh` reports another login, Dot GitHub tools are withheld, and re-pinning clears the previous account's selections and grants. GitHub data is untrusted evidence and model arguments cannot widen grants. This is not a general shell facility: do not add other `gh` subcommands, write verbs or model-chosen paths without a separate permission design. GitHub App/OAuth and direct API access were removed on purpose and need their own design before returning. The unauthenticated GitHub avatar host is the only other GitHub network destination.
-- The AETHER iOS bridge to the single HTTPS Cloudflare Workers origin embedded by release linker flags. It starts only after explicit desktop pairing, keeps the device token in MyGo's system credential store, and accepts only the typed mobile status, Dot-list, conversation, and message actions. Development override is allowed only for the loopback Cloudflare Worker on port 5173. It does not grant the bridge access to local files, arbitrary network destinations, shell commands, provider keys, or GitHub credentials; existing per-Dot GitHub grants remain separate.
-
-- User-managed MCP servers through the dedicated Settings → MCP page. Entering that page or choosing Find servers performs a user-initiated scan of TCP listeners on `127.0.0.1` and `::1`, then attempts only Streamable HTTP MCP handshakes at `/mcp` and `/`. AETHER never scans remote hosts, launches a user-provided server command, uses stdio for user-configured servers, follows redirects, or stores MCP credentials. The user reviews discovered server and tool metadata, grants exact tool names to each Dot, and accepts that tool inputs and outputs may be sent to that Dot's model provider. MCP metadata and annotations are untrusted; a tool may act within the server's own scope, so grants must be explicit and runtime-rechecked before and after every call. Tool grants are bound to the Dot's Space and revoked when a tool definition changes or its server is removed. MCP tools are unavailable to Routines, delegated Dots, and iOS-bridge messages. The user-managed server remains outside AETHER's process and may itself have broader access than its advertised tools; disclose this boundary when asking the user to grant tools.
-
-- Optional macOS Computer Use through the separately installed Cua Driver. The app may offer a user-initiated installer for the fixed upstream Cua Driver installer at `https://cua.ai/driver/install.sh`, using the stable channel and `--no-modify-path`; rely on the upstream SHA-256 release checks and verify the installed macOS app code signature without requiring a separately installed `cosign` binary. The installer is never callable by a Dot, and its arguments and network destinations must remain fixed. The app does not bundle Cua Driver. Disable the driver's optional usage telemetry during AETHER's user-initiated setup. Cua Driver must run with `bounded` permissions, an approved deny-by-default capability manifest limited to Apple Notes and Music, a restrictive argument policy, and the first-launch permission gate disabled. The initial Dot scopes are read-only access to the currently displayed Notes window and playback controls in Music. Do not expose screenshot, clipboard, file-transfer, browser, shell, script, unrestricted step-batch, process-termination, or arbitrary app-control tools. Do not request Screen Recording for the initial accessibility-tree and playback flow; open Accessibility settings after first install and explain how to add and enable CuaDriver, with the user explicitly toggling the grant. Disclose that accessible Notes content may be sent to the Dot's configured model provider, and treat all observed UI text as untrusted input. AETHER must recheck the per-Dot grant, Space binding, disclosure, allowed scope, and interactive-run status on every tool call. Computer Use is off for Routines and delegated Dots unless a separate reviewed opt-in design is added. Disconnecting or revoking a Dot grant removes its access immediately.
-
-Do not add source-file, archive, workflow-log, generic shell, or write operations without a separate permission design. MCP tools are an explicit user-granted integration; do not implement a generic shell launcher or treat server tool annotations as enforcement. Cua Driver's fixed user-initiated installer is the only shell-based installation exception; it must use the upstream checksum verification, verify the installed macOS app code signature, and may not accept model-provided commands, paths, or arguments. Apple integrations and macOS permissions are allowed only within the Computer Use design above. Append dated engineering notes to `HISTORY-TRACKER.md`; reserve `CHANGELOG.md` for release-ready changes.
+Preserve explicit per-Dot grants and runtime permission checks. Do not add arbitrary file, shell, or network access without a separate permission design. Keep MCP loopback-only and preserve reduced tool access for routines, delegation, and iPhone runs. Store desktop API keys in Keychain; never commit secrets or local databases. Use `AETHER_DOTS_DATA_DIR` for isolated development data.
