@@ -13,6 +13,9 @@ type Discovery struct {
 }
 
 func (s *Service) Discover(ctx context.Context) (Discovery, error) {
+	if s != nil && s.gh != nil {
+		return s.discoverCLI(ctx)
+	}
 	profile, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {
 		return Discovery{}, err
@@ -91,6 +94,10 @@ func (s *Service) RepositoryStillAccessible(ctx context.Context, installationID,
 	accessible := false
 	err := s.withClient(ctx, func(ctx context.Context, client *APIClient) error {
 		var err error
+		if client.gh != nil {
+			accessible, err = client.repositoryAccessibleCLI(ctx, repositoryID)
+			return err
+		}
 		accessible, err = client.RepositoryStillAccessible(ctx, installationID, repositoryID)
 		return err
 	})

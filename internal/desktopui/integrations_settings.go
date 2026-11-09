@@ -52,7 +52,7 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 			serviceMark.Center().Children(func() { ui.Text(c, "◉").FontSize(21).Bold() })
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Text(c, "GitHub").FontSize(15).Bold()
-				ui.Text(c, "Let your Dots inspect repositories, issues, pull requests, and CI activity.").
+				ui.Text(c, githubCardBlurb(a.githubService)).
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			})
 			githubStatusBadge(c, theme, status)
@@ -100,7 +100,7 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 		}
 
 		if !clientConfigured {
-			ui.Text(c, "GitHub is not configured for this build. Set the public AETHER_GITHUB_CLIENT_ID for a registered GitHub App, then restart AETHER.").
+			ui.Text(c, "GitHub CLI not found. Install it from cli.github.com and run `gh auth login`, then restart AETHER.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		}
 
@@ -211,7 +211,7 @@ func (a *app) githubConnectionDetails(c *ui.Context, theme *ui.Theme) {
 		ui.Text(c, "Last successful verification · "+verifiedAt.Local().Format("Jan 2, 2006 at 3:04 PM")).
 			FontSize(10).TextColor(theme.TextMuted).FillWidth()
 	}
-	if a.githubStatus == "Permission required" {
+	if a.githubStatus == "Permission required" && !a.githubService.UsesCLI() {
 		if installURL := githubInstallationURL(); installURL != "" {
 			ui.Link(c, "Install the AETHER GitHub App", installURL).FontSize(11).TextColor(theme.Accent)
 		}
@@ -230,7 +230,7 @@ func (a *app) githubRepositoryManager(c *ui.Context, theme *ui.Theme) {
 				Placeholder("Filter repositories").Width(210).Label("Filter repositories")
 		})
 		if len(a.githubRepositories) == 0 {
-			ui.Text(c, "No accessible repositories were returned by GitHub. Check the app installation and repository permissions.").
+			ui.Text(c, "No accessible repositories were returned by GitHub. Check that `gh auth status` shows the right account, then Refresh.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			return
 		}
@@ -296,7 +296,7 @@ func (a *app) startGitHubRefreshIfNeeded() {
 	}
 	if a.githubService == nil || !a.githubService.ClientConfigured() {
 		a.githubStatus = "Not configured"
-		a.githubError = "A registered GitHub App client ID is not configured for this build."
+		a.githubError = "Install the GitHub CLI (https://cli.github.com), run `gh auth login` in Terminal, then restart AETHER."
 		a.githubLoaded = true
 		return
 	}
@@ -315,7 +315,7 @@ func (a *app) refreshGitHubConnection() {
 	}
 	if a.githubService == nil || !a.githubService.ClientConfigured() {
 		a.githubStatus = "Not configured"
-		a.githubError = "Set AETHER_GITHUB_CLIENT_ID for the registered GitHub App, then restart AETHER."
+		a.githubError = "Install the GitHub CLI (https://cli.github.com) and run `gh auth login`, then restart AETHER."
 		a.githubLoaded = true
 		return
 	}
@@ -375,7 +375,7 @@ func (a *app) refreshGitHubConnection() {
 				a.clearGitHubAvatar()
 			}
 			switch {
-			case len(discovery.Installations) == 0:
+			case len(discovery.Installations) == 0 && !service.UsesCLI():
 				a.githubStatus = "Permission required"
 				a.githubError = "GitHub authorized AETHER, but no GitHub App installation is accessible. Install the app on an account, then refresh."
 			case len(discovery.Repositories) == 0:
@@ -447,7 +447,7 @@ func (a *app) startGitHubAuthorization() {
 	}
 	if a.githubService == nil || !a.githubService.ClientConfigured() {
 		a.githubStatus = "Not configured"
-		a.githubError = "Set AETHER_GITHUB_CLIENT_ID for the registered GitHub App, then restart AETHER."
+		a.githubError = "Install the GitHub CLI (https://cli.github.com) and run `gh auth login`, then restart AETHER."
 		a.githubLoaded = true
 		return
 	}
@@ -648,4 +648,11 @@ func filterGitHubRepositories(repositories []task.GitHubRepository, query string
 		}
 	}
 	return filtered
+}
+
+func githubCardBlurb(service *github.Service) string {
+	if service.UsesCLI() {
+		return "Read repositories, issues, pull requests, and CI through your GitHub CLI login. AETHER stores no token."
+	}
+	return "Let your Dots inspect repositories, issues, pull requests, and CI activity."
 }

@@ -79,7 +79,11 @@ In **Customize → Computer Use access**, grant each Dot one or both scopes: rea
 
 Computer Use is available only to local interactive Dot runs. It is not passed to Routines, delegated Dots, or messages from the iPhone. Moving a Dot to a different Space clears its Computer Use grant. **Revoke all Dot access** removes every Computer Use grant and stops the bounded session; the separately installed driver and macOS Accessibility toggle remain under the user's control. AETHER stops its session before opening System Settings and starts a fresh bounded session on the next use after an Accessibility change.
 
-### GitHub App setup
+### GitHub through the GitHub CLI (preferred)
+
+If [`gh`](https://cli.github.com) is installed, AETHER reads GitHub through it: run `gh auth login` once, then **Connect GitHub** in Settings (or `aether github login`). AETHER stores no GitHub token, needs no GitHub App, and every call is still a typed, read-only request limited to the repositories you select and grant to a Dot. **Disconnect** only stops AETHER using `gh`; it does not sign you out of `gh`. Without `gh`, the GitHub App setup below applies.
+
+### GitHub App setup (fallback when `gh` is not installed)
 
 AETHER uses GitHub App Device Flow, which GitHub documents for desktop applications. In GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub App** (or edit an App you control). Under **Identifying and authorizing users**, enable **Enable Device Flow**. Leave **Request user authorization (OAuth) during installation** unchecked: AETHER starts a separate Device Flow, while that option starts the web authorization flow during installation. AETHER needs the public **Client ID**, not the App ID. Do not create a client secret for AETHER or embed a private key.
 
@@ -217,7 +221,7 @@ CGO_ENABLED=0 go run ./cmd/aether send <dot-id> --message "Summarize this discus
 CGO_ENABLED=0 go run ./cmd/aether inspect <dot-id>
 ```
 
-Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a versioned JSON file, written atomically with owner-only permissions, and includes a per-task hash chain for status events. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants; schema v2 stores migrate to the skills and local routines format. Schema v3 conversations migrate to v4 with no specialist grants; grants are opt-in. Schema v4 stores migrate to v5 with GitHub disconnected and no repository selections, Dot grants, or Routine opt-ins. Schema v5 stores migrate to v6 with no Computer Use grants or model disclosure; credentials are never part of the task store.
+Use `--data-dir <folder>` before the command to select an alternate AETHER store. The desktop app also accepts `--data-dir` or `AETHER_DOTS_DATA_DIR`. The store is a SQLite database (`dots.db`, WAL mode, owner-only permissions) that writes only the rows a change touches, so cost does not grow with chat history. It includes a per-task hash chain for status events. A pre-existing `dots.json` is imported once and kept as `dots.json.migrated`; it can be deleted once you are satisfied. Opening a schema v1 store migrates old task records and removes saved source/output paths, artifact paths, and routine grants; schema v2 stores migrate to the skills and local routines format. Schema v3 conversations migrate to v4 with no specialist grants; grants are opt-in. Schema v4 stores migrate to v5 with GitHub disconnected and no repository selections, Dot grants, or Routine opt-ins. Schema v5 stores migrate to v6 with no Computer Use grants or model disclosure; credentials are never part of the task store.
 
 ## Package and checks
 

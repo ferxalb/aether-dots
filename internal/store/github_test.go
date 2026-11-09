@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -223,24 +222,8 @@ func TestSchemaV4MigrationPreservesDotsAndRoutinesWithoutGitHubGrants(t *testing
 	if err := db.SetRoutineGitHubEnabled(routine.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "dots.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
-	}
-	raw["schema_version"] = float64(4)
-	data, err = json.Marshal(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	migrated, err := Open(dir)
+	legacy := legacyDir(t, db, func(raw map[string]any) { raw["schema_version"] = float64(4) })
+	migrated, err := Open(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}

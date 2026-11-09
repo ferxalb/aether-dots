@@ -193,7 +193,7 @@ func Run(dataDir string) error {
 	}
 	a := &app{db: db, dataDir: dataDir, prefs: prefs, savedPrefs: prefs, connectionRecords: loadConnectionRecords(dataDir), providerSelection: providerSelectionLabel(prefs.Provider),
 		remoteLoopMu: &sync.Mutex{}, remoteForgetMu: &sync.Mutex{},
-		githubService:      github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil),
+		githubService:      github.NewDefaultService(github.NewMyGoCredentialStore()),
 		computerUseService: computeruse.New(dataDir)}
 	a.computerUseInstalled = a.computerUseService.Installed()
 	if a.computerUseInstalled {

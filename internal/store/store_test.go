@@ -12,6 +12,31 @@ import (
 	"aether-dots/internal/task"
 )
 
+// legacyDir builds a new data folder holding only a legacy dots.json: the
+// store's current state serialized as JSON and then edited by mutate, so
+// migration and import paths can be tested against old-format files.
+func legacyDir(t *testing.T, s *Store, mutate func(raw map[string]any)) string {
+	t.Helper()
+	b, err := json.Marshal(s.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	mutate(raw)
+	b, err = json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, legacyFileName), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestStoreRoundTripAndRejectsChangedEvent(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)
@@ -41,24 +66,26 @@ func TestStoreRoundTripAndRejectsChangedEvent(t *testing.T) {
 		t.Fatal("event hashes are not linked")
 	}
 
-	path := filepath.Join(dir, "dots.json")
-	b, err := os.ReadFile(path)
+	// The same tampering inside an imported legacy dots.json is rejected too.
+	legacy := legacyDir(t, opened, func(raw map[string]any) {
+		events := raw["dots"].([]any)[0].(map[string]any)["events"].([]any)
+		events[1].(map[string]any)["message"] = "changed without updating the hash"
+	})
+	// Tamper with a stored event row directly; the chain check must reject it.
+	opened.Close()
+	raw, err := openSQL(filepath.Join(dir, storeFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw map[string]any
-	if err := json.Unmarshal(b, &raw); err != nil {
+	if _, err := raw.Exec(`UPDATE events SET body = replace(body, '"message":"', '"message":"changed without updating the hash ') WHERE seq = 2`); err != nil {
 		t.Fatal(err)
 	}
-	dots := raw["dots"].([]any)
-	events := dots[0].(map[string]any)["events"].([]any)
-	events[1].(map[string]any)["message"] = "changed without updating the hash"
-	b, _ = json.Marshal(raw)
-	if err := os.WriteFile(path, b, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	raw.Close()
 	if _, err := Open(dir); err == nil {
 		t.Fatal("tampered event history unexpectedly loaded")
+	}
+	if _, err := Open(legacy); err == nil {
+		t.Fatal("tampered legacy event history unexpectedly imported")
 	}
 }
 
@@ -83,30 +110,16 @@ func TestSchemaV1MigrationDropsLocalScopesArtifactsAndRoutines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, "dots.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
-	}
-	raw["schema_version"] = float64(1)
-	dots := raw["dots"].([]any)
-	legacyDot := dots[0].(map[string]any)
-	legacyDot["source_root"] = "/Users/private/notes"
-	legacyDot["output_dir"] = "/Users/private/output"
-	legacyDot["artifacts"] = []any{map[string]any{"path": "/Users/private/output/result.md"}}
-	raw["routines"] = []any{map[string]any{"name": "Legacy routine", "source_root": "/Users/private/notes"}}
-	data, err = json.Marshal(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "dots.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	legacy := legacyDir(t, s, func(raw map[string]any) {
+		raw["schema_version"] = float64(1)
+		legacyDot := raw["dots"].([]any)[0].(map[string]any)
+		legacyDot["source_root"] = "/Users/private/notes"
+		legacyDot["output_dir"] = "/Users/private/output"
+		legacyDot["artifacts"] = []any{map[string]any{"path": "/Users/private/output/result.md"}}
+		raw["routines"] = []any{map[string]any{"name": "Legacy routine", "source_root": "/Users/private/notes"}}
+	})
 
-	reopened, err := Open(dir)
+	reopened, err := Open(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,12 +135,13 @@ func TestSchemaV1MigrationDropsLocalScopesArtifactsAndRoutines(t *testing.T) {
 			t.Fatalf("legacy local path survived migration: %#v", event)
 		}
 	}
-	serialized, err := os.ReadFile(filepath.Join(dir, "dots.json"))
+	serializedJSON, err := json.Marshal(reopened.Snapshot())
 	if err != nil {
 		t.Fatal(err)
 	}
+	serialized := string(serializedJSON)
 	for _, forbidden := range []string{"/Users/private", "source_root", "output_dir", "artifacts", "routines"} {
-		if strings.Contains(string(serialized), forbidden) {
+		if strings.Contains(serialized, forbidden) {
 			t.Fatalf("retired local field %q survived migration: %s", forbidden, serialized)
 		}
 	}
@@ -161,30 +175,16 @@ func TestRecoverInterruptedConversationRun(t *testing.T) {
 }
 
 func TestSchemaV2MigrationStartsAutomationCollectionsEmpty(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := Open(dir); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "dots.json")
-	data, err := os.ReadFile(path)
+	first, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
-	}
-	raw["schema_version"] = float64(2)
-	raw["skills"] = []any{map[string]any{"name": "Legacy skill"}}
-	raw["routines"] = []any{map[string]any{"name": "Legacy schedule"}}
-	data, err = json.Marshal(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	db, err := Open(dir)
+	legacy := legacyDir(t, first, func(raw map[string]any) {
+		raw["schema_version"] = float64(2)
+		raw["skills"] = []any{map[string]any{"name": "Legacy skill"}}
+		raw["routines"] = []any{map[string]any{"name": "Legacy schedule"}}
+	})
+	db, err := Open(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -223,6 +223,7 @@ func postOAuthJSON(ctx context.Context, httpClient *http.Client, endpoint string
 // It serializes refresh-token rotation and cancels every in-flight request on
 // disconnect.
 type Service struct {
+	gh       *ghRunner // non-nil: read through the GitHub CLI instead of OAuth
 	clientID string
 	vault    CredentialStore
 	http     *http.Client
@@ -246,11 +247,14 @@ func NewService(clientID string, vault CredentialStore, httpClient *http.Client)
 }
 
 func (s *Service) ClientConfigured() bool {
+	if s != nil && s.gh != nil {
+		return true
+	}
 	return s != nil && s.clientID != "" && len(s.clientID) <= 256 && !strings.ContainsAny(s.clientID, "\r\n\x00")
 }
 
 func (s *Service) Connected(ctx context.Context) bool {
-	if s == nil || s.vault == nil {
+	if s == nil || (s.vault == nil && s.gh == nil) {
 		return false
 	}
 	s.mu.Lock()
@@ -259,6 +263,9 @@ func (s *Service) Connected(ctx context.Context) bool {
 	if blocked {
 		return false
 	}
+	if s.gh != nil {
+		return s.gh.authenticated(ctx)
+	}
 	credentials, err := s.vault.Load(ctx)
 	return err == nil && credentials.AccessToken != ""
 }
@@ -266,6 +273,22 @@ func (s *Service) Connected(ctx context.Context) bool {
 // AuthorizeDevice owns one cancellable Device Flow. onDevice runs once the
 // verification code is ready, then the function polls at GitHub's cadence.
 func (s *Service) AuthorizeDevice(ctx context.Context, onDevice func(DeviceAuthorization)) error {
+	if s != nil && s.gh != nil {
+		// gh owns the login. "Connecting" only confirms it is signed in, so no
+		// verification code is shown and onDevice is never called.
+		s.gh.forgetAuth()
+		if !s.gh.authenticated(ctx) {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return ErrCLINotAuthenticated
+		}
+		s.mu.Lock()
+		s.disconnected = false
+		s.sessionGeneration++
+		s.mu.Unlock()
+		return nil
+	}
 	if s == nil || s.vault == nil || !s.ClientConfigured() {
 		return ErrInvalidClient
 	}
@@ -334,6 +357,11 @@ func (s *Service) AuthorizeDevice(ctx context.Context, onDevice func(DeviceAutho
 }
 
 func (s *Service) Disconnect(ctx context.Context) error {
+	if s != nil && s.gh != nil {
+		// AETHER never owned the gh login, so only stop using it.
+		s.CancelActiveRequests()
+		return nil
+	}
 	if s == nil || s.vault == nil {
 		return nil
 	}
@@ -384,7 +412,7 @@ func waitFor(ctx context.Context, interval time.Duration) error {
 }
 
 func (s *Service) withClient(ctx context.Context, operation func(context.Context, *APIClient) error) error {
-	if s == nil || s.vault == nil {
+	if s == nil || (s.vault == nil && s.gh == nil) {
 		return ErrNotConnected
 	}
 	s.mu.Lock()
@@ -407,6 +435,15 @@ func (s *Service) withClient(ctx context.Context, operation func(context.Context
 		delete(s.operations, id)
 		s.mu.Unlock()
 	}()
+	if s.gh != nil {
+		if !s.gh.authenticated(opCtx) {
+			if opCtx.Err() != nil {
+				return opCtx.Err()
+			}
+			return ErrCLINotAuthenticated
+		}
+		return operation(opCtx, &APIClient{gh: s.gh})
+	}
 	credentials, err := s.currentCredentials(opCtx)
 	if err != nil {
 		if errors.Is(err, ErrSessionExpired) {

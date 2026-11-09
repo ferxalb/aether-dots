@@ -178,6 +178,7 @@ type WorkflowJobs struct {
 // fixed to api.github.com and never follows redirects, so an Authorization
 // header cannot be forwarded to another host.
 type APIClient struct {
+	gh         *ghRunner // set when requests go through the GitHub CLI
 	token      string
 	httpClient *http.Client
 	base       *url.URL
@@ -572,11 +573,14 @@ func (c *APIClient) GetWorkflowRunJobs(ctx context.Context, owner, repo string, 
 }
 
 func (c *APIClient) getJSON(ctx context.Context, path string, query url.Values, target any) error {
-	if c == nil || c.base == nil || !validOAuthToken(c.token) {
+	if c == nil || (c.gh == nil && (c.base == nil || !validOAuthToken(c.token))) {
 		return ErrNotConnected
 	}
-	if !strings.HasPrefix(path, "/") || strings.Contains(path, "..") || strings.ContainsAny(path, "\r\n\x00") {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.Contains(path, "..") || strings.ContainsAny(path, "\r\n\x00 ") {
 		return errors.New("GitHub API path is invalid")
+	}
+	if c.gh != nil {
+		return c.gh.api(ctx, path, query, target)
 	}
 	endpoint := *c.base
 	rawPath := strings.TrimRight(c.base.EscapedPath(), "/") + path

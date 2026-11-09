@@ -20,7 +20,7 @@ import (
 )
 
 func newGitHubService() *github.Service {
-	return github.NewService(github.ConfiguredClientID(), github.NewMyGoCredentialStore(), nil)
+	return github.NewDefaultService(github.NewMyGoCredentialStore())
 }
 
 func githubCommand(db *store.Store, args []string) error {
@@ -55,11 +55,15 @@ func githubCommand(db *store.Store, args []string) error {
 func githubLogin(db *store.Store) error {
 	service := newGitHubService()
 	if !service.ClientConfigured() {
-		return errors.New("AETHER_GITHUB_CLIENT_ID is not configured for a registered GitHub App")
+		return github.ErrCLINotInstalled
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	fmt.Println("Authorize AETHER Dots with GitHub. No client secret or personal access token is required.")
+	if service.UsesCLI() {
+		fmt.Println("Using your GitHub CLI login (gh). AETHER stores no GitHub token.")
+	} else {
+		fmt.Println("Authorize AETHER Dots with GitHub. No client secret or personal access token is required.")
+	}
 	err := service.AuthorizeDevice(ctx, func(device github.DeviceAuthorization) {
 		fmt.Printf("Open %s and enter this code: %s\n", device.VerificationURI, device.UserCode)
 		fmt.Println("Waiting for GitHub authorization…")
@@ -132,7 +136,7 @@ func refreshGitHubRepositoriesWithService(db *store.Store, service *github.Servi
 	if err := db.ReplaceGitHubRepositories(repositories); err != nil {
 		return err
 	}
-	if len(discovery.Installations) == 0 {
+	if len(discovery.Installations) == 0 && !service.UsesCLI() {
 		return errors.New("GitHub authorization succeeded, but no GitHub App installation is accessible; install the registered app on an account first")
 	}
 	if len(repositories) == 0 {
