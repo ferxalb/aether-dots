@@ -89,7 +89,7 @@ func specialistHandoffTool(db *store.Store, parentDotID string, childProvider fu
 	}
 	tool := model.Tool{
 		Name:        "aether_delegate_to_dot",
-		Description: fmt.Sprintf("Ask one explicitly granted specialist in the same Space to complete a typed task (up to %d handoffs per run). Only the task, constraints, and expected output you provide are sent. The specialist uses its own profile and private conversation history; its task and result are saved in both Dot histories. No files, folders, apps, accounts, or external services are accessed.", task.MaxDelegationsPerRun),
+		Description: fmt.Sprintf("Ask one explicitly granted specialist in the same Space to complete a typed task (up to %d handoffs per run). Only the task, constraints, and expected output you provide are sent. The specialist uses its own profile and private conversation history; its task and result are saved in both agent histories. No files, folders, apps, accounts, or external services are accessed.", task.MaxDelegationsPerRun),
 		Parameters:  parameters,
 	}
 	tool.Handler = func(ctx context.Context, rawArguments string) (string, error) {
@@ -100,7 +100,7 @@ func specialistHandoffTool(db *store.Store, parentDotID string, childProvider fu
 		}
 		if _, ok := allowed[request.DotID]; !ok {
 			_ = db.AppendEvent(parentDotID, "delegation_denied", "A specialist handoff was rejected because its target was not in the current grant list.")
-			return "", errors.New("the selected specialist is not in this Dot's grant list")
+			return "", errors.New("the selected specialist is not in this agent's grant list")
 		}
 		child, err := db.CreateDelegatedConversationRun(parentDotID, request.DotID, request.Task, request.Constraints, request.ExpectedOutput)
 		if err != nil {

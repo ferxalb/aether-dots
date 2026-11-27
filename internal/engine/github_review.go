@@ -19,7 +19,7 @@ var (
 func ProposalWarnings(p task.GitHubProposal, public bool) []string {
 	var out []string
 	if p.ReadUntrustedInRun {
-		out = append(out, "The Dot read GitHub or other outside content during this run. That text may have influenced this proposal; read it as if a stranger wrote it.")
+		out = append(out, "The agent read GitHub or other outside content during this run. That text may have influenced this proposal; read it as if a stranger wrote it.")
 	}
 	if public {
 		out = append(out, "This is a public repository: anyone can read what you publish.")

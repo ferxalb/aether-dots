@@ -18,19 +18,19 @@ func (s *Store) CreateConversation(in task.CreateConversation) (task.Conversatio
 	in.Purpose = strings.TrimSpace(in.Purpose)
 	in.Instructions = strings.TrimSpace(in.Instructions)
 	if in.Name == "" {
-		in.Name = "New Dot"
+		in.Name = "New agent"
 	}
 	if len(in.Name) > task.MaxConversationNameBytes {
 		return task.Conversation{}, fmt.Errorf("conversation name must be 1–%d bytes", task.MaxConversationNameBytes)
 	}
 	if len(in.Purpose) > task.MaxConversationPurposeBytes {
-		return task.Conversation{}, fmt.Errorf("Dot objective must be at most %d bytes", task.MaxConversationPurposeBytes)
+		return task.Conversation{}, fmt.Errorf("Agent objective must be at most %d bytes", task.MaxConversationPurposeBytes)
 	}
 	if len(in.Instructions) > task.MaxConversationInstructionsBytes {
 		return task.Conversation{}, fmt.Errorf("working instructions must be at most %d bytes", task.MaxConversationInstructionsBytes)
 	}
 	if !utf8.ValidString(in.Name) || !utf8.ValidString(in.Purpose) || !utf8.ValidString(in.Instructions) {
-		return task.Conversation{}, errors.New("Dot profile must be valid UTF-8 text")
+		return task.Conversation{}, errors.New("Agent profile must be valid UTF-8 text")
 	}
 	if in.Icon == "" {
 		in.Icon = "✦"
@@ -145,26 +145,26 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 	purpose = strings.TrimSpace(purpose)
 	instructions = strings.TrimSpace(instructions)
 	if name == "" || len(name) > task.MaxConversationNameBytes {
-		return fmt.Errorf("Dot name must be 1–%d bytes", task.MaxConversationNameBytes)
+		return fmt.Errorf("Agent name must be 1–%d bytes", task.MaxConversationNameBytes)
 	}
 	if len(purpose) > task.MaxConversationPurposeBytes || len(instructions) > task.MaxConversationInstructionsBytes {
-		return errors.New("Dot objective or working instructions exceed the allowed length")
+		return errors.New("Agent objective or working instructions exceed the allowed length")
 	}
 	if modelProvider != nil && modelName != nil {
 		provider := strings.TrimSpace(*modelProvider)
 		modelNameValue := strings.TrimSpace(*modelName)
 		if provider == "" && modelNameValue != "" {
-			return errors.New("a Dot-specific model name requires a provider")
+			return errors.New("an agent-specific model name requires a provider")
 		}
 		if provider != "" && !oneOf(provider, "openai", "anthropic", "xai", "openrouter", "openai-compatible") {
-			return errors.New("Dot model provider is not supported")
+			return errors.New("Agent model provider is not supported")
 		}
 		if len(modelNameValue) > 256 || (provider != "" && modelNameValue == "") {
-			return errors.New("Dot model name must contain 1–256 bytes when a provider override is selected")
+			return errors.New("Agent model name must contain 1–256 bytes when a provider override is selected")
 		}
 	}
 	if !utf8.ValidString(name) || !utf8.ValidString(purpose) || !utf8.ValidString(instructions) {
-		return errors.New("Dot profile is incomplete or invalid")
+		return errors.New("Agent profile is incomplete or invalid")
 	}
 	if err := validateProfileStyle(icon, color); err != nil {
 		return err
@@ -172,7 +172,7 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 	return s.change(func(db *task.Database) error {
 		i := conversationIndex(db, id)
 		if i < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		if !hasSpace(db, spaceID) {
 			return errors.New("Space not found")
@@ -188,13 +188,13 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 			return err
 		}
 		if previousSpaceID != spaceID && githubRepositoryIDs != nil && len(*githubRepositoryIDs) > 0 {
-			return errors.New("save the Dot's new Space before granting GitHub repositories again")
+			return errors.New("save the agent's new Space before granting GitHub repositories again")
 		}
 		if previousSpaceID != spaceID && computerUseScopes != nil && len(*computerUseScopes) > 0 {
-			return errors.New("save the Dot's new Space before granting Computer Use again")
+			return errors.New("save the agent's new Space before granting Computer Use again")
 		}
 		if previousSpaceID != spaceID && mcpToolGrants != nil && len(*mcpToolGrants) > 0 {
-			return errors.New("save the Dot's new Space before granting MCP tools again")
+			return errors.New("save the agent's new Space before granting MCP tools again")
 		}
 		if githubRepositoryIDs != nil {
 			githubGrants, err := validateGitHubRepositoryGrants(db, *githubRepositoryIDs)
@@ -290,14 +290,14 @@ func (s *Store) updateConversationProfile(id, spaceID, name, icon, color, purpos
 
 func validateProfileStyle(icon, color string) error {
 	if icon == "" || len(icon) > 32 || !utf8.ValidString(icon) {
-		return errors.New("Dot icon must contain 1–32 bytes of valid UTF-8 text")
+		return errors.New("Agent icon must contain 1–32 bytes of valid UTF-8 text")
 	}
 	if len(color) != 7 || color[0] != '#' {
-		return errors.New("Dot color must be a six-digit hex value such as #7458D8")
+		return errors.New("Agent color must be a six-digit hex value such as #7458D8")
 	}
 	for _, digit := range color[1:] {
 		if !strings.ContainsRune("0123456789abcdefABCDEF", digit) {
-			return errors.New("Dot color must be a six-digit hex value such as #7458D8")
+			return errors.New("Agent color must be a six-digit hex value such as #7458D8")
 		}
 	}
 	return nil
@@ -364,7 +364,7 @@ func createConversationRunFrom(db *task.Database, conversationID, content, routi
 				continue
 			}
 			if parent.SpaceID != conversation.SpaceID {
-				return task.Dot{}, task.ConversationMessage{}, errors.New("saved Dot space no longer matches its task history")
+				return task.Dot{}, task.ConversationMessage{}, errors.New("saved agent space no longer matches its task history")
 			}
 			parentDotID = parent.ID
 			break
@@ -378,7 +378,7 @@ func createConversationRunFrom(db *task.Database, conversationID, content, routi
 	// assembles the complete conversation from saved messages when it runs.
 	objective := conversationObjectiveBase(*conversation, content, selected, hasSkill)
 	if len(objective) > task.MaxConversationObjectiveBytes {
-		return task.Dot{}, task.ConversationMessage{}, errors.New("combined Dot purpose, skill, and message exceed the objective limit")
+		return task.Dot{}, task.ConversationMessage{}, errors.New("combined agent purpose, skill, and message exceed the objective limit")
 	}
 	dot = task.Dot{
 		ID: dotID, SpaceID: conversation.SpaceID,
@@ -391,7 +391,7 @@ func createConversationRunFrom(db *task.Database, conversationID, content, routi
 	if hasSkill {
 		dot.SkillID = selected.ID
 	}
-	appendEvent(&dot, "captured", "Chat message queued for this Dot.")
+	appendEvent(&dot, "captured", "Chat message queued for this agent.")
 	message = task.ConversationMessage{ID: messageID, Role: "user", Content: content, DotID: dot.ID, SourceDotID: sourceDotID, CreatedAt: now}
 	conversation.Messages = append(conversation.Messages, message)
 	conversation.UpdatedAt = now
@@ -425,21 +425,21 @@ func appendResultLocked(db *task.Database, messageID, conversationID, dotID, rep
 	}
 	di := dotIndex(db, dotID)
 	if di < 0 {
-		return errors.New("Dot not found")
+		return errors.New("Agent not found")
 	}
 	conversation, dot := &db.Conversations[ci], &db.Dots[di]
 	if dot.ConversationID != conversationID {
-		return errors.New("Dot does not belong to this conversation")
+		return errors.New("Agent does not belong to this conversation")
 	}
 	if dot.Status != task.Running && dot.Status != task.Done {
-		return errors.New("only an active or completed Dot can save a conversation response")
+		return errors.New("only an active or completed agent can save a conversation response")
 	}
 	for _, existing := range conversation.Messages {
 		if existing.Role == "assistant" && existing.DotID == dotID {
 			if existing.Content == report {
 				return nil
 			}
-			return errors.New("a result for this Dot is already saved")
+			return errors.New("a result for this agent is already saved")
 		}
 	}
 	conversation.Messages = append(conversation.Messages, task.ConversationMessage{
@@ -499,16 +499,16 @@ func conversationObjectiveBase(conversation task.Conversation, message string, s
 
 func conversationObjectiveWithContext(conversation task.Conversation, message string, skill task.Skill, hasSkill bool, context string) string {
 	var b strings.Builder
-	b.WriteString("Dot name:\n")
+	b.WriteString("Agent name:\n")
 	b.WriteString(conversation.Name)
-	b.WriteString("\n\nDot objective:\n")
+	b.WriteString("\n\nAgent objective:\n")
 	if conversation.Purpose == "" {
 		b.WriteString("No long-term objective has been set yet. Use the current request to understand the work.")
 	} else {
 		b.WriteString(conversation.Purpose)
 	}
 	if conversation.Instructions != "" {
-		b.WriteString("\n\nDot working instructions:\n")
+		b.WriteString("\n\nAgent working instructions:\n")
 		b.WriteString(conversation.Instructions)
 	}
 	if hasSkill {
@@ -555,11 +555,11 @@ func (s *Store) ConversationObjective(dotID string) (string, error) {
 		}
 	}
 	if dot == nil || dot.ConversationID == "" {
-		return "", errors.New("Dot conversation not found")
+		return "", errors.New("Agent conversation not found")
 	}
 	if !dot.ConversationContextDeferred {
 		if len(dot.Objective) > task.MaxConversationObjectiveBytes {
-			return "", errors.New("saved Dot prompt exceeds the local prompt safety limit")
+			return "", errors.New("saved agent prompt exceeds the local prompt safety limit")
 		}
 		return dot.Objective, nil
 	}
@@ -571,7 +571,7 @@ func (s *Store) ConversationObjective(dotID string) (string, error) {
 		}
 	}
 	if conversation == nil {
-		return "", errors.New("saved Dot conversation not found")
+		return "", errors.New("saved agent conversation not found")
 	}
 	var spaceContext string
 	for i := range s.db.Spaces {
@@ -589,14 +589,14 @@ func (s *Store) ConversationObjective(dotID string) (string, error) {
 		}
 	}
 	if messageIndex < 0 {
-		return "", errors.New("saved user message for this Dot is missing")
+		return "", errors.New("saved user message for this agent is missing")
 	}
 	objective := dot.Objective
 	message := conversation.Messages[messageIndex].Content
 	suffix := "\n\nNewest user message:\n" + message
 	prefix, ok := strings.CutSuffix(objective, suffix)
 	if !ok {
-		return "", errors.New("saved Dot prompt does not match its newest user message")
+		return "", errors.New("saved agent prompt does not match its newest user message")
 	}
 	const (
 		spacePrefix  = "\n\nShared Space context:\n"
@@ -604,7 +604,7 @@ func (s *Store) ConversationObjective(dotID string) (string, error) {
 		recentPrefix = "\n\nRecent saved conversation context:\n"
 	)
 	if len(objective) > task.MaxConversationObjectiveBytes {
-		return "", errors.New("saved Dot prompt exceeds the local prompt safety limit")
+		return "", errors.New("saved agent prompt exceeds the local prompt safety limit")
 	}
 	var context strings.Builder
 	if strings.TrimSpace(spaceContext) != "" {

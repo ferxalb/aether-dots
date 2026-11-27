@@ -21,7 +21,7 @@ func (s *Store) SetRunMetrics(dotID string, metrics task.RunMetrics) error {
 	return s.change(func(db *task.Database) error {
 		i := dotIndex(db, dotID)
 		if i < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		copy := metrics
 		db.Dots[i].Metrics = &copy
@@ -44,7 +44,7 @@ func (s *Store) StartRun(id, message, checkpoint string) error {
 	err := s.change(func(db *task.Database) error {
 		i := dotIndex(db, id)
 		if i < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		db.Dots[i].Status = task.Running
 		db.Dots[i].Checkpoint = checkpoint
@@ -81,7 +81,7 @@ func (s *Store) CompleteRun(conversationID, dotID, report string, metrics task.R
 		db.Dots[i].Checkpoint = ""
 		db.Dots[i].Status = task.Done
 		db.Dots[i].UpdatedAt = time.Now().UTC()
-		appendEvent(&db.Dots[i], "status", "Reply saved in the Dot conversation.")
+		appendEvent(&db.Dots[i], "status", "Reply saved in the agent conversation.")
 		return nil
 	})
 	s.releaseRunLease(dotID)

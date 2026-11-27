@@ -191,7 +191,7 @@ func (a *ADT) Render(c *ui.Context, theme *ui.Theme, config ADTConfig, parent ui
 		adtStackPosition(viewport, config, stackHeight)
 
 		parent.Children(func() {
-			stack := ui.Column(c).Key("adt-stack").Absolute().Width(config.MaxWidth).
+			stack := ui.Column(c.Key("adt-stack")).Absolute().Width(config.MaxWidth).
 				Height(max(stackHeight, adtPillHeight)).Gap(adtStackGap)
 			adtStackPosition(stack, config, stackHeight)
 			stack.Transition(ui.ElementTransition{Animation: adtTransition(), Position: true})
@@ -325,7 +325,7 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 		}
 	}
 	buildHeader := func() {
-		header := ui.Row(c).Key("adt-header-"+toast.ID).FillWidth().Height(40).
+		header := ui.Row(c.Key("adt-header-"+toast.ID)).FillWidth().Height(40).
 			AlignItems(ui.Center).Gap(8).Padding(7, 11)
 		header.Children(func() {
 			badge := ui.Row(c).Size(25, 25).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).
@@ -356,7 +356,7 @@ func adtToastCard(a *ADT, c *ui.Context, theme *ui.Theme, config ADTConfig, toas
 			return
 		}
 		bodyTop, bodyBottom := float32(1), float32(13)
-		body := ui.Column(c).Key("adt-body-"+toast.ID).FillWidth().Gap(9).
+		body := ui.Column(c.Key("adt-body-"+toast.ID)).FillWidth().Gap(9).
 			Padding(bodyTop, 15, bodyBottom, 44)
 		body.Transition(ui.ElementTransition{
 			Duration: 60 * time.Millisecond, Ease: ui.EaseOut,

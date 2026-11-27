@@ -7,7 +7,7 @@ func (a *app) profileInspector(c *ui.Context, theme *ui.Theme) {
 		Background(sidebarColor(theme, false, a.prefs.Palette)).Children(func() {
 		ui.Row(c).FillWidth().Height(workspaceHeaderHeight).AlignItems(ui.Center).
 			Padding(0, 14).DragWindow().Children(func() {
-			ui.Text(c, "Dot profile").FontSize(13).Bold()
+			ui.Text(c, "Agent profile").FontSize(13).Bold()
 			ui.Spacer(c)
 			if appIconButton(c, theme, "close-profile-inspector", "Close profile", iconClose).
 				Tooltip("Close profile").Clicked() {

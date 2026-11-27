@@ -12,14 +12,14 @@ func TestNewDotActionCreatesImmediatelyWithoutASetupForm(t *testing.T) {
 	a.startCreator()
 	snapshot := a.db.Snapshot()
 	if len(snapshot.Conversations) != 1 {
-		t.Fatalf("new Dot action created %d profiles, want one", len(snapshot.Conversations))
+		t.Fatalf("new agent action created %d profiles, want one", len(snapshot.Conversations))
 	}
 	created := snapshot.Conversations[0]
-	if created.SpaceID != spaceID || created.Name != "New Dot" || created.Purpose != "" {
-		t.Fatalf("unexpected new Dot defaults: %#v", created)
+	if created.SpaceID != spaceID || created.Name != "New agent" || created.Purpose != "" {
+		t.Fatalf("unexpected new agent defaults: %#v", created)
 	}
 	if a.selectedConversationID != created.ID || !a.hasConversationChat() {
-		t.Fatalf("new Dot was not opened in chat: selected=%q route=%v", a.selectedConversationID, a.hasConversationChat())
+		t.Fatalf("new agent was not opened in chat: selected=%q route=%v", a.selectedConversationID, a.hasConversationChat())
 	}
 }
 
@@ -40,7 +40,7 @@ func TestProfileSaveUpdatesDurableDotSettings(t *testing.T) {
 	a.saveConversationProfile()
 	updated, ok := findConversation(a.db.Snapshot(), conversation.ID)
 	if !ok || updated.Name != a.profileName || updated.Icon != "✧" || updated.Color != "#C33E70" || updated.Purpose != a.profilePurpose || updated.Instructions != a.profileInstructions {
-		t.Fatalf("saved Dot profile does not match edits: %#v", updated)
+		t.Fatalf("saved agent profile does not match edits: %#v", updated)
 	}
 	if a.conversationDetailsOpen {
 		t.Fatal("successful save did not return to chat")
@@ -66,7 +66,7 @@ func TestProfileCanMoveDotIntoNewSpace(t *testing.T) {
 	a.saveConversationProfile()
 	updated, ok := findConversation(a.db.Snapshot(), conversation.ID)
 	if !ok || updated.SpaceID != spaceID {
-		t.Fatalf("Dot did not move to the selected Space: %#v", updated)
+		t.Fatalf("Agent did not move to the selected Space: %#v", updated)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"aether-dots/internal/engine"
+	"aether-dots/internal/license"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
 )
@@ -79,7 +80,7 @@ func inspectRoutineCommand(db *store.Store, id string) error {
 		if routine.Active {
 			state = "active"
 		}
-		conversationName := "Missing Dot"
+		conversationName := "Missing agent"
 		if conversation, ok := findCLIConversation(snapshot, routine.ConversationID); ok {
 			conversationName = conversation.Name
 		}
@@ -87,7 +88,7 @@ func inspectRoutineCommand(db *store.Store, id string) error {
 		if routine.Active {
 			next = routine.NextRunAt.Local().Format(time.RFC3339)
 		}
-		fmt.Printf("Routine %s — %s\nDot: %s\nState: %s\nInterval: %s\nNext run: %s\nLast status: %s\nInstruction: %s\n",
+		fmt.Printf("Routine %s — %s\nAgent: %s\nState: %s\nInterval: %s\nNext run: %s\nLast status: %s\nInstruction: %s\n",
 			routine.ID, routine.Name, conversationName, state,
 			task.FormatRoutineInterval(routine.IntervalSeconds), next, routine.LastStatus, routine.Prompt)
 		fmt.Println("Recent runs:")
@@ -116,12 +117,15 @@ func createRoutineCommand(db *store.Store, args []string) error {
 	name := fs.String("name", "", "routine name")
 	prompt := fs.String("prompt", "", "instruction to run on schedule")
 	every := fs.Duration("every", 0, "repeat interval (minimum 5m; for example 1h or 24h)")
-	githubReadOnly := fs.Bool("github-read-only", false, "allow this Routine to use the Dot's explicitly granted GitHub repositories")
+	githubReadOnly := fs.Bool("github-read-only", false, "allow this Routine to use the agent's explicitly granted GitHub repositories")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 || *every <= 0 {
-		return errors.New("usage: aether routines create <dot-id> --name <name> --prompt <instruction> --every <duration>")
+		return errors.New("usage: aether routines create <agent-id> --name <name> --prompt <instruction> --every <duration>")
+	}
+	if err := license.CurrentFeatures(db.Dir(), time.Now()).Require("Routines"); err != nil {
+		return err
 	}
 	routine, err := db.CreateRoutine(task.CreateRoutine{
 		ConversationID: fs.Arg(0), Name: *name, Prompt: *prompt,
@@ -135,7 +139,7 @@ func createRoutineCommand(db *store.Store, args []string) error {
 
 func updateRoutineCommand(db *store.Store, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: aether routines update <routine-id> [--dot <dot-id>] [--name ...] [--prompt ...] [--every ...]")
+		return errors.New("usage: aether routines update <routine-id> [--dot <agent-id>] [--name ...] [--prompt ...] [--every ...]")
 	}
 	var existing task.Routine
 	for _, routine := range db.Snapshot().Routines {
@@ -148,11 +152,11 @@ func updateRoutineCommand(db *store.Store, args []string) error {
 		return errors.New("routine not found")
 	}
 	fs := flag.NewFlagSet("routines update", flag.ContinueOnError)
-	dotID := fs.String("dot", existing.ConversationID, "owning Dot ID")
+	dotID := fs.String("dot", existing.ConversationID, "owning agent ID")
 	name := fs.String("name", existing.Name, "routine name")
 	prompt := fs.String("prompt", existing.Prompt, "instruction to run on schedule")
 	every := fs.Duration("every", time.Duration(existing.IntervalSeconds)*time.Second, "repeat interval")
-	githubReadOnly := fs.Bool("github-read-only", existing.GitHubEnabled, "allow this Routine to use the Dot's explicitly granted GitHub repositories")
+	githubReadOnly := fs.Bool("github-read-only", existing.GitHubEnabled, "allow this Routine to use the agent's explicitly granted GitHub repositories")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}

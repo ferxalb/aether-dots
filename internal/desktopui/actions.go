@@ -53,12 +53,12 @@ func (a *app) startRun(id string) {
 	}
 	dot, ok := a.db.GetDot(id)
 	if !ok {
-		a.adt.Error("Dot message not found", "This item may have been removed. Refresh the workspace and try again.")
+		a.adt.Error("Agent message not found", "This item may have been removed. Refresh the workspace and try again.")
 		return
 	}
 	conversationID := dot.ConversationID
 	if conversationID != "" && a.activeRunDotIDForConversation(conversationID) != "" {
-		a.adt.Warning("This Dot is already replying", "Wait for this conversation to finish before sending another message.")
+		a.adt.Warning("This agent is already replying", "Wait for this conversation to finish before sending another message.")
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,7 +66,7 @@ func (a *app) startRun(id string) {
 	a.liveReplies[id] = ""
 	a.liveReplyBuffers[id] = &strings.Builder{}
 	toastID := "dot-run-" + id
-	a.adt.Loading(toastID, "Your Dot is working", "A reply is being prepared.")
+	a.adt.Loading(toastID, "Your agent is working", "A reply is being prepared.")
 	if conversationID == a.selectedConversationID {
 		a.conversationError = ""
 	}
@@ -102,9 +102,9 @@ func (a *app) startRun(id string) {
 			delete(a.liveReplyBuffers, id)
 			a.refresh()
 			if err == nil {
-				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply saved", Description: "Your Dot’s response is in the conversation.", Level: ADTSuccess})
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply saved", Description: "Your agent’s response is in the conversation.", Level: ADTSuccess})
 			} else if errorsIsCanceled(err) {
-				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply paused", Description: "You can ask your Dot to try again when you’re ready.", Level: ADTInfo})
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply paused", Description: "You can ask your agent to try again when you’re ready.", Level: ADTInfo})
 			} else {
 				a.adt.Push(ADTNotice{ID: toastID, Title: "Reply failed", Description: err.Error(), Level: ADTError})
 			}

@@ -39,7 +39,7 @@ func TestResponsesSDKStreamingAndNoStorage(t *testing.T) {
 	})}
 	g := Generator{Config: Config{Model: "gpt-6.1-sol", APIKey: "test-secret", HTTPClient: client}}
 	var streamed strings.Builder
-	got, err := g.Generate(context.Background(), "Dot objective:\nHelp me think through this.\n\nNewest user message:\nMake a brief", func(delta string) { streamed.WriteString(delta) })
+	got, err := g.Generate(context.Background(), "Agent objective:\nHelp me think through this.\n\nNewest user message:\nMake a brief", func(delta string) { streamed.WriteString(delta) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestResponsesSDKStreamingAndNoStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	inputText := string(input)
-	if payload["instructions"] == nil || !strings.Contains(payload["instructions"].(string), "no access") || !strings.Contains(inputText, "Dot objective") {
+	if payload["instructions"] == nil || !strings.Contains(payload["instructions"].(string), "no access") || !strings.Contains(inputText, "Agent objective") {
 		t.Fatalf("missing task input/instructions: %#v", payload)
 	}
 	if strings.Contains(inputText, "source documents") || strings.Contains(inputText, "/Users/") {

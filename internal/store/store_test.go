@@ -43,7 +43,7 @@ func TestStoreRoundTripAndRejectsChangedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: "Decision Dot"})
+	conversation, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: "Decision agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestStoreRoundTripAndRejectsChangedEvent(t *testing.T) {
 	}
 	reloaded, ok := opened.GetDot(dot.ID)
 	if !ok || len(reloaded.Events) != 2 {
-		t.Fatalf("reloaded Dot: found=%t events=%d", ok, len(reloaded.Events))
+		t.Fatalf("reloaded agent: found=%t events=%d", ok, len(reloaded.Events))
 	}
 	if reloaded.Events[1].PrevHash != reloaded.Events[0].Hash {
 		t.Fatal("event hashes are not linked")
@@ -95,7 +95,7 @@ func TestSchemaV1MigrationDropsLocalScopesArtifactsAndRoutines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: "Old Dot"})
+	conversation, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: "Old agent"})
 	if err != nil {
 		t.Fatal(err)
 	}

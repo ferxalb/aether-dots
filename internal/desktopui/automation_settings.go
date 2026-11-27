@@ -20,7 +20,7 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Text(c, "Skills").FontSize(15).Bold()
-				ui.Text(c, "Save reusable instructions and choose when a Dot should use them.").
+				ui.Text(c, "Save reusable instructions and choose when an agent should use them.").
 					FontSize(12).TextColor(theme.TextMuted).FillWidth()
 			})
 			if !a.skillEditorOpen {
@@ -33,7 +33,7 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 			ui.Column(c).FillWidth().Gap(5).Padding(15, 14).Radius(11).
 				Background(theme.Background).Children(func() {
 				ui.Text(c, "Nothing saved yet").FontSize(12).Bold()
-				ui.Text(c, "Create a skill for a task you repeat. It will be available to all your Dots.").
+				ui.Text(c, "Create a skill for a task you repeat. It will be available to all your agents.").
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			})
 		}
@@ -93,14 +93,14 @@ func (a *app) skillLibrarySettings(c *ui.Context, theme *ui.Theme) {
 			ui.Field(c, "Description", func() {
 				ui.TextInput(c.Key("skill-description"), &a.skillDraft.Description).Placeholder("What result does this skill help create?").FillWidth()
 			})
-			skillTextArea(c, "skill-when", "When to use", &a.skillDraft.WhenToUse, "Describe when a Dot should use this skill.")
+			skillTextArea(c, "skill-when", "When to use", &a.skillDraft.WhenToUse, "Describe when an agent should use this skill.")
 			skillTextArea(c, "skill-steps", "Steps and decision rules", &a.skillDraft.Steps, "Write the workflow in order and explain important decisions.")
 			skillTextArea(c, "skill-output", "What the answer should include", &a.skillDraft.Output, "Describe the format and key information to include.")
 			a.skillAdvancedOptions(c, theme)
 			if a.skillAdvancedOpen {
-				skillTextArea(c, "skill-inputs", "Required information", &a.skillDraft.Inputs, "List the context or details the Dot needs. Say what to do if something is missing.")
+				skillTextArea(c, "skill-inputs", "Required information", &a.skillDraft.Inputs, "List the context or details the agent needs. Say what to do if something is missing.")
 				skillTextArea(c, "skill-validation", "How to check the result", &a.skillDraft.Validation, "Explain how to check the answer and its sources.")
-				skillTextArea(c, "skill-approval", "When to ask first", &a.skillDraft.Approval, "Describe actions that need your approval and when the Dot should stop.")
+				skillTextArea(c, "skill-approval", "When to ask first", &a.skillDraft.Approval, "Describe actions that need your approval and when the agent should stop.")
 			}
 		}
 	})
@@ -184,7 +184,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Text(c, "Routines").FontSize(15).Bold()
-				ui.Text(c, "Have a Dot repeat a prompt on a schedule. Results appear in its conversation.").
+				ui.Text(c, "Have an agent repeat a prompt on a schedule. Results appear in its conversation.").
 					FontSize(12).TextColor(theme.TextMuted).FillWidth()
 			})
 			if !a.routineEditorOpen {
@@ -193,16 +193,19 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 				}
 			}
 		})
+		if !a.features().Pro {
+			proNotice(c, theme, "routines-pro-notice", "Routines are part of AETHER Pro. Saved routines are kept and can be edited or deleted, but they don't run until you add a license in Settings → General.")
+		}
 		if len(a.snapshot.Routines) == 0 && !a.routineEditorOpen {
 			ui.Column(c).FillWidth().Gap(5).Padding(15, 14).Radius(11).
 				Background(theme.Background).Children(func() {
 				ui.Text(c, "Nothing scheduled yet").FontSize(12).Bold()
-				ui.Text(c, "Create a routine to run a prompt for one of your Dots while AETHER is open.").
+				ui.Text(c, "Create a routine to run a prompt for one of your agents while AETHER is open.").
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			})
 		}
 		for _, routine := range a.snapshot.Routines {
-			conversationName := "Missing Dot"
+			conversationName := "Missing agent"
 			if conversation, ok := findConversation(a.snapshot, routine.ConversationID); ok {
 				conversationName = conversation.Name
 			}
@@ -298,7 +301,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 					a.routineEveryDraft, a.routineCustomDraft, a.routineDotDraft = "1h", "", a.selectedConversationID
 				}
 			})
-			ui.Field(c, "Dot", func() { conversationChoice(c, theme, a) })
+			ui.Field(c, "Agent", func() { conversationChoice(c, theme, a) })
 			ui.Field(c, "Name", func() {
 				ui.TextInput(c.Key("routine-name"), &a.routineNameDraft).Placeholder("Daily review").FillWidth()
 			})
@@ -319,7 +322,7 @@ func (a *app) routineSettings(c *ui.Context, theme *ui.Theme) {
 			})
 			routineDotHasGitHubGrants := conversationHasGitHubGrants(a.snapshot, a.routineDotDraft)
 			if ui.Checkbox(c.Key("routine-github-enabled"), &a.routineGitHubEnabledDraft,
-				"Allow this Routine to read the Dot's granted GitHub repositories").
+				"Allow this Routine to read the agent's granted GitHub repositories").
 				Disabled(!a.snapshot.GitHubConnected || !routineDotHasGitHubGrants).Changed() {
 				// This is a separate, opt-in permission for scheduled execution.
 			}
@@ -338,7 +341,7 @@ func conversationChoice(c *ui.Context, theme *ui.Theme, a *app) {
 	for _, conversation := range a.snapshot.Conversations {
 		options = append(options, dropdownOption{value: conversation.ID, label: conversation.Name})
 	}
-	dropdownSelect(c, theme, "routine-dot", "Choose a Dot", &a.routineDotDraft, options, false)
+	dropdownSelect(c, theme, "routine-dot", "Choose an agent", &a.routineDotDraft, options, false)
 }
 
 func conversationHasGitHubGrants(snapshot task.Database, conversationID string) bool {
@@ -452,6 +455,10 @@ func (a *app) saveRoutine() {
 		GitHubEnabled: a.routineGitHubEnabledDraft,
 	}
 	if a.routineEditingID == "" {
+		if err := a.features().Require("Routines"); err != nil {
+			a.proRequired("Routines need AETHER Pro", err)
+			return
+		}
 		routine, err := a.db.CreateRoutine(in)
 		if err != nil {
 			a.adt.Error("Couldn't save the routine", err.Error())
@@ -507,7 +514,7 @@ func (a *app) testRoutine(id string) {
 			if err != nil {
 				a.adt.Push(ADTNotice{ID: toastID, Title: "Routine didn't finish", Description: err.Error(), Level: ADTError})
 			} else {
-				a.adt.Push(ADTNotice{ID: toastID, Title: "Routine completed", Description: "See the Dot conversation for its response.", Level: ADTSuccess})
+				a.adt.Push(ADTNotice{ID: toastID, Title: "Routine completed", Description: "See the agent conversation for its response.", Level: ADTSuccess})
 			}
 		}
 		if win == nil {

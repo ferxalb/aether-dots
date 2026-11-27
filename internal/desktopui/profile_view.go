@@ -25,7 +25,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
 				name := strings.TrimSpace(a.profileName)
 				if name == "" {
-					name = "Your Dot"
+					name = "Your agent"
 				}
 				ui.Text(c, name).SingleLine().FontSize(18).Bold().FillWidth()
 				ui.Text(c, "Avatar preview").FontSize(11).TextColor(theme.TextMuted)
@@ -40,10 +40,10 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		profilePanel(c, theme, "Role", func() {
 			ui.Field(c, "Objective", func() {
 				ui.TextArea(c.Key("profile-objective"), &a.profilePurpose).
-					Placeholder("What outcome should this Dot own?").
+					Placeholder("What outcome should this agent own?").
 					MinHeight(54).Lines(2, 6).FillWidth()
 			})
-			ui.Text(c, "Give the Dot one clear area of responsibility. A prompt in chat can start the work right away.").
+			ui.Text(c, "Give the agent one clear area of responsibility. A prompt in chat can start the work right away.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			ui.Field(c, "Working instructions", func() {
 				ui.TextArea(c.Key("profile-instructions"), &a.profileInstructions).
@@ -53,10 +53,10 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		})
 
 		profilePanel(c, theme, "Model", func() {
-			ui.Text(c, "Use the workspace model by default or give this Dot its own provider and model. API keys stay in Settings and the system credential store.").
+			ui.Text(c, "Use the workspace model by default or give this agent its own provider and model. API keys stay in Settings and the system credential store.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			ui.Field(c, "Model selection", func() {
-				selection := dropdownSelect(c, theme, "profile-model-provider", "Dot model provider", &a.profileModelSelection,
+				selection := dropdownSelect(c, theme, "profile-model-provider", "Agent model provider", &a.profileModelSelection,
 					stringDropdownOptions([]string{"Workspace default", "OpenAI", "Anthropic Claude", "xAI Grok", "OpenRouter", "Custom OpenAI-compatible"}, nil), false)
 				if selection.Changed() {
 					selectedProvider := profileModelProviderForSelection(a.profileModelSelection)
@@ -76,9 +76,9 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 			if a.profileModelProvider != "" {
 				ui.Field(c, "Model name", func() {
 					ui.TextInputBase(c.Key("profile-model-name"), &a.profileModel).
-						Placeholder(providerModelPlaceholder(a.profileModelProvider)).FillWidth().Label("Dot model name")
+						Placeholder(providerModelPlaceholder(a.profileModelProvider)).FillWidth().Label("Agent model name")
 				})
-				ui.Text(c, "This Dot uses the selected provider's saved credential and generation settings. Provider-neutral chat history, compaction, and supported AETHER tools follow it across turns.").
+				ui.Text(c, "This agent uses the selected provider's saved credential and generation settings. Provider-neutral chat history, compaction, and supported AETHER tools follow it across turns.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 			}
 		})
@@ -119,7 +119,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 						}
 					}
 				})
-				ui.Text(c, "Shared Space notes are sent with chat context to Dots in this Space. Add only information you want those Dots to use.").
+				ui.Text(c, "Shared Space notes are sent with chat context to agents in this Space. Add only information you want those agents to use.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 				ui.TextArea(c.Key("profile-space-context"), &a.spaceContextDraft).
 					Placeholder("Shared project facts, terminology, or preferences…").
@@ -137,7 +137,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			ui.TextArea(c.Key("profile-context-summary"), &a.profileContextSummary).
 				Placeholder("Durable facts, decisions, preferences, and open work…").
-				MinHeight(90).MaxHeight(180).FillWidth().Label("Saved Dot memory")
+				MinHeight(90).MaxHeight(180).FillWidth().Label("Saved agent memory")
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Wrap().Children(func() {
 				compacting := a.summaryCompactRun[conversation.ID]
 				needsCompaction := len(messagesAfterCompaction(conversation)) > 0
@@ -162,7 +162,7 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 		})
 
 		profilePanel(c, theme, "Specialist access", func() {
-			ui.Text(c, "Choose which Dots this one may consult. Each handoff sends only the task, constraints, and expected output the model supplies. The receiving Dot keeps its own profile and chat history.").
+			ui.Text(c, "Choose which agents this one may consult. Each handoff sends only the task, constraints, and expected output the model supplies. The receiving agent keeps its own profile and chat history.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			available := 0
 			for _, peer := range a.snapshot.Conversations {
@@ -191,34 +191,34 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 				}
 			}
 			if available == 0 {
-				ui.Text(c, "Create another Dot in this Space to make it available as a specialist.").
+				ui.Text(c, "Create another agent in this Space to make it available as a specialist.").
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			}
 			if len(a.profileDelegateIDs) == task.MaxDelegatedDots {
-				ui.Text(c, "This Dot has reached the 12 specialist limit.").FontSize(10).TextColor(theme.TextMuted)
+				ui.Text(c, "This agent has reached the 12 specialist limit.").FontSize(10).TextColor(theme.TextMuted)
 			}
 		})
 
 		profilePanel(c, theme, "GitHub access", func() {
 			conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
-			ui.Text(c, "GitHub permissions are specific to this Dot and stay limited to repositories you selected in Integrations.").
+			ui.Text(c, "GitHub permissions are specific to this agent and stay limited to repositories you selected in Integrations.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			if conversation.SpaceID != a.profileSpaceID {
-				ui.Text(c, "Moving a Dot to another Space clears its GitHub grants. Save the new Space first, then grant repositories again.").
+				ui.Text(c, "Moving an agent to another Space clears its GitHub grants. Save the new Space first, then grant repositories again.").
 					FontSize(11).TextColor(theme.Danger).FillWidth()
 			}
 			if !a.snapshot.GitHubConnected {
 				ui.Text(c, "Connect GitHub and select repositories in Settings → Integrations before granting access.").
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			}
-			if ui.Checkbox(c.Key("profile-github-enabled"), &a.profileGitHubEnabledDraft, "Enable GitHub for this Dot").
+			if ui.Checkbox(c.Key("profile-github-enabled"), &a.profileGitHubEnabledDraft, "Enable GitHub for this agent").
 				Disabled(!a.snapshot.GitHubConnected || conversation.SpaceID != a.profileSpaceID).Changed() && !a.profileGitHubEnabledDraft {
 				a.profileGitHubRepositoryIDs = nil
 				a.profileGitHubDisclosureAccepted = false
 			}
 			if a.profileGitHubEnabledDraft && a.snapshot.GitHubConnected && conversation.SpaceID == a.profileSpaceID {
 				ui.Text(c, "Permissions · Read-only").FontSize(10).Bold().TextColor(theme.Accent)
-				ui.Text(c, "Selected repository metadata, issue and pull request text, commit details, and CI results may be sent to the AI provider configured for this Dot. This release does not retrieve source files. AETHER never sends your GitHub token.").
+				ui.Text(c, "Selected repository metadata, issue and pull request text, commit details, and CI results may be sent to the AI provider configured for this agent. This release does not retrieve source files. AETHER never sends your GitHub token.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 				if !a.profileGitHubDisclosureAccepted || len(a.profileGitHubRepositoryIDs) == 0 {
 					if ui.Checkbox(c.Key("profile-github-disclosure"), &a.profileGitHubDisclosureAccepted,
@@ -255,24 +255,26 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 							a.profileGitHubRepositoryLimit = shown + 50
 						}
 					}
-					ui.Text(c, fmt.Sprintf("%d of %d selected repositories granted to this Dot", len(a.profileGitHubRepositoryIDs), len(selected))).
+					ui.Text(c, fmt.Sprintf("%d of %d selected repositories granted to this agent", len(a.profileGitHubRepositoryIDs), len(selected))).
 						FontSize(10).TextColor(theme.TextMuted).FillWidth()
 				}
 				if githubToolsKnownUnsupported(a.prefs) {
-					ui.Text(c, "The selected OpenRouter model is marked as not supporting function calls. This Dot won't inspect GitHub data until you select a model with function support.").
+					ui.Text(c, "The selected OpenRouter model is marked as not supporting function calls. This agent won't inspect GitHub data until you select a model with function support.").
 						FontSize(10).TextColor(theme.Danger).FillWidth()
 				}
 			}
 		})
 
+		a.templateRoutinePanel(c, theme)
+
 		a.githubWritePanel(c, theme)
 
 		profilePanel(c, theme, "MCP tools", func() {
 			conversation, _ := findConversation(a.snapshot, a.selectedConversationID)
-			ui.Text(c, "Choose exact tools from loopback MCP servers. Each input and returned result may be sent to this Dot's selected model. A granted tool can perform actions within its server's own scope.").
+			ui.Text(c, "Choose exact tools from loopback MCP servers. Each input and returned result may be sent to this agent's selected model. A granted tool can perform actions within its server's own scope.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			if conversation.SpaceID != a.profileSpaceID {
-				ui.Text(c, "Moving a Dot to another Space clears its MCP tool grants. Save the new Space first, then review and grant tools again.").
+				ui.Text(c, "Moving an agent to another Space clears its MCP tool grants. Save the new Space first, then review and grant tools again.").
 					FontSize(10).TextColor(theme.Danger).FillWidth()
 			}
 			if len(a.snapshot.MCPServers) == 0 {
@@ -339,28 +341,28 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 						a.profileMCPToolLimit = shown + 60
 					}
 				}
-				ui.Text(c, fmt.Sprintf("%d of %d discovered tools shown · %d granted to this Dot", shown, len(matches), len(a.profileMCPToolGrants))).
+				ui.Text(c, fmt.Sprintf("%d of %d discovered tools shown · %d granted to this agent", shown, len(matches), len(a.profileMCPToolGrants))).
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 			}
 			if len(a.profileMCPToolGrants) > 0 {
 				if ui.Checkbox(c.Key("profile-mcp-disclosure"), &a.profileMCPDisclosureAccepted,
-					"I understand tool inputs and returned data may be sent to this Dot's configured model provider").FillWidth().Changed() && !a.profileMCPDisclosureAccepted {
+					"I understand tool inputs and returned data may be sent to this agent's configured model provider").FillWidth().Changed() && !a.profileMCPDisclosureAccepted {
 					a.profileMCPToolGrants = nil
 				}
 			}
-			ui.Text(c, "MCP tools are available only during local interactive runs. Routines, delegated Dots, and iPhone messages do not receive these tools.").
+			ui.Text(c, "MCP tools are available only during local interactive runs. Routines, delegated agents, and iPhone messages do not receive these tools.").
 				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 		})
 
 		profilePanel(c, theme, "Computer Use access", func() {
-			ui.Text(c, "Grant this Dot access only to the macOS apps it needs. Cua Driver installs separately. If it is not listed under System Settings → Privacy & Security → Accessibility, add /Applications/CuaDriver.app and switch it on. Screen Recording is not requested.").
+			ui.Text(c, "Grant this agent access only to the macOS apps it needs. Cua Driver installs separately. If it is not listed under System Settings → Privacy & Security → Accessibility, add /Applications/CuaDriver.app and switch it on. Screen Recording is not requested.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			if !a.computerUseInstalled {
 				ui.Text(c, "Install Cua Driver in Settings → Integrations before granting a new app scope.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 			}
 			if conversation.SpaceID != a.profileSpaceID {
-				ui.Text(c, "Moving a Dot to another Space clears its Computer Use grants. Save the new Space first, then grant app access again.").
+				ui.Text(c, "Moving an agent to another Space clears its Computer Use grants. Save the new Space first, then grant app access again.").
 					FontSize(10).TextColor(theme.Danger).FillWidth()
 			}
 			for _, scope := range []struct {
@@ -380,21 +382,21 @@ func (a *app) conversationDetailsView(c *ui.Context, theme *ui.Theme) {
 				}
 			}
 			if len(a.profileComputerUseScopes) > 0 {
-				ui.Text(c, "The Notes accessibility text exposed by the open window may be sent to this Dot's configured model provider. All observed UI text is untrusted. Music access is limited to play, pause, next, and previous controls. These scopes do not expose files, clipboard, browser, screenshots, or other apps.").
+				ui.Text(c, "The Notes accessibility text exposed by the open window may be sent to this agent's configured model provider. All observed UI text is untrusted. Music access is limited to play, pause, next, and previous controls. These scopes do not expose files, clipboard, browser, screenshots, or other apps.").
 					FontSize(10).TextColor(theme.TextMuted).FillWidth()
 				if ui.Checkbox(c.Key("profile-computer-use-disclosure"), &a.profileComputerUseDisclosureAccepted,
-					"I understand Notes text may be sent to this Dot's configured model provider").Changed() {
+					"I understand Notes text may be sent to this agent's configured model provider").Changed() {
 					if !a.profileComputerUseDisclosureAccepted {
 						a.profileComputerUseScopes = nil
 					}
 				}
 			}
-			ui.Text(c, "Computer Use is unavailable to Routines, delegated Dots, and messages sent through the AETHER iOS bridge.").
+			ui.Text(c, "Computer Use is unavailable to Routines, delegated agents, and messages sent through the AETHER iOS bridge.").
 				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 		})
 
 		profilePanel(c, theme, "Privacy", func() {
-			ui.Text(c, "This Dot uses its profile, chat history, and any skill you name. Computer Use stays limited to the apps and scopes explicitly granted above. It has no access to user-selected files or folders. GitHub access is limited to the repositories explicitly granted above; other account access remains unavailable. Specialist access is limited to the Dots selected above, and each handoff is saved in both conversations.").
+			ui.Text(c, "This agent uses its profile, chat history, and any skill you name. Computer Use stays limited to the apps and scopes explicitly granted above. It has no access to user-selected files or folders. GitHub access is limited to the repositories explicitly granted above; other account access remains unavailable. Specialist access is limited to the agents selected above, and each handoff is saved in both conversations.").
 				FontSize(12).TextColor(theme.TextMuted).FillWidth()
 		})
 
@@ -504,13 +506,18 @@ func (a *app) workspaceWelcomeView(c *ui.Context, theme *ui.Theme) {
 		mark.Center().Children(func() { ui.Icon(c, iconSparkles).Size(26, 26) })
 		ui.Column(c).MaxWidth(440).Gap(7).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "A clear space for focused work").FontSize(22).Bold()
-			ui.Text(c, "Create a Dot for a role you return to. Give it a name, a clear objective, and instructions that fit the way you work.").
+			ui.Text(c, "Create an agent for a role you return to. Give it a name, a clear objective, and instructions that fit the way you work.").
 				FontSize(13).TextColor(theme.TextMuted).FillWidth().TextAlign(ui.Center)
 		})
-		if ui.PrimaryButton(c.Key("welcome-create-dot"), "New Dot").Padding(10, 16).Clicked() {
-			a.startCreator()
-		}
-		ui.Text(c, "Dots use their profile and chat history. Named skills and local routines add reusable workflows. Dots do not access files or folders.").
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			if ui.PrimaryButton(c.Key("welcome-create-dot"), "New agent").Padding(10, 16).Clicked() {
+				a.startCreator()
+			}
+			if ui.Button(c.Key("welcome-create-triage"), "Set up issue triage").Padding(10, 16).Clicked() {
+				a.startTemplateCreator(task.TriageTemplate)
+			}
+		})
+		ui.Text(c, "Agents use their profile and chat history. Named skills and local routines add reusable workflows. Agents do not access files or folders.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth().TextAlign(ui.Center)
 	})
 }

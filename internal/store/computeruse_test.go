@@ -13,7 +13,7 @@ func TestHasAnyComputerUseGrantMatchesInteractiveDotAuthorization(t *testing.T) 
 		t.Fatal(err)
 	}
 	spaceID := db.Snapshot().Spaces[0].ID
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: spaceID, Name: "Test Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: spaceID, Name: "Test agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func TestHasAnyComputerUseGrantMatchesInteractiveDotAuthorization(t *testing.T) 
 		t.Fatal(err)
 	}
 	if db.HasAnyComputerUseGrant() {
-		t.Fatal("ungranted Dot appeared authorized")
+		t.Fatal("ungranted agent appeared authorized")
 	}
 	if err := db.UpdateConversationProfileAndIntegrations(conversation.ID, spaceID,
 		conversation.Name, conversation.Icon, conversation.Color, conversation.Purpose, conversation.Instructions,
@@ -29,14 +29,14 @@ func TestHasAnyComputerUseGrantMatchesInteractiveDotAuthorization(t *testing.T) 
 		t.Fatal(err)
 	}
 	if !db.HasAnyComputerUseGrant() {
-		t.Fatal("valid disclosed interactive Dot grant was not detected")
+		t.Fatal("valid disclosed interactive agent grant was not detected")
 	}
 
 	db.mu.Lock()
 	db.db.Dots[0].RoutineID = "routine-id"
 	db.mu.Unlock()
 	if db.HasAnyComputerUseGrant() {
-		t.Fatal("Routine Dot grant was counted for interactive prewarming")
+		t.Fatal("Routine agent grant was counted for interactive prewarming")
 	}
 
 	db.mu.Lock()
@@ -44,7 +44,7 @@ func TestHasAnyComputerUseGrantMatchesInteractiveDotAuthorization(t *testing.T) 
 	db.db.Dots[0].DelegatedByDotID = "parent-dot"
 	db.mu.Unlock()
 	if db.HasAnyComputerUseGrant() {
-		t.Fatal("delegated Dot grant was counted for interactive prewarming")
+		t.Fatal("delegated agent grant was counted for interactive prewarming")
 	}
 
 	db.mu.Lock()
@@ -62,7 +62,7 @@ func BenchmarkHasAnyComputerUseGrantManyDots(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if !db.HasAnyComputerUseGrant() {
-			b.Fatal("final Dot grant was not found")
+			b.Fatal("final agent grant was not found")
 		}
 	}
 }
@@ -73,7 +73,7 @@ func BenchmarkHasAnyComputerUseGrantNPlusOneBaseline(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if !legacyHasAnyComputerUseGrant(db) {
-			b.Fatal("final Dot grant was not found")
+			b.Fatal("final agent grant was not found")
 		}
 	}
 }

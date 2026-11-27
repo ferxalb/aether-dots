@@ -22,9 +22,9 @@ func (a *app) dotView(c *ui.Context, theme *ui.Theme, dot task.Dot) {
 		ui.Column(c).FillWidth().Gap(7).Padding(14, 16).Radius(13).
 			Background(theme.Accent.Alpha(0.07)).Border(1, theme.Accent.Alpha(0.15)).Children(func() {
 			ui.Text(c, "This task used the retired local-folder workflow.").FontSize(12).Bold()
-			ui.Text(c, "Folder permissions and output paths are no longer retained or available. Create a new Dot to continue in chat.").
+			ui.Text(c, "Folder permissions and output paths are no longer retained or available. Create a new agent to continue in chat.").
 				FontSize(11).TextColor(theme.TextMuted).FillWidth()
-			if ui.PrimaryButton(c.Key("legacy-create-dot"), "Create a new Dot").Clicked() {
+			if ui.PrimaryButton(c.Key("legacy-create-dot"), "Create a new agent").Clicked() {
 				a.startCreator()
 			}
 		})

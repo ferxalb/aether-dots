@@ -387,7 +387,7 @@ func (a *app) credentialDescription() string {
 
 func (a *app) testModel() {
 	if a.hasActiveRuns() {
-		a.adt.Warning("A Dot is already running", "Wait for the current reply to finish before testing the connection.")
+		a.adt.Warning("An agent is already running", "Wait for the current reply to finish before testing the connection.")
 		return
 	}
 	if selected := a.prefs.selectedModel(); strings.TrimSpace(*selected) == "" {
@@ -417,7 +417,7 @@ func (a *app) testModel() {
 				if err != nil {
 					a.adt.Push(ADTNotice{ID: toastID, Title: "Connection failed", Description: err.Error(), Level: ADTError})
 				} else {
-					a.adt.Push(ADTNotice{ID: toastID, Title: "Connection verified", Description: providerDisplayName(provider) + " is ready for your Dots.", Level: ADTSuccess})
+					a.adt.Push(ADTNotice{ID: toastID, Title: "Connection verified", Description: providerDisplayName(provider) + " is ready for your agents.", Level: ADTSuccess})
 				}
 			})
 		}

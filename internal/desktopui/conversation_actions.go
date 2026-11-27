@@ -8,6 +8,24 @@ import (
 )
 
 func (a *app) startCreator() {
+	if a.createAgent(task.CreateConversation{}) {
+		a.adt.Success("Agent created", "Start with a prompt, then personalize its profile whenever you like.")
+	}
+}
+
+// startTemplateCreator creates an agent from a template and opens its profile,
+// where the person grants what the template needs (it grants nothing itself).
+func (a *app) startTemplateCreator(tmpl task.AgentTemplate) {
+	if !a.createAgent(task.CreateConversation{Name: tmpl.Name, Icon: tmpl.Icon, Color: tmpl.Color, Purpose: tmpl.Purpose, Instructions: tmpl.Instructions}) {
+		return
+	}
+	a.openConversationProfile()
+	a.adt.Success(tmpl.Name+" created", "Grant it a repository under GitHub in this profile, then ask it to triage an issue.")
+}
+
+// createAgent creates and selects an agent in the current Space, within the
+// license's agent limit.
+func (a *app) createAgent(in task.CreateConversation) bool {
 	a.rememberCurrentConversationState()
 	a.activityOpen = false
 	a.approvals.open = false
@@ -18,17 +36,22 @@ func (a *app) startCreator() {
 	if spaceID == "" && len(a.snapshot.Spaces) > 0 {
 		spaceID = a.snapshot.Spaces[0].ID
 	}
-	conversation, err := a.db.CreateConversation(task.CreateConversation{SpaceID: spaceID})
+	if err := a.features().CanCreateAgent(len(a.snapshot.Conversations)); err != nil {
+		a.proRequired("Agent limit reached", err)
+		return false
+	}
+	in.SpaceID = spaceID
+	conversation, err := a.db.CreateConversation(in)
 	if err != nil {
-		a.adt.Error("Couldn't create a Dot", err.Error())
-		return
+		a.adt.Error("Couldn't create an agent", err.Error())
+		return false
 	}
 	a.settingsOpen = false
 	a.conversationDetailsOpen = false
 	a.selectedDotID = ""
 	a.refresh()
 	a.selectConversation(conversation.ID)
-	a.adt.Success("Dot created", "Start with a prompt, then personalize its profile whenever you like.")
+	return true
 }
 
 func (a *app) openConversationProfile() {
@@ -73,7 +96,7 @@ func (a *app) openConversationProfile() {
 
 func (a *app) saveConversationProfile() {
 	if len(a.profileContextSummary) > task.MaxConversationSummaryBytes {
-		a.profileError = "Dot memory must be 8 KiB or less."
+		a.profileError = "Agent memory must be 8 KiB or less."
 		return
 	}
 	githubRepositoryIDs := append([]int64(nil), a.profileGitHubRepositoryIDs...)
@@ -124,7 +147,7 @@ func (a *app) saveConversationProfile() {
 	)
 	if err != nil {
 		a.profileError = err.Error()
-		a.adt.Error("Couldn't save the Dot profile", err.Error())
+		a.adt.Error("Couldn't save the agent profile", err.Error())
 		return
 	}
 	if modelChanged {
@@ -144,7 +167,7 @@ func (a *app) saveConversationProfile() {
 	a.conversationDetailsOpen = false
 	a.activityOpen = false
 	a.approvals.open = false
-	a.adt.Success("Dot profile saved", "New replies will follow these instructions.")
+	a.adt.Success("Agent profile saved", "New replies will follow these instructions.")
 	accessAdded := computerUseAccessAdded(
 		current.ComputerUseScopes,
 		computerUseScopes,
@@ -201,11 +224,11 @@ func computerUseShouldPrepare(accessAdded, accessReduced bool, scopes []string, 
 func (a *app) sendConversationMessage() {
 	conversation, ok := findConversation(a.snapshot, a.selectedConversationID)
 	if !ok {
-		a.conversationError = "Choose a Dot before sending a message."
+		a.conversationError = "Choose an agent before sending a message."
 		return
 	}
 	if a.activeRunDotIDForConversation(conversation.ID) != "" {
-		a.conversationError = "Wait for this Dot's reply or stop it before sending another message."
+		a.conversationError = "Wait for this agent's reply or stop it before sending another message."
 		return
 	}
 	dot, _, err := a.db.CreateConversationRun(conversation.ID, a.messageDraft)
@@ -227,7 +250,7 @@ func (a *app) stopConversationRun() {
 		return
 	}
 	a.cancelRunByID(dotID)
-	a.adt.Info("Stopping the reply", "Your Dot will stop as soon as it can.")
+	a.adt.Info("Stopping the reply", "Your agent will stop as soon as it can.")
 }
 
 func (a *app) retryConversationMessage(dotID string) {

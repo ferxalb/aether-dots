@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"aether-dots/internal/engine"
+	"aether-dots/internal/license"
 	"aether-dots/internal/model"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
@@ -28,7 +29,7 @@ func run(args []string) error {
 	root := flag.NewFlagSet("aether", flag.ContinueOnError)
 	root.SetOutput(os.Stderr)
 	root.Usage = printHelp
-	dataDir := root.String("data-dir", "", "local Dot chat store folder (must appear before the command)")
+	dataDir := root.String("data-dir", "", "local agent chat store folder (must appear before the command)")
 	if err := root.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -83,8 +84,10 @@ func run(args []string) error {
 		return memoryCommand(db, args[1:])
 	case "doctor", "status":
 		return doctorCommand(db, *dataDir)
+	case "license":
+		return licenseCommand(*dataDir, args[1:])
 	case "init":
-		fmt.Printf("Initialized AETHER Dots data at %s\nNext: aether create --name \"My Dot\"; aether model show; aether midnight enable <dot-id> --endpoint http://127.0.0.1:<port>/mcp --accept-model-disclosure\n", *dataDir)
+		fmt.Printf("Initialized AETHER data at %s\nNext: aether create --name \"My agent\"; aether model show; aether midnight enable <agent-id> --endpoint http://127.0.0.1:<port>/mcp --accept-model-disclosure\n", *dataDir)
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q (try `aether help`)", args[0])
@@ -121,16 +124,33 @@ func spacesCommand(db *store.Store, args []string) error {
 func createCommand(db *store.Store, args []string) error {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	spaceName := fs.String("space", "Personal", "Space name")
-	name := fs.String("name", "New Dot", "Dot name")
-	objective := fs.String("objective", "", "Dot's long-term objective")
-	instructions := fs.String("instructions", "", "Dot's lasting working instructions")
-	icon := fs.String("icon", "✦", "Dot icon")
-	color := fs.String("color", "#7458D8", "Dot color")
+	name := fs.String("name", "New agent", "Agent name")
+	objective := fs.String("objective", "", "Agent's long-term objective")
+	instructions := fs.String("instructions", "", "Agent's lasting working instructions")
+	icon := fs.String("icon", "✦", "Agent icon")
+	color := fs.String("color", "#7458D8", "Agent color")
+	templateID := fs.String("template", "", "start from a template: triage (explicit flags override it)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: aether create [--name <name>] [--objective <text>] [--instructions <text>] [--space Personal]")
+		return errors.New("usage: aether create [--template triage] [--name <name>] [--objective <text>] [--instructions <text>] [--space Personal]")
+	}
+	if *templateID != "" {
+		tmpl, ok := task.FindAgentTemplate(*templateID)
+		if !ok {
+			return fmt.Errorf("unknown template %q (available: triage)", *templateID)
+		}
+		set := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+		for flagName, pair := range map[string]struct {
+			target *string
+			value  string
+		}{"name": {name, tmpl.Name}, "objective": {objective, tmpl.Purpose}, "instructions": {instructions, tmpl.Instructions}, "icon": {icon, tmpl.Icon}, "color": {color, tmpl.Color}} {
+			if !set[flagName] {
+				*pair.target = pair.value
+			}
+		}
 	}
 	snapshot := db.Snapshot()
 	spaceID := ""
@@ -143,25 +163,31 @@ func createCommand(db *store.Store, args []string) error {
 	if spaceID == "" {
 		return fmt.Errorf("Space %q not found; use `aether spaces create`", *spaceName)
 	}
+	if err := license.CurrentFeatures(db.Dir(), time.Now()).CanCreateAgent(len(snapshot.Conversations)); err != nil {
+		return err
+	}
 	conversation, err := db.CreateConversation(task.CreateConversation{
 		SpaceID: spaceID, Name: *name, Icon: *icon, Color: *color,
 		Purpose: *objective, Instructions: *instructions,
 	})
 	if err == nil {
-		fmt.Printf("Created Dot %q (%s)\n", conversation.Name, conversation.ID)
+		fmt.Printf("Created agent %q (%s)\n", conversation.Name, conversation.ID)
+		if *templateID == task.TriageTemplate.ID {
+			fmt.Printf("Next: grant it a repository with `aether github grant --allow-model-data %s <repo-id>`, then `aether send %s --message \"Triage issue #<n>\"`.\n", conversation.ID, conversation.ID)
+		}
 	}
 	return err
 }
 
 func sendCommand(db *store.Store, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
-	message := fs.String("message", "", "message for the Dot")
+	message := fs.String("message", "", "message for the agent")
 	positional, flags := splitFlags(args)
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(positional) != 1 || strings.TrimSpace(*message) == "" {
-		return errors.New("usage: aether send <dot-id> --message <text>")
+		return errors.New("usage: aether send <agent-id> --message <text>")
 	}
 	// A previous CLI/Desktop process that crashed mid-run must not block the
 	// conversation; runs owned by live processes are left alone.
@@ -208,14 +234,14 @@ func listCommand(db *store.Store) error {
 
 func inspectCommand(db *store.Store, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: aether inspect <dot-id>")
+		return errors.New("usage: aether inspect <agent-id>")
 	}
 	snapshot := db.Snapshot()
 	for _, conversation := range snapshot.Conversations {
 		if conversation.ID != args[0] {
 			continue
 		}
-		fmt.Printf("Dot %s — %s\nSpace: %s\nObjective: %s\n", conversation.ID, conversation.Name,
+		fmt.Printf("Agent %s — %s\nSpace: %s\nObjective: %s\n", conversation.ID, conversation.Name,
 			spaceName(snapshot, conversation.SpaceID), conversation.Purpose)
 		if conversation.Instructions != "" {
 			fmt.Printf("Working instructions: %s\n", conversation.Instructions)
@@ -225,7 +251,7 @@ func inspectCommand(db *store.Store, args []string) error {
 		}
 		return nil
 	}
-	return errors.New("Dot not found")
+	return errors.New("Agent not found")
 }
 
 func modelCommand(args []string) error {
@@ -268,27 +294,28 @@ func spaceName(db task.Database, id string) string {
 }
 
 func printHelp() {
-	fmt.Print(`AETHER Dots — focused local Dot profiles and chat
+	fmt.Print(`AETHER — focused local agent profiles and chat
 
 Usage:
   aether [--data-dir <path>] <command>
 
 Commands:
-  create [profile options]     Create a Dot profile
-  send <dot-id> --message ...  Send a message and print its reply
-  list                         List Dot profiles
-  inspect <dot-id>             Show a Dot profile and chat history
+  create [profile options]     Create an agent profile (--template triage for issue triage)
+  send <agent-id> --message ...  Send a message and print its reply
+  list                         List agent profiles
+  inspect <agent-id>           Show an agent profile and chat history
   run <message-id>              Retry a saved message
   spaces [list|create|rename]  Manage Spaces
   model [show|test]            Show readiness / test the selected model provider
   init                         Create the data folder and show next steps
   doctor | status              Report local state, model readiness, and Midnight reachability
-  mcp [list|add|refresh|remove|grant|revoke]  Manage user-run loopback MCP servers and per-Dot tool grants
-  midnight enable <dot-id> --endpoint URL --accept-model-disclosure  Connect a Dot to a Midnight server
-  memory [remember|recall|list|forget] <dot-id> ...  User-initiated Midnight memory operations (scope dot:<id>)
+  mcp [list|add|refresh|remove|grant|revoke]  Manage user-run loopback MCP servers and per-agent tool grants
+  midnight enable <agent-id> --endpoint URL --accept-model-disclosure  Connect an agent to a Midnight server
+  memory [remember|recall|list|forget] <agent-id> ...  User-initiated Midnight memory operations (scope dot:<id>)
   skills [list|create|update|inspect|delete]  Manage reusable playbooks
   routines [list|create|update|pause|resume|test|inspect|delete|serve]  Manage schedules
   github [login|status|refresh|repositories|select|grant|write-grant|proposals|revoke|disconnect]  Manage GitHub: read grants, write proposals, approvals
+  license [status|activate|check|deactivate]  Manage the AETHER Pro license (only in builds with licensing enabled)
 
 Profile options:
   --name <name>
@@ -298,7 +325,7 @@ Profile options:
   --color <hex>
   --space <name>
 
-Dot replies use profile and chat context. Function calls are limited to local
+Agent replies use profile and chat context. Function calls are limited to local
 time, arithmetic, and specialists explicitly granted in the same Space. A
 handoff shares only its typed request fields and is saved in both chats. The
 CLI does not read or write user-selected files or folders. Select a saved playbook in chat with
@@ -319,6 +346,6 @@ Model settings (environment):
 
 Routines use an interval of at least 5 minutes and run while the desktop app
 is open or while aether routines serve is running. Each run is saved in its
-Dot conversation; missed intervals are skipped.
+agent conversation; missed intervals are skipped.
 `)
 }

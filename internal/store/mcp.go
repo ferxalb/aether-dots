@@ -325,7 +325,7 @@ func (s *Store) MCPToolAuthorized(dotID, serverID, toolName, fingerprint string)
 
 func validateMCPToolGrants(db *task.Database, requested []task.MCPToolGrant) ([]task.MCPToolGrant, error) {
 	if len(requested) > task.MaxMCPDotToolGrants {
-		return nil, fmt.Errorf("a Dot can be granted at most %d MCP tools", task.MaxMCPDotToolGrants)
+		return nil, fmt.Errorf("an agent can be granted at most %d MCP tools", task.MaxMCPDotToolGrants)
 	}
 	servers := make(map[string]task.MCPServer, len(db.MCPServers))
 	for _, server := range db.MCPServers {
@@ -374,7 +374,7 @@ func (s *Store) SetConversationMCPGrants(conversationID string, grants []task.MC
 	return s.change(func(db *task.Database) error {
 		ci := conversationIndex(db, conversationID)
 		if ci < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		validated, err := validateMCPToolGrants(db, grants)
 		if err != nil {

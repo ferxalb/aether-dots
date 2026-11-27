@@ -32,7 +32,7 @@ const scopeMarker = "Midnight memory scope:"
 func dotScope(conversationID string) string { return "dot:" + conversationID }
 
 func mcpCommand(db *store.Store, args []string) error {
-	usage := errors.New("usage: aether mcp [list|add <name> <endpoint> [--token-file F|--token-stdin]|refresh <server-id>|remove <server-id>|grant <dot-id> <server-id> <tool>...|revoke <dot-id>]")
+	usage := errors.New("usage: aether mcp [list|add <name> <endpoint> [--token-file F|--token-stdin]|refresh <server-id>|remove <server-id>|grant <agent-id> <server-id> <tool>...|revoke <agent-id>]")
 	if len(args) == 0 {
 		return usage
 	}
@@ -81,7 +81,7 @@ func mcpCommand(db *store.Store, args []string) error {
 		return db.RemoveMCPServer(args[1])
 	case "grant":
 		fs := flag.NewFlagSet("mcp grant", flag.ContinueOnError)
-		accept := fs.Bool("accept-model-disclosure", false, "acknowledge tool inputs/outputs may be sent to the Dot's model provider")
+		accept := fs.Bool("accept-model-disclosure", false, "acknowledge tool inputs/outputs may be sent to the agent's model provider")
 		positional, flags := splitFlags(args[1:])
 		if err := fs.Parse(flags); err != nil {
 			return err
@@ -224,7 +224,7 @@ func grantTools(db *store.Store, dotID, serverID string, names []string, accept 
 	}
 	conversation, ok := conversationFor(db, dotID)
 	if !ok {
-		return errors.New("Dot not found")
+		return errors.New("Agent not found")
 	}
 	grants := append([]task.MCPToolGrant(nil), conversation.MCPToolGrants...)
 	for _, name := range names {
@@ -262,7 +262,7 @@ func conversationFor(db *store.Store, id string) (task.Conversation, bool) {
 
 // midnightCommand wires a Dot to a user-started loopback Midnight server.
 func midnightCommand(db *store.Store, args []string) error {
-	usage := errors.New("usage: aether midnight enable <dot-id> --endpoint http://127.0.0.1:<port>/mcp --token-file F|--token-stdin --accept-model-disclosure [--code] [--forget]")
+	usage := errors.New("usage: aether midnight enable <agent-id> --endpoint http://127.0.0.1:<port>/mcp --token-file F|--token-stdin --accept-model-disclosure [--code] [--forget]")
 	if len(args) >= 1 && args[0] == "server" {
 		return midnightServerCommand(db, args[1:])
 	}
@@ -272,7 +272,7 @@ func midnightCommand(db *store.Store, args []string) error {
 	positional, flags := splitFlags(args[1:])
 	fs := flag.NewFlagSet("midnight enable", flag.ContinueOnError)
 	endpoint := fs.String("endpoint", "", "loopback Midnight MCP endpoint")
-	accept := fs.Bool("accept-model-disclosure", false, "acknowledge memories and code snippets may be sent to the Dot's model provider")
+	accept := fs.Bool("accept-model-disclosure", false, "acknowledge memories and code snippets may be sent to the agent's model provider")
 	code := fs.Bool("code", false, "also grant read-only code retrieval tools")
 	forget := fs.Bool("forget", false, "also grant the forget tool")
 	tokenFile, tokenStdin := tokenFlags(fs)
@@ -291,7 +291,7 @@ func midnightCommand(db *store.Store, args []string) error {
 	}
 	conversation, ok := conversationFor(db, positional[0])
 	if !ok {
-		return errors.New("Dot not found")
+		return errors.New("Agent not found")
 	}
 	normalized, err := mcpclient.NormalizeEndpoint(*endpoint)
 	if err != nil {
@@ -347,7 +347,7 @@ func midnightCommand(db *store.Store, args []string) error {
 			return err
 		}
 	}
-	fmt.Printf("Dot %s can use Midnight tools [%s] on scope %s\n", conversation.ID, strings.Join(tools, ", "), dotScope(conversation.ID))
+	fmt.Printf("Agent %s can use Midnight tools [%s] on scope %s\n", conversation.ID, strings.Join(tools, ", "), dotScope(conversation.ID))
 	return nil
 }
 
@@ -390,7 +390,7 @@ func midnightServerFor(conversation task.Conversation, servers []task.MCPServer,
 			own = append(own, server)
 		case strings.HasSuffix(server.Name, "dot-"+conversation.ID) || strings.Contains(server.Endpoint, "/dot-"):
 			// A per-Dot record that is not this Dot's, or a mislabelled one.
-			return task.MCPServer{}, fmt.Errorf("server %q is labelled for a different Dot; run `aether midnight enable %s`", server.Name, conversation.ID)
+			return task.MCPServer{}, fmt.Errorf("server %q is labelled for a different agent; run `aether midnight enable %s`", server.Name, conversation.ID)
 		default:
 			other = append(other, server)
 		}
@@ -399,20 +399,20 @@ func midnightServerFor(conversation task.Conversation, servers []task.MCPServer,
 	case len(own) == 1:
 		return own[0], nil
 	case len(own) > 1:
-		return task.MCPServer{}, errors.New("ambiguous: several Midnight connections for this Dot; remove duplicates with `aether mcp remove`")
+		return task.MCPServer{}, errors.New("ambiguous: several Midnight connections for this agent; remove duplicates with `aether mcp remove`")
 	case len(other) == 1:
 		return other[0], nil
 	case len(other) > 1:
-		return task.MCPServer{}, fmt.Errorf("ambiguous: %d servers grant %q to this Dot; run `aether midnight enable %s` to select a dedicated connection", len(other), tool, conversation.ID)
+		return task.MCPServer{}, fmt.Errorf("ambiguous: %d servers grant %q to this agent; run `aether midnight enable %s` to select a dedicated connection", len(other), tool, conversation.ID)
 	case granted:
 		return task.MCPServer{}, fmt.Errorf("the grant for %q is stale; run `aether mcp refresh` and re-grant", tool)
 	}
-	return task.MCPServer{}, fmt.Errorf("tool %q is not granted to this Dot; run `aether midnight enable %s` (add --forget for forget)", tool, conversation.ID)
+	return task.MCPServer{}, fmt.Errorf("tool %q is not granted to this agent; run `aether midnight enable %s` (add --forget for forget)", tool, conversation.ID)
 }
 
 // memoryCommand performs user-initiated memory operations against Midnight.
 func memoryCommand(db *store.Store, args []string) error {
-	usage := errors.New("usage: aether memory <remember|recall|list|forget> <dot-id> ...\n  remember <dot-id> <text> [--derived] [--supersedes <id>] [--source-uri URI]\n  recall <dot-id> <query> [--limit N]\n  list <dot-id>\n  forget <dot-id> <memory-id>")
+	usage := errors.New("usage: aether memory <remember|recall|list|forget> <agent-id> ...\n  remember <agent-id> <text> [--derived] [--supersedes <id>] [--source-uri URI]\n  recall <agent-id> <query> [--limit N]\n  list <agent-id>\n  forget <agent-id> <memory-id>")
 	if len(args) < 2 {
 		return usage
 	}
@@ -437,7 +437,7 @@ func memoryCommand(db *store.Store, args []string) error {
 		}
 	}
 	if !found {
-		return errors.New("Dot not found")
+		return errors.New("Agent not found")
 	}
 	scope := dotScope(conversation.ID)
 	var tool string

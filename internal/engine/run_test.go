@@ -61,7 +61,7 @@ func TestRunStoresChatReplyWithoutUserSelectedFileAccess(t *testing.T) {
 	}
 	got, ok := db.GetDot(dot.ID)
 	if !ok || got.Status != task.Done {
-		t.Fatalf("Dot status=%s found=%t", got.Status, ok)
+		t.Fatalf("Agent status=%s found=%t", got.Status, ok)
 	}
 	snapshot := db.Snapshot()
 	if len(snapshot.Conversations[0].Messages) != 2 || snapshot.Conversations[0].Messages[1].Content != generator.reply || streamed.String() != generator.reply {
@@ -157,7 +157,7 @@ func TestRoutineTestUsesSharedConversationEngineAndRecordsHistory(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Routine Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Routine agent"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,14 +59,14 @@ func TestGitHubToolsArePerDotReadOnlyAndRecheckGrantsAtInvocation(t *testing.T) 
 	}
 	withoutDotGrant := WithGitHubTools(db, parentDot.ID, base, service).(model.Generator)
 	if containsTool(withoutDotGrant.Config.Tools, "aether_github_get_repository") {
-		t.Fatal("connected but ungranted Dot received GitHub tools")
+		t.Fatal("connected but ungranted agent received GitHub tools")
 	}
 	if err := db.SetConversationGitHubGrants(parentConversation.ID, []int64{101}, true); err != nil {
 		t.Fatal(err)
 	}
 	parentWithGrant := WithGitHubTools(db, parentDot.ID, base, service).(model.Generator)
 	if !containsTool(parentWithGrant.Config.Tools, "aether_github_get_repository") {
-		t.Fatal("authorized Dot did not receive the read-only GitHub catalog")
+		t.Fatal("authorized agent did not receive the read-only GitHub catalog")
 	}
 	childWithParentProvider := WithGitHubTools(db, childDot.ID, base, service).(model.Generator)
 	if containsTool(childWithParentProvider.Config.Tools, "aether_github_get_repository") {
@@ -125,7 +125,7 @@ func TestGitHubToolsArePerDotReadOnlyAndRecheckGrantsAtInvocation(t *testing.T) 
 	}
 	events, ok := db.GetDot(parentDot.ID)
 	if !ok || len(events.Events) == 0 || events.Events[len(events.Events)-1].Type != "github_read" {
-		t.Fatalf("GitHub read activity was not recorded in the Dot event chain: %#v", events.Events)
+		t.Fatalf("GitHub read activity was not recorded in the agent event chain: %#v", events.Events)
 	}
 }
 
@@ -154,7 +154,7 @@ func TestGitHubRepositoryListingChecksCurrentAccessAndEnforcesLimits(t *testing.
 		t.Fatal(err)
 	}
 	spaceID := db.Snapshot().Spaces[0].ID
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: spaceID, Name: "Repository Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: spaceID, Name: "Repository agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestGitHubToolsStopWhenGHAccountChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	spaceID := db.Snapshot().Spaces[0].ID
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: spaceID, Name: "Repository Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: spaceID, Name: "Repository agent"})
 	if err != nil {
 		t.Fatal(err)
 	}

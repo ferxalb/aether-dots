@@ -130,7 +130,7 @@ func main() {
 				return
 			}
 		}
-		answer := "Mock reply (no Midnight tools were granted to this Dot)."
+		answer := "Mock reply (no Midnight tools were granted to this agent)."
 		if toolResult != "" {
 			answer = "Grounded in Midnight: " + clip(toolResult, 1200)
 		}

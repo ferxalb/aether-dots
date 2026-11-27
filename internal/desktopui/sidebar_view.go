@@ -23,8 +23,8 @@ func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top, width float32, vibran
 			ui.Row(c.Key("sidebar-heading")).FillWidth().Height(top - 8).Shrink(0).
 				AlignItems(ui.Center).DragWindow().Children(func() {
 				ui.Spacer(c)
-				appIconButton(c, theme, "sidebar-create-dot", "New Dot", iconPlus).
-					Tooltip("Create a new Dot · ⌘N").OnClick(a.startCreator)
+				appIconButton(c, theme, "sidebar-create-dot", "New agent", iconPlus).
+					Tooltip("Create a new agent · ⌘N").OnClick(a.startCreator)
 			})
 			a.sidebarSearch(c, theme)
 		}
@@ -32,8 +32,8 @@ func (a *app) sidebar(c *ui.Context, theme *ui.Theme, top, width float32, vibran
 		a.dotList(c, theme, compact, latestDots)
 		if compact {
 			ui.Row(c.Key("rail-create")).FillWidth().Center().Children(func() {
-				if appIconButton(c, theme, "sidebar-create-dot", "New Dot", iconPlus).
-					Tooltip("Create a new Dot · ⌘N").Clicked() {
+				if appIconButton(c, theme, "sidebar-create-dot", "New agent", iconPlus).
+					Tooltip("Create a new agent · ⌘N").Clicked() {
 					a.startCreator()
 				}
 			})
@@ -51,7 +51,7 @@ func (a *app) sidebarSearch(c *ui.Context, theme *ui.Theme) {
 		Padding(0, 9).Radius(workspaceControlRadius).Border(1, border).Children(func() {
 		ui.Icon(c, iconSearch).Size(14, 14).TextColor(theme.TextMuted)
 		ui.TextInputBase(c.Key("sidebar-search"), &a.searchQuery).
-			FillWidth().MinWidth(0).Placeholder("Search Dots").Label("Search Dots").
+			FillWidth().MinWidth(0).Placeholder("Search agents").Label("Search agents").
 			Padding(5, 0).FocusRing(false).
 			Bind(&a.sidebarSearchInput)
 	})
@@ -71,9 +71,9 @@ func (a *app) dotList(c *ui.Context, theme *ui.Theme, compact bool, latestDots m
 	}
 	conversations, legacyDots := a.sidebarResults.conversations, a.sidebarResults.legacyDots
 	if len(conversations) == 0 && len(legacyDots) == 0 {
-		message := "No Dots yet"
+		message := "No agents yet"
 		if query != "" {
-			message = "No Dots match your search"
+			message = "No agents match your search"
 		}
 		ui.Text(c, message).FontSize(11).TextColor(theme.TextMuted).Padding(7, 8).FillWidth().Grow(1)
 		return

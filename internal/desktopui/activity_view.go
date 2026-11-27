@@ -22,7 +22,7 @@ func (a *app) activityView(c *ui.Context, theme *ui.Theme) {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 				ui.Column(c).Gap(4).Children(func() {
 					ui.Text(c, "Activity").FontSize(22).Bold()
-					ui.Text(c, "See what each Dot is doing, stop individual runs, and review response speed.").
+					ui.Text(c, "See what each agent is doing, stop individual runs, and review response speed.").
 						FontSize(12).TextColor(theme.TextMuted)
 				})
 				ui.Spacer(c)
@@ -32,8 +32,8 @@ func (a *app) activityView(c *ui.Context, theme *ui.Theme) {
 			})
 			if len(items) == 0 {
 				ui.Column(c).FillWidth().Gap(6).Padding(22).Radius(14).Background(theme.Surface).Border(1, theme.Border).Children(func() {
-					ui.Text(c, "No Dot activity yet").FontSize(14).Bold()
-					ui.Text(c, "Send a message to a Dot and its run will appear here.").FontSize(12).TextColor(theme.TextMuted)
+					ui.Text(c, "No agent activity yet").FontSize(14).Bold()
+					ui.Text(c, "Send a message to an agent and its run will appear here.").FontSize(12).TextColor(theme.TextMuted)
 				})
 				return
 			}

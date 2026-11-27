@@ -15,7 +15,7 @@ import (
 
 var (
 	ErrRoutineNotDue      = errors.New("routine is not due")
-	ErrDotAlreadyActive   = errors.New("a Dot delegation is already queued or running")
+	ErrDotAlreadyActive   = errors.New("an agent delegation is already queued or running")
 	ErrRoutineRateLimited = errors.New("Automation run rate limit exceeded")
 )
 
@@ -40,22 +40,22 @@ func (s *Store) CreateRoutine(in task.CreateRoutine) (task.Routine, error) {
 	}
 	err = s.change(func(db *task.Database) error {
 		if conversationIndex(db, in.ConversationID) < 0 {
-			return errors.New("routine Dot not found")
+			return errors.New("routine agent not found")
 		}
 		if in.GitHubEnabled && !conversationHasValidGitHubGrant(db, in.ConversationID) {
-			return errors.New("enable GitHub for a Routine only after its Dot has an authorized repository grant")
+			return errors.New("enable GitHub for a Routine only after its agent has an authorized repository grant")
 		}
 		count := 0
 		for _, existing := range db.Routines {
 			if existing.ConversationID == in.ConversationID {
 				count++
 				if strings.EqualFold(existing.Name, in.Name) {
-					return fmt.Errorf("routine %q already exists for this Dot", in.Name)
+					return fmt.Errorf("routine %q already exists for this agent", in.Name)
 				}
 			}
 		}
 		if count >= 50 {
-			return errors.New("a Dot can have at most 50 routines")
+			return errors.New("an agent can have at most 50 routines")
 		}
 		db.Routines = append(db.Routines, routine)
 		return nil
@@ -81,10 +81,10 @@ func (s *Store) UpdateRoutine(id string, in task.CreateRoutine) error {
 			}
 		}
 		if conversationIndex(db, in.ConversationID) < 0 {
-			return errors.New("routine Dot not found")
+			return errors.New("routine agent not found")
 		}
 		if in.GitHubEnabled && !conversationHasValidGitHubGrant(db, in.ConversationID) {
-			return errors.New("enable GitHub for a Routine only after its Dot has an authorized repository grant")
+			return errors.New("enable GitHub for a Routine only after its agent has an authorized repository grant")
 		}
 		count := 0
 		for _, other := range db.Routines {
@@ -93,11 +93,11 @@ func (s *Store) UpdateRoutine(id string, in task.CreateRoutine) error {
 			}
 			count++
 			if strings.EqualFold(other.Name, in.Name) {
-				return fmt.Errorf("routine %q already exists for this Dot", in.Name)
+				return fmt.Errorf("routine %q already exists for this agent", in.Name)
 			}
 		}
 		if count >= 50 {
-			return errors.New("a Dot can have at most 50 routines")
+			return errors.New("an agent can have at most 50 routines")
 		}
 		routine := &db.Routines[ri]
 		intervalChanged := routine.IntervalSeconds != in.IntervalSeconds
@@ -124,7 +124,7 @@ func (s *Store) SetRoutineGitHubEnabled(id string, enabled bool) error {
 			return nil
 		}
 		if enabled && !conversationHasValidGitHubGrant(db, db.Routines[i].ConversationID) {
-			return errors.New("grant this Dot a GitHub repository before enabling Routine access")
+			return errors.New("grant this agent a GitHub repository before enabling Routine access")
 		}
 		db.Routines[i].GitHubEnabled = enabled
 		db.Routines[i].UpdatedAt = time.Now().UTC()
@@ -269,7 +269,7 @@ func (s *Store) startRoutine(id string, now time.Time, scheduled bool) (task.Rou
 			startErr = ErrRoutineRateLimited
 			return nil
 		}
-		content := "Routine: " + routine.Name + "\n\nRun the following instruction using the current Dot profile and recent chat context. Report missing or stale inputs instead of guessing.\n\n" + routine.Prompt
+		content := "Routine: " + routine.Name + "\n\nRun the following instruction using the current agent profile and recent chat context. Report missing or stale inputs instead of guessing.\n\n" + routine.Prompt
 		created, _, err := createConversationRun(db, routine.ConversationID, content, routine.ID, now)
 		if err != nil {
 			return err

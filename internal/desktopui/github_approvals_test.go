@@ -85,7 +85,7 @@ func TestApprovalsTrayShowsFullTextWarningsAndSidebarBadge(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"Dots can only propose. Nothing reaches GitHub until you approve the exact text below. Approved items are published as @octocat.",
+		"Agents can only propose. Nothing reaches GitHub until you approve the exact text below. Approved items are published as @octocat.",
 		"Comment on #7 · octocat/alpha", "Waiting", "Approve and send", "Edit", "Reject",
 		"Content " + p.ContentHash[:12],
 		"Mentions @maintainer: GitHub will notify them.",
@@ -245,7 +245,7 @@ func TestWriteGrantPanelExplainsMissingReadGrant(t *testing.T) {
 	a.openConversationProfile()
 	tester := ui.NewTester(a.view, 1120, 760)
 	clickUIControl(t, tester, "GitHub write proposals", 1120, 760) // scroll the panel into view
-	if !tester.HasText("Save a GitHub read grant for at least one repository above first. Write proposals only exist for repositories this Dot can already read.") {
+	if !tester.HasText("Save a GitHub read grant for at least one repository above first. Write proposals only exist for repositories this agent can already read.") {
 		t.Fatalf("%q", tester.Texts())
 	}
 	if tester.HasText("Save write permissions") {

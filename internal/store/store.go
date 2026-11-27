@@ -383,7 +383,7 @@ func (s *Store) AppendEvent(id, kind, message string) error {
 	return s.change(func(db *task.Database) error {
 		i := dotIndex(db, id)
 		if i < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		appendEvent(&db.Dots[i], kind, message)
 		db.Dots[i].UpdatedAt = time.Now().UTC()
@@ -410,7 +410,7 @@ func (s *Store) setStatus(id string, status task.Status, message string) error {
 	return s.change(func(db *task.Database) error {
 		i := dotIndex(db, id)
 		if i < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		db.Dots[i].Status = status
 		db.Dots[i].UpdatedAt = time.Now().UTC()
@@ -423,7 +423,7 @@ func (s *Store) SetCheckpoint(id, checkpoint string) error {
 	return s.change(func(db *task.Database) error {
 		i := dotIndex(db, id)
 		if i < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		db.Dots[i].Checkpoint = checkpoint
 		db.Dots[i].UpdatedAt = time.Now().UTC()
@@ -507,7 +507,7 @@ func verifyEvents(db task.Database) error {
 		var previous string
 		for i, e := range dot.Events {
 			if e.Sequence != uint64(i+1) || e.PrevHash != previous || e.Hash != eventHash(e) {
-				return fmt.Errorf("Dot %s event %d is invalid", dot.ID, i+1)
+				return fmt.Errorf("Agent %s event %d is invalid", dot.ID, i+1)
 			}
 			previous = e.Hash
 		}
@@ -528,7 +528,7 @@ func (s *Store) verifyEventsIncremental(db task.Database) error {
 		for i := start; i < len(dot.Events); i++ {
 			e := dot.Events[i]
 			if e.Sequence != uint64(i+1) || e.PrevHash != previous || e.Hash != eventHash(e) {
-				return fmt.Errorf("Dot %s event %d is invalid", dot.ID, i+1)
+				return fmt.Errorf("Agent %s event %d is invalid", dot.ID, i+1)
 			}
 			previous = e.Hash
 		}

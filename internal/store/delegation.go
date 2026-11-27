@@ -97,7 +97,7 @@ func (s *Store) ConversationResult(dotID string) (string, bool) {
 // and limits it to specialists in the source Dot's Space.
 func validateDelegates(db *task.Database, sourceID, spaceID string, requested []string) ([]string, error) {
 	if len(requested) > task.MaxDelegatedDots {
-		return nil, fmt.Errorf("a Dot can be granted access to at most %d specialists", task.MaxDelegatedDots)
+		return nil, fmt.Errorf("an agent can be granted access to at most %d specialists", task.MaxDelegatedDots)
 	}
 	seen := make(map[string]bool, len(requested))
 	grants := make([]string, 0, len(requested))
@@ -107,14 +107,14 @@ func validateDelegates(db *task.Database, sourceID, spaceID string, requested []
 			continue
 		}
 		if id == sourceID {
-			return nil, errors.New("a Dot cannot delegate to itself")
+			return nil, errors.New("an agent cannot delegate to itself")
 		}
 		targetIndex := conversationIndex(db, id)
 		if targetIndex < 0 {
-			return nil, errors.New("a delegated Dot no longer exists")
+			return nil, errors.New("a delegated agent no longer exists")
 		}
 		if db.Conversations[targetIndex].SpaceID != spaceID {
-			return nil, errors.New("delegation is limited to Dots in the same Space")
+			return nil, errors.New("delegation is limited to agents in the same Space")
 		}
 		seen[id] = true
 		grants = append(grants, id)
@@ -145,27 +145,27 @@ func (s *Store) CreateDelegatedConversationRun(parentDotID, targetConversationID
 	err := s.change(func(db *task.Database) error {
 		parentIndex := dotIndex(db, parentDotID)
 		if parentIndex < 0 {
-			return errors.New("requesting Dot no longer exists")
+			return errors.New("requesting agent no longer exists")
 		}
 		parent := &db.Dots[parentIndex]
 		if parent.Status != task.Running || parent.ConversationID == "" {
-			return errors.New("only a running conversation Dot can delegate a task")
+			return errors.New("only a running conversation agent can delegate a task")
 		}
 		parentConversationIndex := conversationIndex(db, parent.ConversationID)
 		targetIndex := conversationIndex(db, targetConversationID)
 		if parentConversationIndex < 0 || targetIndex < 0 {
-			return errors.New("requesting or delegated Dot no longer exists")
+			return errors.New("requesting or delegated agent no longer exists")
 		}
 		parentConversation := &db.Conversations[parentConversationIndex]
 		target := &db.Conversations[targetIndex]
 		if target.ID == parentConversation.ID {
-			return errors.New("a Dot cannot delegate to itself")
+			return errors.New("an agent cannot delegate to itself")
 		}
 		if parent.SpaceID != parentConversation.SpaceID || target.SpaceID != parentConversation.SpaceID {
-			return errors.New("delegation is limited to Dots in the same Space")
+			return errors.New("delegation is limited to agents in the same Space")
 		}
 		if !containsString(parentConversation.DelegatedDotIDs, target.ID) {
-			return errors.New("this Dot is not allowed to consult the selected specialist")
+			return errors.New("this agent is not allowed to consult the selected specialist")
 		}
 		delegationCount := 0
 		for _, existing := range db.Dots {
@@ -197,7 +197,7 @@ func (s *Store) CreateDelegatedConversationRun(parentDotID, targetConversationID
 			return err
 		}
 		childIndex := len(db.Dots) - 1
-		appendEvent(&db.Dots[childIndex], "delegated_in", "A typed task was received from another Dot.")
+		appendEvent(&db.Dots[childIndex], "delegated_in", "A typed task was received from another agent.")
 		db.Dots[childIndex].UpdatedAt = now
 		delegated = db.Dots[childIndex]
 		parent = &db.Dots[parentIndex]
@@ -225,7 +225,7 @@ func (s *Store) AppendConversationHandoffResult(parentDotID, sourceDotID, report
 		parentIndex := dotIndex(db, parentDotID)
 		sourceIndex := dotIndex(db, sourceDotID)
 		if parentIndex < 0 || sourceIndex < 0 {
-			return errors.New("requesting or delegated Dot no longer exists")
+			return errors.New("requesting or delegated agent no longer exists")
 		}
 		parent, source := &db.Dots[parentIndex], &db.Dots[sourceIndex]
 		if parent.Status != task.Running || source.Status != task.Done || source.DelegatedByDotID != parent.ID {

@@ -47,7 +47,7 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 		})
 		settingsDivider(c, theme)
 
-		settingsRow(c, theme, "Provider", "Who runs your Dots' replies.", func() {
+		settingsRow(c, theme, "Provider", "Who runs your agents' replies.", func() {
 			selector := dropdownSelect(c, theme, "settings-provider-select", "AI provider", &a.providerSelection,
 				stringDropdownOptions([]string{"OpenAI", "Anthropic Claude", "xAI Grok", "OpenRouter", "Custom OpenAI-compatible"}, nil), busy)
 			if selector.Changed() {
@@ -124,7 +124,7 @@ func (a *app) providerSettings(c *ui.Context, theme *ui.Theme) {
 			}
 		}
 		ui.Text(c, "Your data and privacy").FontSize(11).Bold().TextColor(theme.TextMuted)
-		ui.Text(c, privacyDescription+" API keys are never written to preferences, Dot data, or logs.").
+		ui.Text(c, privacyDescription+" API keys are never written to preferences, agent data, or logs.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 	})
 	if a.prefs.Provider == string(model.ProviderOpenRouter) {
@@ -236,15 +236,15 @@ func providerKeyLabel(provider string) string {
 func providerPrivacyDescription(provider string) string {
 	switch model.ProviderID(provider) {
 	case model.ProviderOpenRouter:
-		return "AETHER sends your message, Dot profile, saved chat history, and any named skill to OpenRouter, which routes the request to the selected model provider. The picker uses model metadata to omit native functions when a model reports that it does not support them."
+		return "AETHER sends your message, agent profile, saved chat history, and any named skill to OpenRouter, which routes the request to the selected model provider. The picker uses model metadata to omit native functions when a model reports that it does not support them."
 	case model.ProviderCompatible:
-		return "AETHER sends your message, Dot profile, saved chat history, and any named skill to the endpoint you configure. The model can request only AETHER's local time and calculator functions if your endpoint supports them."
+		return "AETHER sends your message, agent profile, saved chat history, and any named skill to the endpoint you configure. The model can request only AETHER's local time and calculator functions if your endpoint supports them."
 	case model.ProviderAnthropic:
-		return "AETHER sends your message, Dot profile, compact chat context, shared Space notes, and any named skill to Anthropic's Messages API. Only explicitly listed AETHER client functions are available; provider-side computer, browser, and web search tools stay off."
+		return "AETHER sends your message, agent profile, compact chat context, shared Space notes, and any named skill to Anthropic's Messages API. Only explicitly listed AETHER client functions are available; provider-side computer, browser, and web search tools stay off."
 	case model.ProviderXAI:
-		return "AETHER sends your message, Dot profile, compact chat context, shared Space notes, and any named skill to xAI's Responses API. AETHER keeps response storage disabled and exposes only explicitly listed AETHER client functions; xAI web search and X search stay off."
+		return "AETHER sends your message, agent profile, compact chat context, shared Space notes, and any named skill to xAI's Responses API. AETHER keeps response storage disabled and exposes only explicitly listed AETHER client functions; xAI web search and X search stay off."
 	default:
-		return "AETHER sends your message, Dot profile, saved chat history, and any named skill to OpenAI. Dots can't access files, folders, or other apps. AETHER asks the Responses API not to store a separate copy of each reply."
+		return "AETHER sends your message, agent profile, saved chat history, and any named skill to OpenAI. Agents can't access files, folders, or other apps. AETHER asks the Responses API not to store a separate copy of each reply."
 	}
 }
 

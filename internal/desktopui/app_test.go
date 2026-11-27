@@ -17,30 +17,30 @@ func TestWorkspaceCreatesDotImmediatelyAndOpensChat(t *testing.T) {
 	if tester.HasText("Local access") || tester.HasText("Choose a folder") || tester.HasText("Execution") {
 		t.Fatalf("welcome still exposes local folder setup: %q", tester.Texts())
 	}
-	if err := tester.Click("New Dot"); err != nil {
+	if err := tester.Click("New agent"); err != nil {
 		t.Fatal(err)
 	}
 	snapshot := a.db.Snapshot()
 	if len(snapshot.Conversations) != 1 {
-		t.Fatalf("New Dot created %d profiles, want one", len(snapshot.Conversations))
+		t.Fatalf("New agent created %d profiles, want one", len(snapshot.Conversations))
 	}
 	created := snapshot.Conversations[0]
-	if created.Name != "New Dot" || created.Purpose != "" || created.Icon == "" || created.Color == "" {
-		t.Fatalf("new Dot should be immediately created with editable defaults: %#v", created)
+	if created.Name != "New agent" || created.Purpose != "" || created.Icon == "" || created.Color == "" {
+		t.Fatalf("new agent should be immediately created with editable defaults: %#v", created)
 	}
 	if a.selectedConversationID != created.ID || !a.hasConversationChat() || !tester.HasText("Start with a prompt") {
-		t.Fatalf("new Dot did not open its chat: selected=%q route=%v texts=%q", a.selectedConversationID, a.hasConversationChat(), tester.Texts())
+		t.Fatalf("new agent did not open its chat: selected=%q route=%v texts=%q", a.selectedConversationID, a.hasConversationChat(), tester.Texts())
 	}
 	for _, text := range tester.Texts() {
 		if text == "Read" || text == "Write" || text == "Choose a folder" {
-			t.Fatalf("new Dot chat exposes local folder access: %q", tester.Texts())
+			t.Fatalf("new agent chat exposes local folder access: %q", tester.Texts())
 		}
 	}
 }
 
 func TestDotProfileCanBeCustomizedFromChat(t *testing.T) {
 	a := newMessengerTestApp(t)
-	conversation := createTestConversation(t, a, a.selectedSpaceID, "New Dot", "")
+	conversation := createTestConversation(t, a, a.selectedSpaceID, "New agent", "")
 	a.selectConversation(conversation.ID)
 	tester := ui.NewTester(a.view, 960, 720)
 	if err := tester.Click("Customize"); err != nil {
@@ -76,7 +76,7 @@ func TestDotProfileCanBeCustomizedFromChat(t *testing.T) {
 
 func TestSettingsCanReturnToSelectedDotChat(t *testing.T) {
 	a := newMessengerTestApp(t)
-	conversation := createTestConversation(t, a, a.selectedSpaceID, "Persistent selection", "Keep this Dot selected.")
+	conversation := createTestConversation(t, a, a.selectedSpaceID, "Persistent selection", "Keep this agent selected.")
 	a.selectConversation(conversation.ID)
 	a.credentialChecked = true
 	tester := ui.NewTester(a.view, 1120, 760)
@@ -87,7 +87,7 @@ func TestSettingsCanReturnToSelectedDotChat(t *testing.T) {
 		t.Fatalf("opening Settings lost selection: settings=%v conversation=%q", a.settingsOpen, a.selectedConversationID)
 	}
 	settings := ui.NewTester(a.view, 1120, 760)
-	if !settings.HasText("Appearance") || !settings.HasText("Choose how AETHER looks and how your Dots work.") ||
+	if !settings.HasText("Appearance") || !settings.HasText("Choose how AETHER looks and how your agents work.") ||
 		settings.HasText("Chat only · no file access") {
 		t.Fatalf("settings overview is missing user-facing appearance settings or retains the old sidebar slogan: %q", settings.Texts())
 	}
@@ -95,8 +95,8 @@ func TestSettingsCanReturnToSelectedDotChat(t *testing.T) {
 		label, content string
 	}{
 		{"AI & responses", "Choose a provider for replies and scheduled runs."},
-		{"Skills", "Save reusable instructions and choose when a Dot should use them."},
-		{"Routines", "Have a Dot repeat a prompt on a schedule."},
+		{"Skills", "Save reusable instructions and choose when an agent should use them."},
+		{"Routines", "Have an agent repeat a prompt on a schedule."},
 	} {
 		if err := settings.Click(section.label); err != nil {
 			t.Fatal(err)
@@ -115,7 +115,7 @@ func TestSettingsCanReturnToSelectedDotChat(t *testing.T) {
 
 func TestSettingsCanSaveSharedSkillAndRoutine(t *testing.T) {
 	a := newMessengerTestApp(t)
-	conversation := createTestConversation(t, a, a.selectedSpaceID, "Automation Dot", "Use the latest chat context.")
+	conversation := createTestConversation(t, a, a.selectedSpaceID, "Automation agent", "Use the latest chat context.")
 	a.selectConversation(conversation.ID)
 	a.settingsOpen = true
 	tester := ui.NewTester(a.view, 1120, 760)

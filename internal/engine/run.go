@@ -34,25 +34,25 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 	}
 	dot, ok := db.GetDot(dotID)
 	if !ok {
-		return errors.New("Dot not found")
+		return errors.New("Agent not found")
 	}
 	if dot.ConversationID == "" {
-		return fail(db, dotID, errors.New("this legacy task has no Dot conversation and cannot be run"))
+		return fail(db, dotID, errors.New("this legacy task has no agent conversation and cannot be run"))
 	}
 	if dot.Status == task.Running {
 		// Running with no live owner means the previous process crashed.
 		if _, err := db.RecoverOrphanedRun(dotID); err != nil {
 			if errors.Is(err, store.ErrRunOwned) {
-				return errors.New("Dot already has an active run")
+				return errors.New("Agent already has an active run")
 			}
 			return err
 		}
 		if dot, ok = db.GetDot(dotID); !ok || dot.Status == task.Running {
-			return errors.New("Dot already has an active run")
+			return errors.New("Agent already has an active run")
 		}
 	}
 	if dot.Status == task.Done {
-		return errors.New("Dot message is already complete")
+		return errors.New("Agent message is already complete")
 	}
 	if generator == nil {
 		return waitForInput(db, dotID, "Connect a model in Settings before sending messages.")
@@ -67,7 +67,7 @@ func RunWithProgress(ctx context.Context, db *store.Store, dotID string, generat
 	if err != nil {
 		return fail(db, dotID, err)
 	}
-	if err := db.StartRun(dotID, "Preparing a reply from this Dot's profile and chat history.", "generating response"); err != nil {
+	if err := db.StartRun(dotID, "Preparing a reply from this agent's profile and chat history.", "generating response"); err != nil {
 		return err
 	}
 	progress()
@@ -141,7 +141,7 @@ func waitForInput(db *store.Store, id, message string) error {
 
 func pause(db *store.Store, id string) error {
 	_ = db.SetCheckpoint(id, "safe to retry this message")
-	_ = db.SetStatus(id, task.Paused, "Reply paused. Retry the message to ask the Dot again.")
+	_ = db.SetStatus(id, task.Paused, "Reply paused. Retry the message to ask the agent again.")
 	return context.Canceled
 }
 

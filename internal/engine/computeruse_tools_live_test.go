@@ -89,9 +89,9 @@ func TestLiveComputerUseMusicControl(t *testing.T) {
 			if len(storedDot.Events) < 3 {
 				t.Fatalf("AETHER recorded %d Music access events, want at least 3", len(storedDot.Events))
 			}
-			t.Log("AETHER per-Dot Music tool exercised bounded pause/play/pause controls; cleanup restores the initial playback state when needed")
+			t.Log("AETHER per-agent Music tool exercised bounded pause/play/pause controls; cleanup restores the initial playback state when needed")
 			return
 		}
 	}
-	t.Fatal("diagnostic Dot was not persisted")
+	t.Fatal("diagnostic agent was not persisted")
 }

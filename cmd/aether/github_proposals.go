@@ -13,6 +13,7 @@ import (
 
 	"aether-dots/internal/engine"
 	"aether-dots/internal/integrations/github"
+	"aether-dots/internal/license"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
 )
@@ -63,7 +64,7 @@ func grantGitHubWrites(db *store.Store, args []string) error {
 	}
 	rest := fs.Args()
 	if len(rest) < 2 {
-		return errors.New("usage: aether github write-grant --allow-publish <dot-id> <repo-id>:comment,issue,pr...")
+		return errors.New("usage: aether github write-grant --allow-publish <agent-id> <repo-id>:comment,issue,pr...")
 	}
 	if !*allow {
 		return errors.New("add --allow-publish after reviewing that approved proposals are published under your GitHub account")
@@ -72,10 +73,13 @@ func grantGitHubWrites(db *store.Store, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := license.CurrentFeatures(db.Dir(), time.Now()).Require("GitHub write proposals"); err != nil {
+		return err
+	}
 	if err := db.SetConversationGitHubWriteGrants(rest[0], grants, true); err != nil {
 		return err
 	}
-	fmt.Println("Saved. This Dot can now only propose; nothing is sent until you approve each proposal (`aether github proposals`).")
+	fmt.Println("Saved. This agent can now only propose; nothing is sent until you approve each proposal (`aether github proposals`).")
 	return nil
 }
 
@@ -176,7 +180,7 @@ func printProposal(out io.Writer, db *store.Store, p task.GitHubProposal) {
 			state = string(task.GitHubProposalExpired)
 		}
 	}
-	fmt.Fprintf(out, "Proposal   %s\nState      %s\nDot        %s\nOperation  %s\nRepository %s (%s)\nPublished as @%s\nContent    %s\n",
+	fmt.Fprintf(out, "Proposal   %s\nState      %s\nAgent      %s\nOperation  %s\nRepository %s (%s)\nPublished as @%s\nContent    %s\n",
 		p.ID, state, terminalSafe(name), terminalSafe(engine.ProposalHeadline(p)), terminalSafe(p.RepositoryName), visibility, terminalSafe(p.Account), p.ContentHash)
 	if p.Kind == task.GitHubPRDraft {
 		fmt.Fprintf(out, "Branches   %s -> %s (opens as a draft)\n", terminalSafe(p.Head), terminalSafe(p.Base))

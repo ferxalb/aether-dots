@@ -118,7 +118,7 @@ func benchStore(b *testing.B, runs int) *Store {
 		b.Fatal(err)
 	}
 	for k := 0; k < 20; k++ {
-		c, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: fmt.Sprintf("Dot %d", k)})
+		c, err := s.CreateConversation(task.CreateConversation{SpaceID: s.Snapshot().Spaces[0].ID, Name: fmt.Sprintf("Agent %d", k)})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -171,6 +171,6 @@ func BenchmarkLegacyJSONRewrite(b *testing.B) {
 // task.Dot: add it to dotEqual (and to clone.go if it is a slice or pointer).
 func TestDotEqualCoversEveryField(t *testing.T) {
 	if n := reflect.TypeOf(task.Dot{}).NumField(); n != 16 {
-		t.Fatalf("task.Dot has %d fields; update dotEqual and this count", n)
+		t.Fatalf("task.agent has %d fields; update dotEqual and this count", n)
 	}
 }

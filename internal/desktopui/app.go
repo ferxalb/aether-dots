@@ -179,6 +179,7 @@ type app struct {
 	savedPrefs                 preferences
 	routineSchedulerStarted    bool
 	routinePreferences         *atomic.Pointer[preferences]
+	license                    licenseUI
 }
 
 func Run(dataDir string) error {
@@ -203,6 +204,7 @@ func Run(dataDir string) error {
 	} else {
 		a.computerUseStatus = "Not installed"
 	}
+	a.initLicense()
 	a.routinePreferences = &atomic.Pointer[preferences]{}
 	a.routinePreferences.Store(&prefs)
 	a.refresh()
@@ -211,7 +213,7 @@ func Run(dataDir string) error {
 		show := func() {
 			if a.win == nil || a.win.IsDestroyed() {
 				a.win = mygo.NewWindow(mygo.WindowOptions{
-					Title: "AETHER Dots", Width: 1120, Height: 760, MinWidth: 760, MinHeight: 560,
+					Title: "AETHER", Width: 1120, Height: 760, MinWidth: 760, MinHeight: 560,
 					StateKey: "workspace", Content: ui.View(a.view),
 					TitleBarStyle: mygo.TitleBarHiddenInset, TitleBarHeight: 44,
 					Transparent: true, Vibrancy: mygo.VibrancySidebar,
@@ -226,12 +228,12 @@ func Run(dataDir string) error {
 			show()
 		}
 		menu := mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "Show AETHER Dots", Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
-			{Label: "Create a Dot", Click: func(*mygo.MenuItem, *mygo.Window) { capture() }},
+			{Label: "Show AETHER", Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
+			{Label: "Create an agent", Click: func(*mygo.MenuItem, *mygo.Window) { capture() }},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		})
-		if _, err := mygo.NewTray(mygo.TrayOptions{ID: "aether-dots", Icon: trayIcon(), IconIsTemplate: true, ToolTip: "AETHER Dots", Menu: menu}); err != nil {
+		if _, err := mygo.NewTray(mygo.TrayOptions{ID: "aether-dots", Icon: trayIcon(), IconIsTemplate: true, ToolTip: "AETHER", Menu: menu}); err != nil {
 			log.Printf("menu bar entry unavailable: %v", err)
 			a.adt.Warning("Menu bar unavailable", err.Error())
 		}
@@ -247,6 +249,7 @@ func Run(dataDir string) error {
 		}
 		a.initializeRemoteBridge()
 		a.startRoutineScheduler()
+		a.recheckLicenseIfStale()
 	})
 	err = mygo.App.Run()
 	if a.computerUseInstallCancel != nil {

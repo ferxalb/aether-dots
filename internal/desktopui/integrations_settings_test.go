@@ -11,7 +11,7 @@ import (
 
 func TestIntegrationsTabShowsGitHubComputerUseAndDisabledUpcomingProviders(t *testing.T) {
 	a := newMessengerTestApp(t)
-	conversation := createTestConversation(t, a, a.selectedSpaceID, "Selected Dot", "Keep this Dot selected.")
+	conversation := createTestConversation(t, a, a.selectedSpaceID, "Selected agent", "Keep this agent selected.")
 	a.selectConversation(conversation.ID)
 	ghtest.Install(t, true)
 	a.githubService = github.NewService()
@@ -24,7 +24,7 @@ func TestIntegrationsTabShowsGitHubComputerUseAndDisabledUpcomingProviders(t *te
 	texts := tester.Texts()
 	for _, expected := range []string{
 		"Integrations",
-		"Connect the tools your Dots can work with. You're always in control of what they can access.",
+		"Connect the tools your agents can work with. You're always in control of what they can access.",
 		"GitHub",
 		"Read repositories, issues, pull requests, and CI through your GitHub CLI login. AETHER stores no token.",
 		"Connect GitHub",
@@ -49,12 +49,12 @@ func TestIntegrationsTabShowsGitHubComputerUseAndDisabledUpcomingProviders(t *te
 		}
 	}
 	if a.selectedConversationID != conversation.ID {
-		t.Fatalf("tab navigation lost the selected Dot: %q", a.selectedConversationID)
+		t.Fatalf("tab navigation lost the selected agent: %q", a.selectedConversationID)
 	}
 	if err := tester.Click("Skills"); err != nil {
 		t.Fatal(err)
 	}
-	if !tester.HasText("Save reusable instructions and choose when a Dot should use them.") {
+	if !tester.HasText("Save reusable instructions and choose when an agent should use them.") {
 		t.Fatalf("switching tabs did not preserve the existing Skills section: %q", tester.Texts())
 	}
 	if err := tester.Click("Integrations"); err != nil {

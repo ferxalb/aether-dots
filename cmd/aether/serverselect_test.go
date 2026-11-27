@@ -35,7 +35,7 @@ func TestMidnightServerSelection(t *testing.T) {
 		{"own server preferred over manual", dotWith("a", "s3", "s1"), []task.MCPServer{own, manualA}, "s1", ""},
 		{"single manual server still works", dotWith("a", "s3"), []task.MCPServer{manualA}, "s3", ""},
 		{"two manual servers are ambiguous", dotWith("a", "s3", "s4"), []task.MCPServer{manualA, manualB}, "", "ambiguous"},
-		{"another Dot's record is refused", dotWith("a", "s2"), []task.MCPServer{otherDot}, "", "different Dot"},
+		{"another agent's record is refused", dotWith("a", "s2"), []task.MCPServer{otherDot}, "", "different agent"},
 		{"no grant", dotWith("a"), []task.MCPServer{own}, "", "not granted"},
 		{"grant for a removed server", dotWith("a", "gone"), []task.MCPServer{own}, "", "not granted"},
 	}

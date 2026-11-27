@@ -80,7 +80,7 @@ func (a *app) mcpSettingsPage(c *ui.Context, theme *ui.Theme) {
 					Radius(12).Background(theme.Surface).Border(1, theme.Border).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 						ui.Text(c, server.Name).FontSize(12).Bold()
-						ui.Text(c, mcpServerLocalLabel(server.Endpoint)+fmt.Sprintf(" · %d tools · %d Dots granted", len(server.Tools), mcpGrantingConversationCount(a.snapshot, server.ID))).
+						ui.Text(c, mcpServerLocalLabel(server.Endpoint)+fmt.Sprintf(" · %d tools · %d agents granted", len(server.Tools), mcpGrantingConversationCount(a.snapshot, server.ID))).
 							FontSize(10).TextColor(theme.TextMuted).FillWidth()
 					})
 					if ui.Button(c.Key("mcp-disconnect-"+server.ID), "Disconnect").Padding(7, 10).
@@ -99,11 +99,11 @@ func (a *app) mcpSettingsPage(c *ui.Context, theme *ui.Theme) {
 		if len(a.snapshot.MCPServers) > 0 {
 			ui.Column(c.Key("mcp-next-step")).FillWidth().Gap(6).Padding(14, 16).Radius(12).
 				Background(theme.Accent.Alpha(0.08)).Children(func() {
-				ui.Text(c, "Choose which Dot can use a server").FontSize(12).Bold()
-				ui.Text(c, "Open a Dot's Customize → MCP tools section to grant exact tools. Each Dot keeps its own access.").
+				ui.Text(c, "Choose which agent can use a server").FontSize(12).Bold()
+				ui.Text(c, "Open an agent's Customize → MCP tools section to grant exact tools. Each agent keeps its own access.").
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 				if a.selectedConversationID != "" {
-					if ui.Button(c.Key("mcp-open-dot-access"), "Choose tools for selected Dot").Padding(8, 11).Clicked() {
+					if ui.Button(c.Key("mcp-open-dot-access"), "Choose tools for selected agent").Padding(8, 11).Clicked() {
 						a.settingsOpen = false
 						a.openConversationProfile()
 					}
@@ -240,7 +240,7 @@ func toggleMCPToolGrant(grants []task.MCPToolGrant, serverID string, tool task.M
 		}
 	}
 	if len(grants) >= task.MaxMCPDotToolGrants {
-		return grants, fmt.Errorf("a Dot can be granted at most %d MCP tools", task.MaxMCPDotToolGrants)
+		return grants, fmt.Errorf("an agent can be granted at most %d MCP tools", task.MaxMCPDotToolGrants)
 	}
 	return append(grants, task.MCPToolGrant{ServerID: serverID, ToolName: tool.Name, Fingerprint: tool.Fingerprint}), nil
 }

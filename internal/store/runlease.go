@@ -24,11 +24,11 @@ import (
 var runLeaseID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // ErrRunOwned reports that another live process is executing the Dot.
-var ErrRunOwned = errors.New("this Dot is already running in another AETHER process")
+var ErrRunOwned = errors.New("this agent is already running in another AETHER process")
 
 func (s *Store) runLeasePath(dotID string) (string, error) {
 	if !runLeaseID.MatchString(dotID) {
-		return "", errors.New("invalid Dot id")
+		return "", errors.New("invalid agent id")
 	}
 	return filepath.Join(s.Dir(), "runs", dotID+".lease"), nil
 }
@@ -130,7 +130,7 @@ func (s *Store) RecoverOrphanedRuns() (recovered, live int, err error) {
 			if dot.Checkpoint == "" || dot.Checkpoint == "generating response" {
 				dot.Checkpoint = "previous run ended before the response completed; retry this message"
 			}
-			appendEvent(dot, "interrupted", "The process running this Dot ended before the response completed.")
+			appendEvent(dot, "interrupted", "The process running this agent ended before the response completed.")
 			recovered++
 			_ = syscall.Flock(int(lease.Fd()), syscall.LOCK_UN)
 			_ = lease.Close()

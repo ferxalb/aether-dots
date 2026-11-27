@@ -730,3 +730,58 @@ Implement the first useful AETHER Dots desktop task loop, then make the reposito
 ## 2026-11-09 — Transparent sidebar search
 
 - Replaced the styled input nested inside the search container with a transparent base input. The outer border is the only focus indicator.
+
+## 2026-11-27 — MyGo v0.10.0
+
+- Bumped `github.com/egoist/mygo` from v0.8.3 to v0.10.0 (`go get`, `go mod tidy`). Tidy also promoted `modernc.org/sqlite` to a direct requirement, since `internal/store` imports it.
+- `go tool mygo migrate-ui -write .` changed three element keys in `internal/desktopui/adt.go` from `ui.Row(c).Key(k)` to `ui.Row(c.Key(k))`, the keyed-context form from the MyGo UI migration guide. No other source changes were needed.
+- Verification (Linux): `gofmt`, `CGO_ENABLED=0 go build ./...`, `go tool mygo vet .`, `CGO_ENABLED=0 go test ./...` and `go test -race` for `desktopui`, `store` and `engine` passed. Cross-builds for darwin/arm64 and darwin/amd64 pass.
+- Not verified: the running macOS app (visual pass, toasts/ADT transitions, window chrome) and `make bundle`. Windows does not compile, independently of MyGo: `internal/integrations/mcp/tokens.go` uses `syscall.O_NOFOLLOW`/`syscall.Stat_t` and `internal/midnightsup` has no Windows process code.
+
+## 2026-11-27 (2) — User-facing rename: "Dot" becomes "agent", product shown as "AETHER"
+
+- Why: avoid confusion with another product named "dots".
+- An AST-based rewrite changed only Go string literals (not identifiers, comments, struct tags or import paths): 361 literals in 68 files, plus three `\nDot` cases the word-boundary rule missed. UI, CLI output and help (`<dot-id>` → `<agent-id>`), model system instructions, the GitHub User-Agent and the OpenRouter `X-Title` now say "agent"/"AETHER". README updated the same way; AGENTS.md gained a Naming section.
+- Deliberately unchanged, because changing them orphans existing data, credentials or macOS permissions: Go identifiers, `dots.db`, `dot:<id>` Midnight scopes, `dot-<id>` server records, the `--dot` flag, the `AETHER Dots` data folder in `internal/store/store.go`, `mygo.json` `name`/`identifier`, and the `com.aetherdots.*` Keychain services. Any future change moves them once, with a migration.
+- Verified (Linux): build, `go vet`, `go tool mygo vet .`, `CGO_ENABLED=0 go test ./...`. Rendered the 28 UI previews (`AETHER_UI_PREVIEW_DIR`); welcome and profile at 760×560 show the new labels without overflow. Not verified: the running macOS app and the iPhone companion, whose own name is controlled outside this repository.
+
+## 2026-11-27 (3) — Polar license checks behind a build flag
+
+- New `internal/license`: Polar customer-portal client (activate, validate, deactivate; public endpoints per Polar's OpenAPI 2026-10 docs), atomic 0600 state file, and a pure `Evaluate` with a 14-day offline grace and a JetBrains-style perpetual fallback keyed on the build date. Annual keys (`expires_at`) qualify for fallback at once; subscription keys (no `expires_at`, revoked when the subscription ends) after 12 months of validated use. Activation that fails validation releases its device slot.
+- New `aether license status|activate|check|deactivate`; `activate` reads the key from stdin so it stays out of shell history and `ps`. Output shows only Polar's masked `display_key`.
+- Off by default: without the `OrganizationID` linker flag every command reports "licensing is not enabled in this build" and nothing is sent. Permission design added to AGENTS.md.
+- Tests: rule table (active, grace, expiry, fallback for annual and year-long subscriptions, revoked, dev builds), client against a fake Polar (request bodies contain only key, organization and label; redirect refused; org mismatch rejected; 503 leaves state unchanged; natural expiry not marked revoked), state permissions and symlink refusal, and the CLI flow. A mutation removing the 12-month rule fails two cases. `go test ./...`, `-race` for the new packages, `go vet`, `mygo vet` and a darwin/arm64 build pass.
+- Not done: no Pro feature is gated yet and there is no desktop UI (Settings card, periodic background check). Not verified against the real Polar sandbox (needs an organization and a test key).
+
+## 2026-11-27 (4) — AETHER Pro card in Settings → General
+
+- Pro is an annual license.
+- New `internal/desktopui/license_settings.go`: an "AETHER Pro" card at the top of Settings → General, shown only when the build enables licensing. Free state: masked key field and Activate. Licensed state: masked display key, paid-through date, last check, an explanation for each entitlement reason (active, this-version fallback, build newer than the license, not checked for 14 days, revoked), Check now and Remove from this Mac. Network work runs off the UI thread with a request counter (inline in tests, like GitHub approvals). On startup, a license last validated more than 24 h ago is rechecked silently; only a definite answer from Polar changes the saved state. Removing keeps the license if its activation cannot be released.
+- Fixed a rule found by the new UI test: an annual key revoked before its expiry (refund or disabled key) no longer earns the perpetual fallback; a natural expiry still does. Added a rule-table case.
+- Tests (`ui.NewTester`): hidden when disabled; activate trims and saves and never shows the full key; device-limit refusal explained and nothing saved; offline check keeps state, revocation saved and shown as Free; fallback and newer-build texts; remove refused offline, then succeeds; startup recheck only when stale and silent offline. Rendered free (light, 760×560), active (dark, 1120×760) and fallback-with-error (light, 760×560) states and checked them visually.
+- Not verified: the running macOS app, the real Polar sandbox, and no Pro feature is gated yet. There is no "Buy" link: the checkout URL does not exist yet.
+
+## 2026-11-27 (5) — Free / Pro split
+
+- New `license.Features` (`internal/license/features.go`): Free = up to 3 agents, chat, GitHub read, Midnight; Pro = unlimited agents, GitHub write proposals, Routines. `CurrentFeatures(dataDir, now)` reads the build config and saved license; builds without licensing get everything, and an unreadable license file counts as Free.
+- Enforced in `engine` (routine runs: `RunRoutineOnce*` returns `ErrProRequired`, `RunDueRoutines*` claims nothing; `WithGitHubWriteTools` offers no proposal tools) and at the entry points: agent creation, write-grant saves and routine creation in desktop and CLI. Desktop shows a toast pointing to Settings → General, plus inline notices in the Routines tab and the GitHub write proposals panel.
+- Never locks data: existing agents, chats, routines and grants stay usable for reading, editing, deleting; pending proposals can still be approved or rejected.
+- Tests: feature rules and `CurrentFeatures` (no licensing, Free, Pro, corrupt file); engine refuses routine runs and write tools on Free; CLI refuses a 4th agent, routine creation and write grants on Free and allows everything without licensing; desktop limits creation to 3 and keeps existing agents reachable, shows the Routines notice and refuses creation on Free, allows it on Pro. Full suite, `-race` for touched packages, `go vet`, `mygo vet`, darwin/arm64 build pass.
+- Not covered by a UI test: the write-proposals panel notice (needs a GitHub-connected profile setup).
+
+## 2026-11-27 (6) — Issue triage agent
+
+- New read tool `aether_github_search_issues` (`internal/integrations/github/search.go`, `internal/engine/github_tools.go`) for duplicate detection: `GET /search/issues` pinned to one granted repository (`repo:<owner>/<name> is:issue` built from the store) with model-supplied qualifiers, operators and symbols stripped by `github.SearchTerms`; open and closed issues, pull requests skipped, up to 5 results with 300-byte bodies, grant rechecked per call, recorded as a `github_read` event.
+- New agent templates (`internal/task/templates.go`) with `TriageTemplate`: name, avatar, objective and a triage playbook (untrusted issue text, type, missing information, duplicate search, code citations through Midnight when granted and never invented, labels and priority, a draft reply proposed as a comment only when write proposals are available) plus a suggested Routine prompt. Templates grant nothing.
+- Entry points: "Set up issue triage" on the welcome screen, "Create a triage agent" in the connected GitHub card, `aether create --template triage` (explicit flags override the template; prints the grant and send commands). The desktop opens the new agent's profile so the person can grant a repository. Creation shares the Free agent limit (refactored `startCreator` into `createAgent`).
+- Tests: `SearchTerms` stripping, client endpoint pinned and pull requests skipped and invalid input refused before calling gh; engine tool refuses an ungranted repository, qualifier-only queries and unknown arguments, keeps "evil" qualifiers out of the request and records the event; template limits; welcome button creates the agent without grants and opens its profile; template respects the Free limit; CLI template and override. Rendered the welcome screen (760×560) and the new agent (dark, 1120×760).
+- Not verified: a real GitHub search through `gh`, a live model following the playbook, and Midnight code citations end to end. The suggested daily Routine is not created automatically.
+
+## 2026-11-27 (7) — Daily triage summary, FSL license; integrations stage closed
+
+- Agent templates now carry a suggested Routine name and interval (`SuggestedRoutineName`, `SuggestedRoutineIntervalSeconds`); `task.TemplateForInstructions` recognizes an agent whose saved instructions still match a template. New `internal/desktopui/template_routine.go`: a "Daily summary" panel in the agent profile, below GitHub access, with **Add daily summary**. It creates the triage Routine (24 h, GitHub enabled), needs Pro and a saved repository grant, never duplicates, and shows the scheduled state with a pointer to Settings → Routines afterwards. Editing the instructions hides the panel.
+- License: the app code moves from Apache-2.0 to FSL-1.1-ALv2 (`LICENSE`, `resources/licenses/AETHER-FSL-1.1-ALv2.txt`). Versions published before this change stay Apache-2.0; each FSL version becomes Apache-2.0 two years after release. AETHER Midnight stays Apache-2.0.
+- Third-party notices were incomplete (for example the Anthropic and OpenAI SDKs and `modernc.org/sqlite` were missing). New `scripts/update-license-notices.sh` copies the license and notice files of every module compiled into the app and CLI for darwin/arm64, darwin/amd64 and linux/amd64 into `resources/licenses/third_party/<module>/` and regenerates `NOTICE.txt`; it fails when a module has no license file. `.gitignore` lets the `.md` license files through.
+- Removed product-strategy detail from this tracker and AGENTS.md (the repository is public).
+- Tests: template recognition and routine limits; the panel asks for a grant first, creates exactly one routine with the expected fields, shows the scheduled state; Free shows the Pro notice and creates nothing; non-template agents get no panel. Rendered before and after states (1120×760).
+- Integrations stage closed. Shipped: GitHub read with issue search, write proposals, MCP, Midnight, Computer Use, iPhone bridge, licensing, Free/Pro, triage template. Not verified anywhere: the real Polar sandbox, real `gh` search, a live model following the triage playbook, Midnight citations end to end, and the running macOS app. Windows still does not compile (`internal/integrations/mcp/tokens.go`, `internal/midnightsup`).
