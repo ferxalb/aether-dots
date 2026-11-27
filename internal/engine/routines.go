@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"aether-dots/internal/license"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
 )
@@ -22,6 +23,9 @@ func RunRoutineOnce(ctx context.Context, db *store.Store, routineID string, gene
 // RunRoutineOnceWithTaskFactory selects a generator after the store has
 // created the durable run, allowing scoped capabilities to bind to that Dot.
 func RunRoutineOnceWithTaskFactory(ctx context.Context, db *store.Store, routineID string, generator TaskGeneratorFactory, onProgress func()) error {
+	if err := license.CurrentFeatures(db.Dir(), time.Now()).Require("Routines"); err != nil {
+		return err
+	}
 	_, dot, err := db.StartRoutineNow(routineID, time.Now().UTC())
 	if err != nil {
 		return err
@@ -41,6 +45,10 @@ func RunDueRoutines(ctx context.Context, db *store.Store, generator Generator, o
 }
 
 func RunDueRoutinesWithTaskFactory(ctx context.Context, db *store.Store, generator TaskGeneratorFactory, onProgress func()) (int, error) {
+	// Without Pro nothing is claimed, so schedules are left as they are.
+	if !license.CurrentFeatures(db.Dir(), time.Now()).Pro {
+		return 0, nil
+	}
 	now := time.Now().UTC()
 	due := make([]string, 0)
 	for _, routine := range db.Snapshot().Routines {

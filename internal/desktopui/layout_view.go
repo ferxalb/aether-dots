@@ -137,7 +137,7 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 				}
 			}
 		default:
-			ui.Text(c, "AETHER Dots").FontSize(13).Bold()
+			ui.Text(c, "AETHER").FontSize(13).Bold()
 		}
 
 		ui.Spacer(c)
@@ -154,8 +154,8 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 				a.approvals.open = false
 			}
 		} else if inspector {
-			if appIconButton(c, theme, "profile-back-to-chat", "Close Dot profile", iconSettings).
-				Tooltip("Close Dot profile").Background(theme.SurfaceHover).Clicked() {
+			if appIconButton(c, theme, "profile-back-to-chat", "Close agent profile", iconSettings).
+				Tooltip("Close agent profile").Background(theme.SurfaceHover).Clicked() {
 				a.conversationDetailsOpen = false
 			}
 		} else if a.conversationDetailsOpen {
@@ -164,7 +164,7 @@ func (a *app) header(c *ui.Context, theme *ui.Theme, latestDots map[string]conve
 			}
 		} else if a.selectedConversationID != "" {
 			if appButton(c, theme, "conversation-customize", "Customize", buttonSecondary).
-				Tooltip("Customize Dot profile").Clicked() {
+				Tooltip("Customize agent profile").Clicked() {
 				a.openConversationProfile()
 			}
 		}

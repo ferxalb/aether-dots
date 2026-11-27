@@ -21,8 +21,8 @@ func TestConversationProfileAndRepliesPersistWithoutFolderGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conversation.Name != "New Dot" || conversation.Icon == "" || conversation.Color == "" {
-		t.Fatalf("new Dot defaults are incomplete: %#v", conversation)
+	if conversation.Name != "New agent" || conversation.Icon == "" || conversation.Color == "" {
+		t.Fatalf("new agent defaults are incomplete: %#v", conversation)
 	}
 	if err := db.UpdateConversationProfile(conversation.ID, conversation.SpaceID, "Decision partner", "◈", "#1D69C8", "Prepare concise decision briefs", "Use plain language and cite uncertainty."); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestConversationProfileAndRepliesPersistWithoutFolderGrants(t *testing.T) {
 	if firstMessage.Role != "user" || firstMessage.DotID != first.ID || first.ParentDotID != "" {
 		t.Fatalf("first message/run link is incomplete: message=%#v dot=%#v", firstMessage, first)
 	}
-	for _, part := range []string{"Dot name:\nDecision partner", "Dot objective:\nPrepare concise decision briefs", "Dot working instructions:\nUse plain language", "Newest user message:\nSummarize the open decisions"} {
+	for _, part := range []string{"Agent name:\nDecision partner", "Agent objective:\nPrepare concise decision briefs", "Agent working instructions:\nUse plain language", "Newest user message:\nSummarize the open decisions"} {
 		if !strings.Contains(first.Objective, part) {
 			t.Errorf("message objective missing %q: %q", part, first.Objective)
 		}
@@ -251,7 +251,7 @@ func TestCreateConversationProfileValidatesTextLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.UpdateConversationProfile(conversation.ID, conversation.SpaceID, strings.Repeat("x", task.MaxConversationNameBytes+1), "✦", "#7458D8", "", ""); err == nil {
-		t.Fatal("overlong Dot name was accepted")
+		t.Fatal("overlong agent name was accepted")
 	}
 	if err := db.UpdateConversationProfile(conversation.ID, conversation.SpaceID, "Valid", "✦", "#7458D8", "", strings.Repeat("x", task.MaxConversationInstructionsBytes+1)); err == nil {
 		t.Fatal("overlong instructions were accepted")

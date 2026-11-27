@@ -73,5 +73,5 @@ func (a *app) saveSpaceContextDraft() {
 	}
 	a.profileError = ""
 	a.refresh()
-	a.adt.Success("Space notes saved", "Dots in this Space will use these notes as shared context.")
+	a.adt.Success("Space notes saved", "Agents in this Space will use these notes as shared context.")
 }

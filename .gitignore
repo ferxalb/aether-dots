@@ -7,3 +7,4 @@ mygo_windows_*.syso
 !/HISTORY-TRACKER.md
 !/AGENTS.md
 !/CLAUDE.md
+!/resources/licenses/third_party/**/*.md

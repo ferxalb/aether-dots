@@ -17,7 +17,7 @@ func TestSidebarSearchFindsConversationByLastMessage(t *testing.T) {
 	a.refresh()
 	a.selectedConversationID = ""
 	tester := ui.NewTester(a.view, 960, 720)
-	if err := tester.Click("Search Dots"); err != nil {
+	if err := tester.Click("Search agents"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Type("event plan")
@@ -55,38 +55,38 @@ func TestSidebarSelectsConversationAndPreservesSpace(t *testing.T) {
 func TestConversationNavigationRestoresDraftPerDot(t *testing.T) {
 	a := newMessengerTestApp(t)
 	spaceID := a.selectedSpaceID
-	first := createTestConversation(t, a, spaceID, "First Dot", "First purpose")
-	second := createTestConversation(t, a, spaceID, "Second Dot", "Second purpose")
+	first := createTestConversation(t, a, spaceID, "First agent", "First purpose")
+	second := createTestConversation(t, a, spaceID, "Second agent", "Second purpose")
 	a.refresh()
 	a.selectConversation(first.ID)
 	a.messageDraft = "Continue the first task"
 	a.selectConversation(second.ID)
 	if a.messageDraft != "" {
-		t.Fatalf("switching Dots retained the previous draft: %q", a.messageDraft)
+		t.Fatalf("switching agents retained the previous draft: %q", a.messageDraft)
 	}
-	a.messageDraft = "Ask the second Dot"
+	a.messageDraft = "Ask the second agent"
 	a.selectConversation(first.ID)
 	if a.messageDraft != "Continue the first task" {
-		t.Fatalf("first Dot draft = %q", a.messageDraft)
+		t.Fatalf("first agent draft = %q", a.messageDraft)
 	}
 	a.selectConversation(second.ID)
-	if a.messageDraft != "Ask the second Dot" {
-		t.Fatalf("second Dot draft = %q", a.messageDraft)
+	if a.messageDraft != "Ask the second agent" {
+		t.Fatalf("second agent draft = %q", a.messageDraft)
 	}
 }
 
 func TestSidebarNewDotButtonCreatesAndSelectsChat(t *testing.T) {
 	a := newMessengerTestApp(t)
 	tester := ui.NewTester(a.view, 960, 720)
-	if !tester.HasText("New Dot") {
-		t.Fatalf("New Dot button missing: %q", tester.Texts())
+	if !tester.HasText("New agent") {
+		t.Fatalf("New agent button missing: %q", tester.Texts())
 	}
-	if err := tester.Click("New Dot"); err != nil {
+	if err := tester.Click("New agent"); err != nil {
 		t.Fatal(err)
 	}
 	snapshot := a.db.Snapshot()
 	if len(snapshot.Conversations) != 1 || a.selectedConversationID != snapshot.Conversations[0].ID || !a.hasConversationChat() {
-		t.Fatalf("New Dot did not create and open a chat: conversations=%d selection=%q", len(snapshot.Conversations), a.selectedConversationID)
+		t.Fatalf("New agent did not create and open a chat: conversations=%d selection=%q", len(snapshot.Conversations), a.selectedConversationID)
 	}
 }
 
@@ -96,7 +96,7 @@ func TestCommandNCreatesDotDirectly(t *testing.T) {
 	tester.Key(ui.Cmd, ui.KeyN)
 	snapshot := a.db.Snapshot()
 	if len(snapshot.Conversations) != 1 || a.selectedConversationID != snapshot.Conversations[0].ID || !a.hasConversationChat() {
-		t.Fatalf("Command-N did not create and open a Dot: conversations=%d selection=%q", len(snapshot.Conversations), a.selectedConversationID)
+		t.Fatalf("Command-N did not create and open an agent: conversations=%d selection=%q", len(snapshot.Conversations), a.selectedConversationID)
 	}
 }
 

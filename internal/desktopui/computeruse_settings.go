@@ -26,7 +26,7 @@ func (a *app) computerUseIntegrationCard(c *ui.Context, theme *ui.Theme) {
 			mark.Center().Children(func() { ui.Text(c, "⌘").FontSize(20).Bold() })
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Text(c, "Computer Use").FontSize(15).Bold()
-				ui.Text(c, "Let a Dot read the open Apple Notes window or control Apple Music playback.").
+				ui.Text(c, "Let an agent read the open Apple Notes window or control Apple Music playback.").
 					FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			})
 			computerUseStatusBadge(c, theme, status)
@@ -43,7 +43,7 @@ func (a *app) computerUseIntegrationCard(c *ui.Context, theme *ui.Theme) {
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 		ui.Text(c, "AETHER disables Cua Driver's optional usage telemetry during setup.").
 			FontSize(10).TextColor(theme.TextMuted).FillWidth()
-		ui.Text(c, "Notes content exposed through the open window may be sent to the Dot's configured model provider. Review and grant each app scope in that Dot's profile.").
+		ui.Text(c, "Notes content exposed through the open window may be sent to the agent's configured model provider. Review and grant each app scope in that agent's profile.").
 			FontSize(10).TextColor(theme.TextMuted).FillWidth()
 
 		ui.Divider(c)
@@ -68,7 +68,7 @@ func (a *app) computerUseIntegrationCard(c *ui.Context, theme *ui.Theme) {
 					a.startComputerUseInstall()
 				}
 			}
-			if ui.Button(c.Key("computer-use-revoke"), "Revoke all Dot access").Padding(8, 12).
+			if ui.Button(c.Key("computer-use-revoke"), "Revoke all agent access").Padding(8, 12).
 				Disabled(a.computerUseLoading || a.computerUseRevoking || a.computerUseSettingsOpening).Clicked() {
 				a.revokeComputerUseAccess()
 			}
@@ -167,10 +167,10 @@ func (a *app) prepareComputerUseAsync(request uint64, preserveSetupMessage bool)
 			}
 			if err != nil {
 				if preserveSetupMessage && a.computerUseError != "" {
-					a.computerUseError += " Fast-start preparation failed; the next Dot run will retry. " + err.Error()
+					a.computerUseError += " Fast-start preparation failed; the next agent run will retry. " + err.Error()
 				} else {
 					a.computerUseStatus = "Installed · starts on first use"
-					a.computerUseError = "Fast-start preparation failed; the next Dot run will retry. " + err.Error()
+					a.computerUseError = "Fast-start preparation failed; the next agent run will retry. " + err.Error()
 				}
 			} else if !preserveSetupMessage {
 				a.computerUseStatus = "Installed · bounded session ready"
@@ -250,13 +250,13 @@ func (a *app) revokeComputerUseAccess() {
 			a.computerUseRevoking = false
 			if err != nil {
 				a.computerUseStatus = "Access revoke failed"
-				a.computerUseError = "AETHER couldn't confirm that all Dot grants were removed. Try again. " + err.Error()
+				a.computerUseError = "AETHER couldn't confirm that all agent grants were removed. Try again. " + err.Error()
 				a.adt.Error("Computer Use access needs attention", a.computerUseError)
 			} else if a.computerUseInstalled {
-				a.computerUseStatus = "Installed · all Dot grants revoked"
-				a.adt.Push(ADTNotice{Title: "Computer Use access revoked", Description: "AETHER removed all Dot scopes and stopped the bounded Cua Driver session.", Level: ADTInfo})
+				a.computerUseStatus = "Installed · all agent grants revoked"
+				a.adt.Push(ADTNotice{Title: "Computer Use access revoked", Description: "AETHER removed all agent scopes and stopped the bounded Cua Driver session.", Level: ADTInfo})
 			} else {
-				a.computerUseStatus = "All Dot grants revoked"
+				a.computerUseStatus = "All agent grants revoked"
 			}
 			a.refresh()
 		}

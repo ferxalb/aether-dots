@@ -21,7 +21,7 @@ CGO_ENABLED=0 go run ./cmd/aether --help   # CLI (also: make cli-help)
 ```
 
 - The Midnight end-to-end test (`cmd/aether/e2e_midnight_test.go`, `scripts/e2e-midnight.sh`) is skipped unless `MIDNIGHT_BIN` points to an `aether-midnight` binary.
-- UI is native MyGo (v0.7.3 pinned, not a WebView); test views with `ui.NewTester`. Verify APIs against the pinned dependency, not newer docs.
+- UI is native MyGo (v0.10.0 pinned in `go.mod`, not a WebView); test views with `ui.NewTester`. Verify APIs against the pinned dependency, not newer docs.
 
 ## Architecture
 

@@ -5,13 +5,13 @@ import "github.com/egoist/mygo/ui"
 func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 	section := max(0, min(len(a.settingsScroll)-1, a.settingsTab))
 	sectionKey := [...]string{"general", "ai", "integrations", "skills", "routines", "mcp"}[section]
-	heading, description := "Preferences", "Choose how AETHER looks and how your Dots work."
+	heading, description := "Preferences", "Choose how AETHER looks and how your agents work."
 	if section == 2 {
 		heading = "Integrations"
-		description = "Connect the tools your Dots can work with. You're always in control of what they can access."
+		description = "Connect the tools your agents can work with. You're always in control of what they can access."
 	} else if section == 5 {
 		heading = "MCP servers"
-		description = "Find local MCP servers automatically and choose which Dots can use their tools."
+		description = "Find local MCP servers automatically and choose which agents can use their tools."
 	}
 	ui.Column(c).Grow(1).FillWidth().MinHeight(0).Children(func() {
 		ui.Column(c).FillWidth().Gap(14).Padding(20, 26, 0, 26).Shrink(0).Children(func() {
@@ -44,6 +44,7 @@ func (a *app) settingsView(c *ui.Context, theme *ui.Theme) {
 				case 5:
 					a.mcpSettingsPage(c, theme)
 				default:
+					a.licenseSettingsCard(c, theme)
 					a.appearanceSettings(c, theme)
 				}
 			})

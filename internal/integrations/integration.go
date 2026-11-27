@@ -21,7 +21,7 @@ type Descriptor struct {
 // lifecycle requirements from the integrations already available.
 func InitialProviders() []Descriptor {
 	return []Descriptor{
-		{ID: "github", Name: "GitHub", Description: "Let your Dots inspect repositories, issues, pull requests, and CI activity.", Availability: Available},
-		{ID: "apple-reminders", Name: "Apple Reminders", Description: "Let your Dots work with selected reminders and lists.", Availability: ComingSoon},
+		{ID: "github", Name: "GitHub", Description: "Let your agents inspect repositories, issues, pull requests, and CI activity.", Availability: Available},
+		{ID: "apple-reminders", Name: "Apple Reminders", Description: "Let your agents work with selected reminders and lists.", Availability: ComingSoon},
 	}
 }

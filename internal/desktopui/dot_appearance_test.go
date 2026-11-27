@@ -10,7 +10,7 @@ func TestDotAppearanceVariesDefaultsAndPreservesCustomGlyphs(t *testing.T) {
 	firstIcon, firstColor := dotAppearance("first", defaultDotIcon, defaultDotColor)
 	secondIcon, secondColor := dotAppearance("second", defaultDotIcon, defaultDotColor)
 	if firstIcon == secondIcon && firstColor == secondColor {
-		t.Fatal("two default Dots received the same appearance")
+		t.Fatal("two default agents received the same appearance")
 	}
 	if icon, color := dotAppearance("first", "◈", "#1D69C8"); icon != "◈" || color != "#1D69C8" {
 		t.Fatalf("custom appearance was changed to %q %q", icon, color)

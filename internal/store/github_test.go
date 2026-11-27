@@ -26,7 +26,7 @@ func TestGitHubGrantsRequireConnectionSelectionDisclosureAndCurrentSpace(t *test
 		t.Fatal(err)
 	}
 	if _, ok := db.GitHubToolRepositories(dot.ID); ok {
-		t.Fatal("a disconnected Dot received GitHub capabilities")
+		t.Fatal("a disconnected agent received GitHub capabilities")
 	}
 	if err := db.SetGitHubConnected(true); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestGitHubGrantsRequireConnectionSelectionDisclosureAndCurrentSpace(t *test
 		t.Fatal(err)
 	}
 	if _, ok := db.GitHubToolRepositories(dot.ID); ok {
-		t.Fatal("a connected account implicitly enabled a Dot")
+		t.Fatal("a connected account implicitly enabled an agent")
 	}
 	if err := db.SetGitHubRepositorySelection([]int64{101, 202}); err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestGitHubGrantsRequireConnectionSelectionDisclosureAndCurrentSpace(t *test
 	}
 	granted, ok := db.GitHubToolRepositories(dot.ID)
 	if !ok || len(granted) != 1 || granted[0].ID != 101 {
-		t.Fatalf("Dot received the wrong repository grant: %#v", granted)
+		t.Fatalf("Agent received the wrong repository grant: %#v", granted)
 	}
 	if _, ok := db.GitHubToolRepository(dot.ID, 202); ok {
 		t.Fatal("repository B bypassed the repository A grant")
@@ -57,7 +57,7 @@ func TestGitHubGrantsRequireConnectionSelectionDisclosureAndCurrentSpace(t *test
 		t.Fatal(err)
 	}
 	if _, ok := db.GitHubToolRepositories(dot.ID); ok {
-		t.Fatal("removing a repository selection left a stale Dot grant")
+		t.Fatal("removing a repository selection left a stale agent grant")
 	}
 
 	if err := db.SetGitHubRepositorySelection([]int64{101}); err != nil {
@@ -75,7 +75,7 @@ func TestGitHubGrantsRequireConnectionSelectionDisclosureAndCurrentSpace(t *test
 		t.Fatal(err)
 	}
 	if _, ok := db.GitHubToolRepositories(dot.ID); ok {
-		t.Fatal("moving a Dot to another Space preserved its GitHub grant")
+		t.Fatal("moving an agent to another Space preserved its GitHub grant")
 	}
 
 	if err := db.SetConversationGitHubGrants(conversation.ID, []int64{101}, true); err != nil {
@@ -131,7 +131,7 @@ func TestRoutineNeedsSeparateGitHubOptInAndLosesItWhenDotGrantIsRemoved(t *testi
 		ConversationID: conversation.ID, Name: "Morning review", Prompt: "Check the repository.",
 		IntervalSeconds: task.MinRoutineIntervalSeconds, GitHubEnabled: true,
 	}); err == nil {
-		t.Fatal("routine without a Dot grant was authorized for GitHub")
+		t.Fatal("routine without an agent grant was authorized for GitHub")
 	}
 	if err := db.SetConversationGitHubGrants(conversation.ID, []int64{101}, true); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestRoutineNeedsSeparateGitHubOptInAndLosesItWhenDotGrantIsRemoved(t *testi
 		t.Fatal(err)
 	}
 	if _, ok := db.GitHubToolRepositories(dot.ID); ok {
-		t.Fatal("the Dot grant alone implicitly enabled a Routine")
+		t.Fatal("the agent grant alone implicitly enabled a Routine")
 	}
 	if err := db.SetRoutineGitHubEnabled(routine.ID, true); err != nil {
 		t.Fatal(err)
@@ -160,7 +160,7 @@ func TestRoutineNeedsSeparateGitHubOptInAndLosesItWhenDotGrantIsRemoved(t *testi
 		t.Fatal(err)
 	}
 	if _, ok := db.GitHubToolRepositories(dot.ID); ok || db.Snapshot().Routines[0].GitHubEnabled {
-		t.Fatal("removing the Dot grant left its Routine capability active")
+		t.Fatal("removing the agent grant left its Routine capability active")
 	}
 }
 
@@ -189,7 +189,7 @@ func TestSchemaV4MigrationPreservesDotsAndRoutinesWithoutGitHubGrants(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Existing Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Existing agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestSwitchingGitHubAccountDropsPreviousAccountsGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Repo Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Repo agent"})
 	if err != nil {
 		t.Fatal(err)
 	}

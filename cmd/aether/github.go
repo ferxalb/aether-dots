@@ -46,7 +46,7 @@ func githubCommand(db *store.Store, args []string) error {
 		return githubProposalsCommand(db, newGitHubService(), os.Stdin, os.Stdout, stdinIsTerminal(), args[1:])
 	case "revoke":
 		if len(args) != 2 {
-			return errors.New("usage: aether github revoke <dot-id>")
+			return errors.New("usage: aether github revoke <agent-id>")
 		}
 		return db.SetConversationGitHubGrants(args[1], nil, false)
 	case "disconnect":
@@ -173,13 +173,13 @@ func selectGitHubRepositories(db *store.Store, args []string) error {
 
 func grantGitHubRepositories(db *store.Store, args []string) error {
 	fs := flag.NewFlagSet("github grant", flag.ContinueOnError)
-	allowModelData := fs.Bool("allow-model-data", false, "acknowledge that selected GitHub data can be sent to this Dot's configured model provider")
+	allowModelData := fs.Bool("allow-model-data", false, "acknowledge that selected GitHub data can be sent to this agent's configured model provider")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	remaining := fs.Args()
 	if len(remaining) < 2 {
-		return errors.New("usage: aether github grant --allow-model-data <dot-id> <repo-id>...")
+		return errors.New("usage: aether github grant --allow-model-data <agent-id> <repo-id>...")
 	}
 	if !*allowModelData {
 		return errors.New("add --allow-model-data after reviewing the repository-to-model privacy disclosure")
@@ -208,7 +208,7 @@ func disconnectGitHub(db *store.Store) error {
 	if err := localErr; err != nil {
 		return err
 	}
-	fmt.Println("GitHub was disconnected in AETHER: repository selections and Dot grants were removed. Your GitHub CLI login is untouched (`gh auth logout` signs it out).")
+	fmt.Println("GitHub was disconnected in AETHER: repository selections and agent grants were removed. Your GitHub CLI login is untouched (`gh auth logout` signs it out).")
 	return nil
 }
 

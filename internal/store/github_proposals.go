@@ -20,7 +20,7 @@ import (
 
 var (
 	ErrGitHubProposalNotFound = errors.New("GitHub proposal not found")
-	ErrGitHubWriteNotAllowed  = errors.New("this Dot is not allowed to propose that GitHub write")
+	ErrGitHubWriteNotAllowed  = errors.New("this agent is not allowed to propose that GitHub write")
 )
 
 const maxGitHubFailureReasonBytes = 300
@@ -122,12 +122,12 @@ func (s *Store) GitHubWriteGrants(dotID string) ([]GitHubWriteToolGrant, bool) {
 // an intact read grant for the same repository and the write disclosure.
 func (s *Store) SetConversationGitHubWriteGrants(conversationID string, grants []task.GitHubWriteGrant, disclosureAccepted bool) error {
 	if len(grants) > task.MaxGitHubWriteGrants {
-		return fmt.Errorf("a Dot can be granted GitHub writes for at most %d repositories", task.MaxGitHubWriteGrants)
+		return fmt.Errorf("an agent can be granted GitHub writes for at most %d repositories", task.MaxGitHubWriteGrants)
 	}
 	return s.change(func(db *task.Database) error {
 		ci := conversationIndex(db, conversationID)
 		if ci < 0 {
-			return errors.New("Dot profile not found")
+			return errors.New("Agent profile not found")
 		}
 		conv := &db.Conversations[ci]
 		var clean []task.GitHubWriteGrant
@@ -167,7 +167,7 @@ func (s *Store) SetConversationGitHubWriteGrants(conversationID string, grants [
 		}
 		for _, grant := range clean {
 			if !hasReadGrant(db, conv, grant.RepositoryID) {
-				return errors.New("a GitHub write grant needs the Dot's read grant for the same repository")
+				return errors.New("a GitHub write grant needs the agent's read grant for the same repository")
 			}
 		}
 		conv.GitHubWriteGrants = clean
@@ -325,7 +325,7 @@ func (s *Store) CreateGitHubProposal(dotID string, in task.GitHubProposalInput, 
 	err = s.change(func(db *task.Database) error {
 		di := dotIndex(db, dotID)
 		if di < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		dot := &db.Dots[di]
 		conv, ok := writeGrantConversation(db, dot)
@@ -357,7 +357,7 @@ func (s *Store) CreateGitHubProposal(dotID string, in task.GitHubProposalInput, 
 			}
 		}
 		if pendingForDot >= task.MaxGitHubPendingProposalsPerDot {
-			return fmt.Errorf("this Dot already has %d GitHub proposals awaiting approval", task.MaxGitHubPendingProposalsPerDot)
+			return fmt.Errorf("this agent already has %d GitHub proposals awaiting approval", task.MaxGitHubPendingProposalsPerDot)
 		}
 		if pendingForRun >= task.MaxGitHubPendingProposalsPerRun {
 			return fmt.Errorf("a run can queue at most %d GitHub proposals", task.MaxGitHubPendingProposalsPerRun)
@@ -486,7 +486,7 @@ func (s *Store) BeginGitHubProposalExecution(id, approvedHash, liveAccount strin
 			return errors.New("this proposal is no longer pending")
 		}
 		if !now.Before(p.ExpiresAt) {
-			return errors.New("this proposal expired; ask the Dot to propose it again")
+			return errors.New("this proposal expired; ask the agent to propose it again")
 		}
 		if !proposalAuthorized(db, p) {
 			return ErrGitHubWriteNotAllowed

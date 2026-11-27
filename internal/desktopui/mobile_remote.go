@@ -57,13 +57,13 @@ func (a *app) mobileRemoteCard(c *ui.Context, theme *ui.Theme) {
 			mark := ui.Box(c).Size(42, 42).Shrink(0).Radius(14).Background(theme.Background).Border(1, theme.Border)
 			mark.Center().Children(func() { ui.Text(c, "⌘").FontSize(20).Bold() })
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-				ui.Text(c, "AETHER Dots for iPhone").FontSize(15).Bold()
-				ui.Text(c, "Check on your Dots and send them a message from iOS.").FontSize(11).TextColor(theme.TextMuted).FillWidth()
+				ui.Text(c, "AETHER for iPhone").FontSize(15).Bold()
+				ui.Text(c, "Check on your agents and send them a message from iOS.").FontSize(11).TextColor(theme.TextMuted).FillWidth()
 			})
 			ui.Text(c, status).FontSize(10).Bold().TextColor(remoteStatusColor(theme, status))
 		})
 
-		ui.Text(c, "Pairing lets your signed-in iPhone list Dots, open a conversation when requested, and send messages through this Mac. A message uses the Dot’s saved provider settings and existing specialist or GitHub grants. Chat text and remote requests pass through the AETHER Cloudflare relay and Neon; your local files and provider keys stay on this Mac.").
+		ui.Text(c, "Pairing lets your signed-in iPhone list agents, open a conversation when requested, and send messages through this Mac. A message uses the agent’s saved provider settings and existing specialist or GitHub grants. Chat text and remote requests pass through the AETHER Cloudflare relay and Neon; your local files and provider keys stay on this Mac.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
 
 		if a.remoteError != "" {
@@ -74,12 +74,12 @@ func (a *app) mobileRemoteCard(c *ui.Context, theme *ui.Theme) {
 
 		if a.remotePairCode != "" {
 			ui.Column(c).FillWidth().Gap(8).Padding(12, 14).Radius(11).Background(theme.Background).Border(1, theme.Border).Children(func() {
-				ui.Text(c, "Enter this one-time code in AETHER Dots on your iPhone").FontSize(11).Bold()
+				ui.Text(c, "Enter this one-time code in the AETHER iPhone app").FontSize(11).Bold()
 				ui.Text(c, a.remotePairCode).FontSize(22).Bold().LetterSpacing(1.5)
 				ui.Row(c).Wrap().Gap(8).Children(func() {
 					if ui.Button(c.Key("mobile-copy-code"), "Copy code").Padding(8, 11).Clicked() {
 						c.WriteClipboard(a.remotePairCode)
-						a.adt.Success("Code copied", "Enter the one-time code in AETHER Dots on your iPhone.")
+						a.adt.Success("Code copied", "Enter the one-time code in the AETHER iPhone app.")
 					}
 					if ui.Button(c.Key("mobile-cancel-pairing"), "Cancel pairing").Padding(8, 11).Clicked() {
 						a.cancelRemotePairing()
@@ -366,7 +366,7 @@ func (a *app) remoteCommandLoop(ctx context.Context, client *remote.Client) {
 				a.updateRemote(func() {
 					a.refresh()
 					if err != nil {
-						a.remoteError = "A remote action could not be completed. Open this Dot on the Mac for details."
+						a.remoteError = "A remote action could not be completed. Open this agent on the Mac for details."
 					} else {
 						a.remoteError = ""
 					}
@@ -452,7 +452,7 @@ func (a *app) executeRemoteCommand(ctx context.Context, command remote.Command) 
 	case "get_conversation":
 		conversation, ok := findConversation(snapshot, action.DotID)
 		if !ok {
-			return nil, errors.New("Dot not found")
+			return nil, errors.New("Agent not found")
 		}
 		messages := make([]map[string]any, 0, 8)
 		start := max(0, len(conversation.Messages)-8)
@@ -469,7 +469,7 @@ func (a *app) executeRemoteCommand(ctx context.Context, command remote.Command) 
 	case "send_message":
 		conversation, ok := findConversation(snapshot, action.DotID)
 		if !ok {
-			return nil, errors.New("Dot not found")
+			return nil, errors.New("Agent not found")
 		}
 		dot, _, err := a.db.CreateConversationRun(conversation.ID, action.Message)
 		if err != nil {
@@ -481,7 +481,7 @@ func (a *app) executeRemoteCommand(ctx context.Context, command remote.Command) 
 		}
 		generator := generatorForConversationRun(prefs, a.db, dot.ID, a.githubService, func() {})
 		if err := engine.RunWithProgress(ctx, a.db, dot.ID, generator, func(string) {}, func() {}); err != nil {
-			return nil, errors.New("Dot reply failed")
+			return nil, errors.New("Agent reply failed")
 		}
 		updated, _ := findConversation(a.db.Snapshot(), conversation.ID)
 		reply := ""

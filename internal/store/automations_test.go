@@ -24,7 +24,7 @@ func TestSkillSelectionIsExplicitAndScopedToOneTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Review Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Review agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestRoutineLifecycleAndStoreLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Routine Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Routine agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestRoutineSkipsMissedIntervalsAndValidatesBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Scheduled Dot"})
+	conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Scheduled agent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestRoutineRateLimitsRecordFailureAndSkipTheNextInterval(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Rate limited Dot"})
+			conversation, err := db.CreateConversation(task.CreateConversation{SpaceID: db.Snapshot().Spaces[0].ID, Name: "Rate limited agent"})
 			if err != nil {
 				t.Fatal(err)
 			}

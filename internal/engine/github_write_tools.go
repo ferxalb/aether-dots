@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"aether-dots/internal/integrations/github"
+	"aether-dots/internal/license"
 	"aether-dots/internal/model"
 	"aether-dots/internal/store"
 	"aether-dots/internal/task"
@@ -58,7 +59,7 @@ func toWriteRequest(p task.GitHubProposal) github.WriteRequest {
 // to interactive runs; the store additionally refuses Routine and delegated
 // Dots, so a stale or misplaced catalog still cannot queue a write.
 func WithGitHubWriteTools(db *store.Store, dotID string, provider model.Provider, service *github.Service) model.Provider {
-	if db == nil || service == nil {
+	if db == nil || service == nil || !license.CurrentFeatures(db.Dir(), time.Now()).Pro {
 		return provider
 	}
 	grants, ok := db.GitHubWriteGrants(dotID)
@@ -115,13 +116,13 @@ func WithGitHubWriteTools(db *store.Store, dotID string, provider model.Provider
 
 	var tools []model.Tool
 	if tool, ok := makeTool("aether_github_propose_issue_comment",
-		"Propose a comment on an existing issue or pull request in a repository this Dot may write to.",
+		"Propose a comment on an existing issue or pull request in a repository this agent may write to.",
 		task.GitHubIssueComment,
 		map[string]any{"number": map[string]any{"type": "integer", "minimum": 1}, "body": body}, []string{"number", "body"}); ok {
 		tools = append(tools, tool)
 	}
 	if tool, ok := makeTool("aether_github_propose_issue",
-		"Propose a new issue in a repository this Dot may write to.",
+		"Propose a new issue in a repository this agent may write to.",
 		task.GitHubIssueCreate,
 		map[string]any{"title": title, "body": body}, []string{"title"}); ok {
 		tools = append(tools, tool)

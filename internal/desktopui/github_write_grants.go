@@ -62,8 +62,11 @@ func (a *app) githubWritePanel(c *ui.Context, theme *ui.Theme) {
 		return
 	}
 	profilePanel(c, theme, "GitHub write proposals", func() {
-		ui.Text(c, "Let this Dot propose comments, issues, and draft pull requests. A proposal is only text waiting in the GitHub approvals tray: nothing is sent until you review and approve it there.").
+		ui.Text(c, "Let this agent propose comments, issues, and draft pull requests. A proposal is only text waiting in the GitHub approvals tray: nothing is sent until you review and approve it there.").
 			FontSize(11).TextColor(theme.TextMuted).FillWidth()
+		if !a.features().Pro {
+			proNotice(c, theme, "github-write-pro-notice", "Write proposals are part of AETHER Pro. Without it, agents don't receive proposal tools; proposals already waiting can still be approved or rejected.")
+		}
 		readable := make([]task.GitHubRepository, 0)
 		if a.snapshot.GitHubConnected && conversation.GitHubGrantSpaceID != "" && conversation.GitHubGrantSpaceID == conversation.SpaceID && conversation.GitHubModelDisclosureAccepted {
 			granted := map[int64]bool{}
@@ -77,7 +80,7 @@ func (a *app) githubWritePanel(c *ui.Context, theme *ui.Theme) {
 			}
 		}
 		if len(readable) == 0 {
-			ui.Text(c, "Save a GitHub read grant for at least one repository above first. Write proposals only exist for repositories this Dot can already read.").
+			ui.Text(c, "Save a GitHub read grant for at least one repository above first. Write proposals only exist for repositories this agent can already read.").
 				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 			return
 		}
@@ -107,7 +110,7 @@ func (a *app) githubWritePanel(c *ui.Context, theme *ui.Theme) {
 		wanted := d.grants(readable)
 		if len(wanted) > 0 {
 			ui.Text(c, "Whatever you approve is published to GitHub under your own account"+accountSuffix(a.snapshot.GitHubAccount)+
-				" and may be public. Text a Dot writes can be influenced by issue and pull request content it reads, which is why you approve each item yourself.").
+				" and may be public. Text an agent writes can be influenced by issue and pull request content it reads, which is why you approve each item yourself.").
 				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 			if ui.Checkbox(c.Key("profile-github-write-disclosure"), &d.disclosure, "I understand approved proposals are published under my GitHub account").FillWidth().Changed() {
 				d.message = ""
@@ -120,7 +123,9 @@ func (a *app) githubWritePanel(c *ui.Context, theme *ui.Theme) {
 			ui.Spacer(c)
 			save := appButton(c, theme, "profile-github-write-save", "Save write permissions", buttonSecondary)
 			if save.Clicked() {
-				if err := a.db.SetConversationGitHubWriteGrants(conversation.ID, wanted, d.disclosure); err != nil {
+				if err := a.features().Require("GitHub write proposals"); err != nil && len(wanted) > 0 {
+					d.message = err.Error() + ". Add a license in Settings → General."
+				} else if err := a.db.SetConversationGitHubWriteGrants(conversation.ID, wanted, d.disclosure); err != nil {
 					d.message = err.Error()
 				} else {
 					a.refresh()

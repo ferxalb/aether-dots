@@ -91,7 +91,7 @@ func (a *app) githubApprovalsView(c *ui.Context, theme *ui.Theme) {
 				ui.Column(c).Gap(4).Children(func() {
 					ui.Text(c, "GitHub approvals").FontSize(22).Bold()
 					account := a.snapshot.GitHubAccount
-					line := "Dots can only propose. Nothing reaches GitHub until you approve the exact text below."
+					line := "Agents can only propose. Nothing reaches GitHub until you approve the exact text below."
 					if account != "" {
 						line += " Approved items are published as @" + account + "."
 					}
@@ -114,7 +114,7 @@ func (a *app) githubApprovalsView(c *ui.Context, theme *ui.Theme) {
 			if len(attention) == 0 && len(pending) == 0 && len(history) == 0 {
 				ui.Column(c).FillWidth().Gap(6).Padding(22).Radius(14).Background(theme.Surface).Border(1, theme.Border).Children(func() {
 					ui.Text(c, "Nothing to approve").FontSize(14).Bold()
-					ui.Text(c, "Grant a Dot write proposals in its profile, then ask it to comment on an issue, open an issue, or prepare a draft pull request. Its proposals will wait here.").
+					ui.Text(c, "Grant an agent write proposals in its profile, then ask it to comment on an issue, open an issue, or prepare a draft pull request. Its proposals will wait here.").
 						FontSize(12).TextColor(theme.TextMuted).FillWidth()
 				})
 				return
@@ -155,7 +155,7 @@ func (a *app) proposalDotName(p task.GitHubProposal) string {
 	if conversation, ok := findConversation(a.snapshot, p.ConversationID); ok {
 		return conversation.Name
 	}
-	return "A Dot"
+	return "An agent"
 }
 
 func (a *app) proposalCard(c *ui.Context, theme *ui.Theme, p task.GitHubProposal, now time.Time) {

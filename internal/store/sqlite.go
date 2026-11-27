@@ -174,7 +174,7 @@ func loadAll(ctx context.Context, q queryer) (db task.Database, ok bool, err err
 		i, known := dotAt[id]
 		if !known {
 			rows.Close()
-			return db, false, fmt.Errorf("event for unknown Dot %s", id)
+			return db, false, fmt.Errorf("event for unknown agent %s", id)
 		}
 		var e task.Event
 		if err := json.Unmarshal([]byte(body), &e); err != nil {

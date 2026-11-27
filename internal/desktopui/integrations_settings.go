@@ -116,6 +116,9 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 				if ui.Button(c.Key("github-refresh"), "Refresh").Padding(8, 12).Clicked() {
 					a.refreshGitHubConnection()
 				}
+				if ui.Button(c.Key("github-create-triage"), "Create a triage agent").Padding(8, 12).Clicked() {
+					a.startTemplateCreator(task.TriageTemplate)
+				}
 				if ui.Button(c.Key("github-disconnect"), "Disconnect").Padding(8, 12).Clicked() {
 					a.disconnectGitHub()
 				}
@@ -151,7 +154,7 @@ func (a *app) githubIntegrationCard(c *ui.Context, theme *ui.Theme) {
 			a.githubRepositoryManager(c, theme)
 		}
 		if a.snapshot.GitHubConnected {
-			ui.Text(c, "Disconnecting removes AETHER's repository selections and Dot grants. Your GitHub CLI login is not touched; use `gh auth logout` to sign out of it.").
+			ui.Text(c, "Disconnecting removes AETHER's repository selections and agent grants. Your GitHub CLI login is not touched; use `gh auth logout` to sign out of it.").
 				FontSize(10).TextColor(theme.TextMuted).FillWidth()
 		}
 	})
@@ -184,7 +187,7 @@ func (a *app) githubRepositoryManager(c *ui.Context, theme *ui.Theme) {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 				ui.Text(c, "Choose repositories for AETHER").FontSize(12).Bold()
-				ui.Text(c, "Only selected repositories can be granted to a Dot.").FontSize(10).TextColor(theme.TextMuted)
+				ui.Text(c, "Only selected repositories can be granted to an agent.").FontSize(10).TextColor(theme.TextMuted)
 			})
 			ui.TextInput(c.Key("github-repository-search"), &a.githubRepositorySearch).
 				Placeholder("Filter repositories").Width(210).Label("Filter repositories")
@@ -489,7 +492,7 @@ func (a *app) disconnectGitHub() {
 				return
 			}
 			a.githubError = ""
-			a.adt.Push(ADTNotice{Title: "GitHub disconnected locally", Description: "AETHER removed its repository selections and Dot grants. Your GitHub CLI login is untouched.", Level: ADTInfo})
+			a.adt.Push(ADTNotice{Title: "GitHub disconnected locally", Description: "AETHER removed its repository selections and agent grants. Your GitHub CLI login is untouched.", Level: ADTInfo})
 		}
 		if win != nil {
 			win.Update(finish)

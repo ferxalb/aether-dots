@@ -179,7 +179,7 @@ func TestProposalLimitsPerRunAndPerDot(t *testing.T) {
 	in = comment("one too many")
 	in.Target = 500
 	if _, _, err := f.db.CreateGitHubProposal(run.ID, in, false); err == nil {
-		t.Fatal("per-Dot limit not enforced")
+		t.Fatal("per-agent limit not enforced")
 	}
 }
 

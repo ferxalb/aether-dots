@@ -105,7 +105,7 @@ func TestWriteGrantNeedsAcknowledgementAndReadGrant(t *testing.T) {
 		t.Fatal("write grant was saved without --allow-publish")
 	}
 	if err := grantGitHubWrites(e.db, []string{"--allow-publish", e.conv.ID, "202:comment"}); err == nil {
-		t.Fatal("write grant was saved for a repository the Dot cannot read")
+		t.Fatal("write grant was saved for a repository the agent cannot read")
 	}
 	e.grantAll(t)
 	if _, ok := e.db.GitHubWriteGrants(e.dot.ID); !ok {

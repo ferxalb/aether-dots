@@ -290,7 +290,7 @@ func (s *Store) SetConversationGitHubGrants(conversationID string, repositoryIDs
 	return s.change(func(db *task.Database) error {
 		ci := conversationIndex(db, conversationID)
 		if ci < 0 {
-			return errors.New("Dot not found")
+			return errors.New("Agent not found")
 		}
 		if len(repositoryIDs) > 0 && !db.GitHubConnected {
 			return errors.New("connect GitHub before granting repositories")
@@ -319,7 +319,7 @@ func (s *Store) SetConversationGitHubGrants(conversationID string, repositoryIDs
 
 func validateGitHubRepositoryGrants(db *task.Database, ids []int64) ([]int64, error) {
 	if len(ids) > task.MaxGitHubDotGrants {
-		return nil, fmt.Errorf("a Dot can be granted at most %d GitHub repositories", task.MaxGitHubDotGrants)
+		return nil, fmt.Errorf("an agent can be granted at most %d GitHub repositories", task.MaxGitHubDotGrants)
 	}
 	selected := make(map[int64]bool, len(db.GitHubRepositories))
 	for _, repo := range db.GitHubRepositories {

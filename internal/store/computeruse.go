@@ -110,7 +110,7 @@ func (s *Store) RevokeAllComputerUse() error {
 
 func validateComputerUseScopes(scopes []string) ([]string, error) {
 	if len(scopes) > task.MaxComputerUseScopes {
-		return nil, fmt.Errorf("a Dot can be granted at most %d Computer Use scopes", task.MaxComputerUseScopes)
+		return nil, fmt.Errorf("an agent can be granted at most %d Computer Use scopes", task.MaxComputerUseScopes)
 	}
 	seen := make(map[string]bool, len(scopes))
 	grants := make([]string, 0, len(scopes))

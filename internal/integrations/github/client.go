@@ -183,7 +183,7 @@ func FetchAvatar(ctx context.Context, avatarURL string, httpClient *http.Client)
 		return nil, errors.New("could not prepare GitHub avatar request")
 	}
 	req.Header.Set("Accept", "image/png,image/jpeg,image/gif")
-	req.Header.Set("User-Agent", "AETHER-Dots")
+	req.Header.Set("User-Agent", "AETHER")
 	response, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
